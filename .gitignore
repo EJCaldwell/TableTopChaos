@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+
+# Local environment — NEVER commit real keys. Only .env.example is tracked.
+.env
+.env.local
+.env.*.local
+
+# Supabase local stack & secrets
+supabase/.branches/
+supabase/.temp/
+.supabase/
+
+# Editor / OS
+.DS_Store
+*.log
+.vscode/*
+!.vscode/extensions.json
+.idea/

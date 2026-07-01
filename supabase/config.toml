@@ -1,0 +1,19 @@
+# Supabase CLI configuration for local development.
+#
+# Used by `supabase start` (local Docker stack) and `supabase db reset`, which
+# applies everything in supabase/migrations/ in order. `project_id` is the local
+# stack identifier; the remote project is linked separately with
+# `supabase link --project-ref <ref>`.
+project_id = "dnd-campaign-manager"
+
+[db]
+# Postgres major version for the local stack. Match the remote project's version.
+major_version = 15
+
+[auth]
+# Local dev site URL — where Supabase Auth sends confirmation/reset redirects.
+# Override per environment; production uses the deployed origin.
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173"]
+# Email/password is the starting method (1.2). OAuth can be enabled later.
+enable_signup = true

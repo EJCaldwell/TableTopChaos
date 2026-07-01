@@ -1,0 +1,20 @@
+{
+  // TypeScript config for Node-context files (the Vite config itself).
+  // Separated from the app config because vite.config.ts runs under Node, not
+  // in the browser, and needs different lib/module settings.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "include": ["vite.config.ts"]
+}

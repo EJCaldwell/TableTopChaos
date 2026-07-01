@@ -1,0 +1,77 @@
+/*
+ * Design tokens + base reset for D&D Campaign Manager.
+ *
+ * Owns: the single source of truth for color, spacing, typography, and radius
+ * variables, plus a light global reset. Components reference these CSS custom
+ * properties (var(--…)) rather than hardcoding values, so theming (light/dark
+ * in subphase 6.1) is a matter of swapping token values, not editing components.
+ *
+ * We intentionally start with hand-rolled tokens instead of a heavy component
+ * library: the MVP UI is mostly forms and lists, and tokens keep the bundle
+ * small. A component library can be layered in later if needed (see 1.1.2).
+ */
+
+:root {
+  /* Brand / accent — a tabletop "arcane" purple. */
+  --color-accent: #6d4aff;
+  --color-accent-hover: #5a3ae0;
+
+  /* Surfaces & text (light theme defaults). */
+  --color-bg: #f7f7fb;
+  --color-surface: #ffffff;
+  --color-border: #e2e2ec;
+  --color-text: #1b1b24;
+  --color-text-muted: #5c5c6b;
+
+  /* Status colors. */
+  --color-danger: #d23b3b;
+  --color-success: #1f9d57;
+
+  /* Spacing scale (4px base). */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+
+  /* Radius & typography. */
+  --radius: 0.5rem;
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Dark theme: applied when the OS prefers dark. Explicit theming toggle is 6.1. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #14141b;
+    --color-surface: #1e1e29;
+    --color-border: #2e2e3c;
+    --color-text: #ececf2;
+    --color-text-muted: #a0a0b0;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--color-accent);
+}
