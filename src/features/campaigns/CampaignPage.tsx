@@ -1,0 +1,230 @@
+/**
+ * CampaignPage — the role-aware campaign workspace shell ("/campaigns/:id"),
+ * built in subphase 1.4.
+ *
+ * Owns: loading the campaign + roster + the caller's role, then rendering the
+ * workspace chrome around it — a campaign switcher, a DM/player indicator, and
+ * a role-filtered tab bar. Tab bodies are delegated: the "Overview" tab renders
+ * <OverviewPanel> (roster, DM invite codes, owner danger zone); every other tab
+ * renders a <PlaceholderPanel> until its real content ships in a later phase.
+ *
+ * Role gating in the UI is defense-in-depth; RLS is the real access control.
+ * The caller's role comes from listMyCampaigns (which the switcher also uses),
+ * so a single membership read drives both the switcher and tab gating.
+ */
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { useAuth } from '../auth/AuthProvider'
+import { AppHeader } from '../../components/AppHeader'
+import { FormError } from '../../components/ui'
+import { OverviewPanel } from './OverviewPanel'
+import { PlaceholderPanel } from './PlaceholderPanel'
+import { BillingPanel } from '../billing/BillingPanel'
+import { tabsForRole } from './tabs'
+import {
+  getCampaign,
+  listMembers,
+  listMyCampaigns,
+  type Campaign,
+  type CampaignWithRole,
+  type Member,
+} from './api'
+
+export function CampaignPage() {
+  const { id } = useParams<{ id: string }>()
+  const { user } = useAuth()
+  const navigate = useNavigate()
+
+  // Every campaign the caller belongs to, with their role in each. Drives both
+  // the switcher and this campaign's role (no separate role query needed).
+  const [myCampaigns, setMyCampaigns] = useState<CampaignWithRole[]>([])
+  const [campaign, setCampaign] = useState<Campaign | null>(null)
+  const [members, setMembers] = useState<Member[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // The key of the currently selected tab (defaults to Overview).
+  const [activeTab, setActiveTab] = useState('overview')
+
+  // The caller's role in THIS campaign. Prefer the membership list; fall back to
+  // the roster (both are RLS-scoped to the caller anyway).
+  const myRole =
+    myCampaigns.find((c) => c.campaign.id === id)?.role ??
+    members.find((m) => m.userId === user?.id)?.role ??
+    null
+  const isDm = myRole === 'dm'
+  // Only the owner (the creating DM) may delete; matches campaigns_delete_owner.
+  const isOwner = !!campaign && campaign.owner_id === user?.id
+
+  // The tabs this role can see. Memoized so the tab bar and the "is the active
+  // tab still valid?" guard below agree on the same list.
+  const visibleTabs = useMemo(() => tabsForRole(isDm), [isDm])
+
+  /** Loads the campaign, roster, and the caller's membership list. */
+  const refresh = useCallback(async () => {
+    if (!id || !user) return
+    setLoading(true)
+    setError(null)
+    try {
+      const [c, m, mine] = await Promise.all([
+        getCampaign(id),
+        listMembers(id),
+        listMyCampaigns(user.id),
+      ])
+      setCampaign(c)
+      setMembers(m)
+      setMyCampaigns(mine)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load campaign.')
+    } finally {
+      setLoading(false)
+    }
+  }, [id, user])
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  // Reset to Overview whenever the campaign changes, so switching campaigns
+  // never lands on a tab that was scrolled/selected in the previous one.
+  useEffect(() => {
+    setActiveTab('overview')
+  }, [id])
+
+  // If the caller's role changes such that the active tab is no longer visible
+  // (e.g. a player-only tab while viewing as DM), fall back to Overview.
+  useEffect(() => {
+    if (!visibleTabs.some((t) => t.key === activeTab)) setActiveTab('overview')
+  }, [visibleTabs, activeTab])
+
+  /** Campaign switcher: navigate to the chosen campaign's workspace. */
+  function handleSwitch(nextId: string) {
+    if (nextId && nextId !== id) navigate(`/campaigns/${nextId}`)
+  }
+
+  const activeTabDef = visibleTabs.find((t) => t.key === activeTab)
+
+  return (
+    <>
+      <AppHeader />
+      <main style={{ maxWidth: 860, margin: '0 auto', padding: 'var(--space-8)' }}>
+        {loading ? (
+          <p style={{ color: 'var(--color-text-muted)' }}>Loading…</p>
+        ) : error && !campaign ? (
+          <FormError message={error} />
+        ) : campaign ? (
+          <>
+            {/* Workspace header: name, role badge, and the campaign switcher. */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--space-3)',
+                flexWrap: 'wrap',
+              }}
+            >
+              <h1 style={{ margin: 0 }}>{campaign.name}</h1>
+              {myRole && (
+                <span
+                  style={{
+                    fontSize: '0.75rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    color: isDm ? 'var(--color-accent)' : 'var(--color-text-muted)',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: 'var(--radius)',
+                    padding: '2px 8px',
+                  }}
+                >
+                  {isDm ? 'You are the DM' : 'You are a player'}
+                </span>
+              )}
+
+              {/* Campaign switcher — only shown when the user has more than one. */}
+              {myCampaigns.length > 1 && (
+                <label style={{ marginLeft: 'auto', fontSize: '0.85rem' }}>
+                  <span style={{ color: 'var(--color-text-muted)', marginRight: 'var(--space-2)' }}>
+                    Switch to
+                  </span>
+                  <select
+                    value={id}
+                    onChange={(e) => handleSwitch(e.target.value)}
+                    style={{
+                      font: 'inherit',
+                      padding: 'var(--space-2) var(--space-3)',
+                      background: 'var(--color-surface)',
+                      color: 'var(--color-text)',
+                      border: '1px solid var(--color-border)',
+                      borderRadius: 'var(--radius)',
+                    }}
+                  >
+                    {myCampaigns.map(({ campaign: c, role }) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({role === 'dm' ? 'DM' : 'Player'})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
+
+            {/* Role-aware tab bar. */}
+            <nav
+              role="tablist"
+              aria-label="Campaign sections"
+              style={{
+                display: 'flex',
+                gap: 'var(--space-1)',
+                flexWrap: 'wrap',
+                marginTop: 'var(--space-6)',
+                borderBottom: '1px solid var(--color-border)',
+              }}
+            >
+              {visibleTabs.map((tab) => {
+                const selected = tab.key === activeTab
+                return (
+                  <button
+                    key={tab.key}
+                    role="tab"
+                    aria-selected={selected}
+                    onClick={() => setActiveTab(tab.key)}
+                    style={{
+                      font: 'inherit',
+                      cursor: 'pointer',
+                      background: 'none',
+                      border: 'none',
+                      padding: 'var(--space-3) var(--space-4)',
+                      color: selected ? 'var(--color-text)' : 'var(--color-text-muted)',
+                      fontWeight: selected ? 600 : 400,
+                      borderBottom: selected
+                        ? '2px solid var(--color-accent)'
+                        : '2px solid transparent',
+                      marginBottom: '-1px',
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                )
+              })}
+            </nav>
+
+            {/* Active tab body. */}
+            {activeTabDef?.key === 'overview' ? (
+              <OverviewPanel
+                campaign={campaign}
+                members={members}
+                isDm={isDm}
+                isOwner={isOwner}
+                currentUserId={user?.id}
+              />
+            ) : activeTabDef?.key === 'billing' ? (
+              <BillingPanel campaignId={campaign.id} />
+            ) : activeTabDef ? (
+              <PlaceholderPanel tab={activeTabDef} />
+            ) : null}
+          </>
+        ) : null}
+      </main>
+    </>
+  )
+}

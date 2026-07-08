@@ -1,29 +1,24 @@
 /**
  * App — the root component and route table.
  *
- * Owns: the top-level route definitions and the shared page chrome. This is the
- * skeleton for subphase 1.1; auth guards (1.2), the campaign dashboard (1.3),
- * and the role-based workspace shell (1.4) will hang off these routes as they
- * are built. For now it renders a landing page with the setup/health check.
+ * Owns: the top-level route definitions. Routes are split into:
+ *  - Public auth routes (login, signup, password reset) reachable while signed
+ *    out.
+ *  - A protected group behind <RequireAuth> (dashboard, campaign, profile) that
+ *    redirects to /login without a session.
+ *
+ * The role-aware campaign workspace shell (1.4) will expand CampaignPage; the
+ * dashboard is the signed-in landing page.
  */
 import { Routes, Route, Link } from 'react-router-dom'
-import { ConnectionCheck } from './features/health/ConnectionCheck'
-
-/** Temporary landing page for the 1.1 scaffold. Replaced by the dashboard in 1.3. */
-function Home() {
-  return (
-    <main style={{ padding: 'var(--space-8)', maxWidth: 720, margin: '0 auto' }}>
-      <h1 style={{ marginBottom: 'var(--space-2)' }}>D&amp;D Campaign Manager</h1>
-      <p style={{ color: 'var(--color-text-muted)', marginTop: 0 }}>
-        Foundations scaffold (Phase 1.1). Auth, campaigns, and the role-based
-        workspace land in the following subphases.
-      </p>
-      <div style={{ marginTop: 'var(--space-6)' }}>
-        <ConnectionCheck />
-      </div>
-    </main>
-  )
-}
+import { RequireAuth } from './features/auth/RequireAuth'
+import { LoginPage } from './features/auth/LoginPage'
+import { SignUpPage } from './features/auth/SignUpPage'
+import { RequestPasswordResetPage } from './features/auth/RequestPasswordResetPage'
+import { UpdatePasswordPage } from './features/auth/UpdatePasswordPage'
+import { ProfilePage } from './features/profile/ProfilePage'
+import { DashboardPage } from './features/campaigns/DashboardPage'
+import { CampaignPage } from './features/campaigns/CampaignPage'
 
 /** Fallback for unmatched routes. */
 function NotFound() {
@@ -40,7 +35,19 @@ function NotFound() {
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<Home />} />
+      {/* Public auth routes. */}
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/signup" element={<SignUpPage />} />
+      <Route path="/reset-password" element={<RequestPasswordResetPage />} />
+      <Route path="/update-password" element={<UpdatePasswordPage />} />
+
+      {/* Protected routes — redirect to /login without a session. */}
+      <Route element={<RequireAuth />}>
+        <Route path="/" element={<DashboardPage />} />
+        <Route path="/campaigns/:id" element={<CampaignPage />} />
+        <Route path="/profile" element={<ProfilePage />} />
+      </Route>
+
       <Route path="*" element={<NotFound />} />
     </Routes>
   )

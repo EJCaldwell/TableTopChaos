@@ -21,3 +21,9 @@ supabase/.temp/
 .vscode/*
 !.vscode/extensions.json
 .idea/
+
+# Build caches (regenerate locally; committing them just causes noisy diffs)
+*.tsbuildinfo
+
+# Python virtualenv (used for local QA tooling — exiftool/Pillow, etc.)
+.venv/

@@ -1,20 +1,3 @@
-/**
- * Generated database type definitions for the typed Supabase client.
- *
- * Owns: the TypeScript shape of every table/view/function exposed by the
- * Postgres schema, so client queries are type-checked against the real schema.
- *
- * IMPORTANT: This file is normally GENERATED, not hand-edited. Once a Supabase
- * project exists, regenerate it after each migration with:
- *
- *   supabase gen types typescript --linked > src/lib/database.types.ts
- *
- * For now it is a hand-written stub matching migration 0001 (the `profiles`
- * table) so the app type-checks before a project is provisioned. Replace this
- * whole file with the generated output as soon as the project is linked.
- */
-
-/** JSON value type used by Supabase's generated types. */
 export type Json =
   | string
   | number
@@ -23,49 +6,473 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
-/**
- * The `public` schema. Mirrors migration 0001_init.sql.
- *
- * `profiles` is 1:1 with `auth.users` and holds app-level user info we don't
- * want to (or can't) keep in the auth schema. RLS currently denies all access
- * (default-deny); read/write policies arrive in subphase 1.2.
- */
-export interface Database {
+export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.5"
+  }
   public: {
     Tables: {
-      profiles: {
+      campaign_members: {
         Row: {
-          /** Primary key; equals `auth.users.id`. */
-          id: string
-          /** User-facing name shown in campaigns. Nullable until set. */
-          display_name: string | null
-          /** Storage path/URL of the avatar image. Nullable. */
-          avatar_url: string | null
-          /** Row creation timestamp (UTC, ISO 8601). */
+          campaign_id: string
           created_at: string
-          /** Last update timestamp (UTC, ISO 8601). */
+          id: string
+          role: Database["public"]["Enums"]["campaign_role"]
+          user_id: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["campaign_role"]
+          user_id: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["campaign_role"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_members_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_subscriptions: {
+        Row: {
+          campaign_id: string
+          cancel_at_period_end: boolean
+          card_brand: string | null
+          card_fingerprint: string | null
+          card_last4: string | null
+          created_at: string
+          current_period_end: string | null
+          id: string
+          interval: string | null
+          plan: string
+          status: string | null
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          trial_blocked_reused_card: boolean
+          trial_end: string | null
           updated_at: string
         }
         Insert: {
-          id: string
-          display_name?: string | null
-          avatar_url?: string | null
+          campaign_id: string
+          cancel_at_period_end?: boolean
+          card_brand?: string | null
+          card_fingerprint?: string | null
+          card_last4?: string | null
           created_at?: string
+          current_period_end?: string | null
+          id?: string
+          interval?: string | null
+          plan?: string
+          status?: string | null
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          trial_blocked_reused_card?: boolean
+          trial_end?: string | null
           updated_at?: string
         }
         Update: {
-          id?: string
-          display_name?: string | null
-          avatar_url?: string | null
+          campaign_id?: string
+          cancel_at_period_end?: boolean
+          card_brand?: string | null
+          card_fingerprint?: string | null
+          card_last4?: string | null
           created_at?: string
+          current_period_end?: string | null
+          id?: string
+          interval?: string | null
+          plan?: string
+          status?: string | null
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          trial_blocked_reused_card?: boolean
+          trial_end?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_subscriptions_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: true
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaigns: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          owner_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          owner_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          owner_id?: string
           updated_at?: string
         }
         Relationships: []
       }
+      invite_codes: {
+        Row: {
+          campaign_id: string
+          code: string
+          created_at: string
+          created_by: string
+          expires_at: string | null
+          id: string
+          max_uses: number | null
+          role: Database["public"]["Enums"]["campaign_role"]
+          uses: number
+        }
+        Insert: {
+          campaign_id: string
+          code?: string
+          created_at?: string
+          created_by: string
+          expires_at?: string | null
+          id?: string
+          max_uses?: number | null
+          role?: Database["public"]["Enums"]["campaign_role"]
+          uses?: number
+        }
+        Update: {
+          campaign_id?: string
+          code?: string
+          created_at?: string
+          created_by?: string
+          expires_at?: string | null
+          id?: string
+          max_uses?: number | null
+          role?: Database["public"]["Enums"]["campaign_role"]
+          uses?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invite_codes_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      media_assets: {
+        Row: {
+          byte_size: number
+          campaign_id: string
+          created_at: string
+          height: number | null
+          id: string
+          mime: string
+          moderation_status: string
+          original_filename: string | null
+          storage_path: string
+          thumb_path: string | null
+          updated_at: string
+          uploaded_by: string | null
+          width: number | null
+        }
+        Insert: {
+          byte_size: number
+          campaign_id: string
+          created_at?: string
+          height?: number | null
+          id?: string
+          mime: string
+          moderation_status?: string
+          original_filename?: string | null
+          storage_path: string
+          thumb_path?: string | null
+          updated_at?: string
+          uploaded_by?: string | null
+          width?: number | null
+        }
+        Update: {
+          byte_size?: number
+          campaign_id?: string
+          created_at?: string
+          height?: number | null
+          id?: string
+          mime?: string
+          moderation_status?: string
+          original_filename?: string | null
+          storage_path?: string
+          thumb_path?: string | null
+          updated_at?: string
+          uploaded_by?: string | null
+          width?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "media_assets_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      media_reports: {
+        Row: {
+          created_at: string
+          id: string
+          media_asset_id: string
+          reason: string | null
+          reporter_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          media_asset_id: string
+          reason?: string | null
+          reporter_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          media_asset_id?: string
+          reason?: string | null
+          reporter_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "media_reports_media_asset_id_fkey"
+            columns: ["media_asset_id"]
+            isOneToOne: false
+            referencedRelation: "media_assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      trial_redemptions: {
+        Row: {
+          campaign_id: string | null
+          card_fingerprint: string
+          first_used_at: string
+          id: string
+        }
+        Insert: {
+          campaign_id?: string | null
+          card_fingerprint: string
+          first_used_at?: string
+          id?: string
+        }
+        Update: {
+          campaign_id?: string | null
+          card_fingerprint?: string
+          first_used_at?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trial_redemptions_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
-    Views: Record<never, never>
-    Functions: Record<never, never>
-    Enums: Record<never, never>
-    CompositeTypes: Record<never, never>
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      campaign_entitlements: {
+        Args: { p_campaign_id: string }
+        Returns: {
+          is_active: boolean
+          storage_cap: number
+          storage_used: number
+        }[]
+      }
+      redeem_invite_code: { Args: { p_code: string }; Returns: string }
+      report_media: {
+        Args: { p_asset_id: string; p_reason?: string }
+        Returns: undefined
+      }
+      set_media_status: {
+        Args: { p_asset_id: string; p_status: string }
+        Returns: undefined
+      }
+    }
+    Enums: {
+      campaign_role: "dm" | "player"
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
 }
+
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+
+export type Tables<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+      Row: infer R
+    }
+    ? R
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
+    : never
+
+export type TablesInsert<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Insert: infer I
+    }
+    ? I
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
+    : never
+
+export type TablesUpdate<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Update: infer U
+    }
+    ? U
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
+    : never
+
+export type Enums<
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
+
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
+
+export const Constants = {
+  public: {
+    Enums: {
+      campaign_role: ["dm", "player"],
+    },
+  },
+} as const

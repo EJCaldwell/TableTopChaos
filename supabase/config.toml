@@ -7,8 +7,8 @@
 project_id = "dnd-campaign-manager"
 
 [db]
-# Postgres major version for the local stack. Match the remote project's version.
-major_version = 15
+# Postgres major version for the local stack. Matches the remote project (17).
+major_version = 17
 
 [auth]
 # Local dev site URL — where Supabase Auth sends confirmation/reset redirects.
@@ -17,3 +17,17 @@ site_url = "http://localhost:5173"
 additional_redirect_urls = ["http://localhost:5173"]
 # Email/password is the starting method (1.2). OAuth can be enabled later.
 enable_signup = true
+
+# --- Edge Functions (Phase 1.5 billing) ---
+# The DM-facing functions require a valid Supabase JWT (default verify_jwt=true);
+# they authorize the owner from that token. The Stripe webhook CANNOT present a
+# Supabase JWT, so verify_jwt is disabled for it — its authenticity comes from
+# the Stripe signature check inside the function instead.
+[functions.create-checkout-session]
+verify_jwt = true
+
+[functions.create-billing-portal-session]
+verify_jwt = true
+
+[functions.stripe-webhook]
+verify_jwt = false

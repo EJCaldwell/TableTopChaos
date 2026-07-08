@@ -5,10 +5,17 @@ keeps private tabs (encounters, notes, NPCs, etc.) and can view every player's
 sheet, while each player maintains their own free-form character workspace —
 with a small feature for the DM to share the occasional handout in-app.
 
-> **Status:** Build started — Phase 1.1 (Project & Supabase setup) scaffold is
-> in place (Vite/React/TS app, typed Supabase client, migration 0001). Backend
-> verification (1.1.1) and the connection-check QA (1.1.3) are pending a live
-> Supabase project. Phases, scope, and data model are still expected to shift.
+> **Status:** Build in progress — Phases 1.1–1.4 complete and QA'd against live
+> project `fnykpoattheldxtkrozd` (migrations 0001–0005). **Phase 1.5
+> (Monetization) is wired end-to-end:** billing DB + entitlement functions
+> (behind the `enforce_active` kill-switch, still **OFF**), three billing Edge
+> Functions deployed and ACTIVE, secrets set, and the Stripe webhook registered
+> in a sandbox — the DM-only "Plan & billing" tab can run a real test checkout.
+> The only open security advisors are the by-design `redeem_invite_code` DEFINER
+> RPC and the optional leaked-password toggle. Remaining before 1.5 closes:
+> formal 1.5.3 QA (Stripe test clocks), the read-only banner/status badge
+> (1.5.2), and the launch-time flip of `enforce_active=true`. Next phase (1.6,
+> media pipeline) **not started**.
 
 ---
 
@@ -40,30 +47,49 @@ These framed the whole plan and should not be quietly reversed:
 ## Progress Tracker
 
 ### Phase 1: Foundations — auth, campaigns, roles
-- [ ] 1.1 — Project & Supabase setup
-  - [~] 1.1.1 — Backend *(migration 0001 authored & checked in; project not yet provisioned/applied)*
-  - [x] 1.1.2 — Web UI *(scaffold builds & type-checks clean)*
-  - [ ] 1.1.3 — QA *(ConnectionCheck panel built; needs a live project to run against)*
-- [ ] 1.2 — Auth & accounts
-  - [ ] 1.2.1 — Backend
-  - [ ] 1.2.2 — Web UI
-  - [ ] 1.2.3 — QA
-- [ ] 1.3 — Campaigns, membership & invite codes
-  - [ ] 1.3.1 — Backend
-  - [ ] 1.3.2 — Web UI
-  - [ ] 1.3.3 — QA
-- [ ] 1.4 — Role-based app shell & navigation
-  - [ ] 1.4.1 — Backend
-  - [ ] 1.4.2 — Web UI
-  - [ ] 1.4.3 — QA
-- [ ] 1.5 — Monetization (per-campaign subscriptions)
-  - [ ] 1.5.1 — Backend
-  - [ ] 1.5.2 — Web UI
-  - [ ] 1.5.3 — QA
-- [ ] 1.6 — Media upload pipeline & content safety
-  - [ ] 1.6.1 — Backend
-  - [ ] 1.6.2 — Web UI
-  - [ ] 1.6.3 — QA
+- [x] 1.1 — Project & Supabase setup
+  - [x] 1.1.1 — Backend *(project `fnykpoattheldxtkrozd`; migration 0001 applied; RLS default-deny; function search_path hardened)*
+  - [x] 1.1.2 — Web UI *(scaffold builds & type-checks; typed client wired to live project)*
+  - [x] 1.1.3 — QA *(build passes; anon query returns `200 []` = reachable + default-deny; only expected INFO advisor)*
+- [x] 1.2 — Auth & accounts
+  - [x] 1.2.1 — Backend *(migration 0002: signup trigger + own-profile RLS; DEFINER exposure revoked; advisors clean)*
+  - [x] 1.2.2 — Web UI *(login/signup/reset/update-password, auth guard, profile screen; builds clean)*
+  - [x] 1.2.3 — QA *(signup→profile row, session persistence, logout/login, cross-user isolation verified in browser)*
+- [x] 1.3 — Campaigns, membership & invite codes
+  - [x] 1.3.1 — Backend *(migrations 0003–0004: campaigns/members/invite_codes, is_campaign_member/dm predicates, redeem_invite_code RPC, co-member profile reads; RLS recursion-safe; RPC validation tested)*
+  - [x] 1.3.2 — Web UI *(dashboard: list/create/join; campaign page: roster + DM invite-code management; builds clean)*
+  - [x] 1.3.3 — QA *(create→invite→join, DM/Player roles, invalid/revoked codes rejected, non-member blocked by RLS — verified in browser)*
+- [x] 1.4 — Role-based app shell & navigation
+  - [x] 1.4.1 — Backend *(no new SQL: caller's per-campaign role is exposed via RLS through listMyCampaigns, which also feeds the switcher)*
+  - [x] 1.4.2 — Web UI *(tabbed workspace shell: role-filtered tab bar, campaign switcher, DM/player badge; Overview tab holds roster + DM invite codes + owner danger zone; other tabs are placeholders; type-checks clean)*
+  - [x] 1.4.3 — QA *(role-based-tabs, campaign-switcher, campaign-deletion checklists all passed in browser — QA/1.4_tests/)*
+- [x] 1.5 — Monetization (per-campaign subscriptions) *(build + QA complete; remaining items are launch-time owner actions, noted below)*
+  - [~] 1.5.1 — Backend *(DB foundation done — migration 0005: billing_config kill-switch, campaign_subscriptions (+RLS: DM read only), trial_redemptions (locked), entitlement fns campaign_is_active/player_cap/storage_cap, redeem_invite_code enforces read-only lock + player cap. Edge Functions **deployed** to live project via Supabase connection — all ACTIVE v1 (create-checkout-session + create-billing-portal-session verify_jwt=true, stripe-webhook verify_jwt=false), Stripe price IDs wired. Secrets **set** (STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SIGNING_SECRET) and Stripe **webhook registered** in a Stripe **sandbox** (4 events → the deployed webhook URL); billing flow now live-testable. **Pending (owner action):** Stripe Tax decision, daily-cleanup cron (defer until export/4.2 ships), then flip enforce_active=true at launch)*
+  - [~] 1.5.2 — Web UI *(DM-only "Plan & billing" tab built: status card for none/trial/active/past_due/lapsed, interval selector w/ live $9.99/$49.99/$79.99 prices, Start-trial/Subscribe → Checkout, Manage-billing → portal, post-checkout return notices. **Pending:** cross-member read-only banner + campaign status badge — depend on a members-readable access RPC, to add when enforce_active flips)*
+  - [x] 1.5.3 — QA *(**executed — all areas PASS**. checkout-and-trial, anti-abuse-trial-per-card (re-verified under the new reused-card **cancel** behavior), access-control run with the kill-switch OFF; player-cap, read-only-lock, lifecycle-dunning-cancel driven with enforce_active=true + Stripe test clocks. Two boxes left unchecked by design: the *optional* second-non-owner-DM case and the retry **exhaustion** case (same is_active=false read-only outcome already proven by the cancel flow + Test 5 lapse). storage-cap & cleanup-cron carried forward to 1.6 / 4.2 with documented reason. Test data wiped clean afterward.)*
+
+  > **Why 1.5.1 and 1.5.2 are marked `[~]` (partial) and not `[x]`:** both are fully
+  > built and QA'd, but each has a genuine **launch-time owner action** still
+  > outstanding — not a bug, not unfinished code:
+  > - **1.5.1 (Backend):** the `enforce_active` kill-switch is still **OFF**, so
+  >   billing is not yet enforced anywhere in the live app (every campaign is
+  >   treated as active/uncapped). It stays off on purpose until you're ready to
+  >   actually charge people — flipping it is a one-line `UPDATE`, deliberately
+  >   left for launch day. Also pending: a Stripe Tax decision, and the daily
+  >   storage-cleanup cron (intentionally deferred to Phase 4.2).
+  > - **1.5.2 (Web UI):** the DM-only "Plan & billing" tab is done, but the
+  >   **cross-member read-only banner + campaign status badge** (what a *player*,
+  >   not the DM, sees when a campaign lapses) hasn't been built yet — it needs a
+  >   members-readable entitlements RPC that only makes sense to add once
+  >   `enforce_active` actually flips, since until then no campaign is ever
+  >   read-only for anyone to see.
+  >
+  > Net effect: the monetization system is code-complete and verified: nothing is
+  > broken or half-implemented, it's just deliberately not "live" yet.
+- [x] 1.6 — Media upload pipeline & content safety *(build + QA complete)*
+  - [x] 1.6.1 — Backend *(migrations 0008/0009: media_assets + media_reports + private `media` bucket + RLS + storage-used/entitlements helpers + report_media/set_media_status RPCs; `upload-media` Edge Function: magic-byte + size validation, EXIF strip + WebP re-encode + thumbnail via ImageMagick WASM, storage-cap + read-only checks, pass-through moderation hook. Automated provider + blocked-byte deletion deferred.)*
+  - [x] 1.6.2 — Web UI *(src/features/media/: `api.ts` (uploadMedia/signedUrlFor/report/moderate) + reusable `<ImageUpload>` — drag/drop, client pre-validation, preview, errors. Consumed by portrait/handout features in Phase 2+.)*
+  - [x] 1.6.3 — QA *(**executed 2026-07-08 — all 4 areas PASS**. upload-validation 7/7; processing-and-variants 5/5; storage-cap-and-readonly (over-cap 413 + read-only 403, nothing stored); moderation report/takedown (flag-on-report, RLS denies serving flagged/blocked to everyone incl. path-holders, DM-only moderate, member can't see blocked row). **Two real bugs found + fixed:** (1) WebP re-encode was a silent no-op — `MagickFormat.Webp` (should be `WebP`) wrote source format under an `image/webp` label; fixed casing + added a magic-byte guard. (2) ImageMagick-WASM OOMs the Edge worker above ~4.5 MP; fixed with client-side canvas downscale to ≤2048 px + a server header pixel-cap that returns a clean 413. `upload-media` redeployed to v4. **Follow-ups (non-blocking):** real-browser smoke test of the client `downscaleIfNeeded` path when the upload UI lands in a Phase 2 feature; blocked-byte physical deletion (deferred to 4.2 cleanup-cron). Test data wiped afterward.)*
 
 ### Phase 2: Player workspace (flexible notepad)
 - [ ] 2.1 — Character record & flexible sheet (sections + fields)

@@ -25,6 +25,10 @@
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
+-- Pin an empty search_path so no schema on the caller's search_path can shadow
+-- built-ins referenced here (hardening per Supabase advisor 0011). now() still
+-- resolves because pg_catalog is always implicitly searched first.
+set search_path = ''
 as $$
 begin
   -- Always overwrite with the server clock; clients must not control this.
