@@ -92,22 +92,22 @@ These framed the whole plan and should not be quietly reversed:
   - [x] 1.6.3 — QA *(**executed 2026-07-08 — all 4 areas PASS**. upload-validation 7/7; processing-and-variants 5/5; storage-cap-and-readonly (over-cap 413 + read-only 403, nothing stored); moderation report/takedown (flag-on-report, RLS denies serving flagged/blocked to everyone incl. path-holders, DM-only moderate, member can't see blocked row). **Two real bugs found + fixed:** (1) WebP re-encode was a silent no-op — `MagickFormat.Webp` (should be `WebP`) wrote source format under an `image/webp` label; fixed casing + added a magic-byte guard. (2) ImageMagick-WASM OOMs the Edge worker above ~4.5 MP; fixed with client-side canvas downscale to ≤2048 px + a server header pixel-cap that returns a clean 413. `upload-media` redeployed to v4. **Follow-ups (non-blocking):** real-browser smoke test of the client `downscaleIfNeeded` path when the upload UI lands in a Phase 2 feature; blocked-byte physical deletion (deferred to 4.2 cleanup-cron). Test data wiped afterward.)*
 
 ### Phase 2: Player workspace (flexible notepad)
-- [ ] 2.1 — Character record & flexible sheet (sections + fields)
-  - [ ] 2.1.1 — Backend
-  - [ ] 2.1.2 — Web UI
-  - [ ] 2.1.3 — QA
-- [ ] 2.2 — Inventory
-  - [ ] 2.2.1 — Backend
-  - [ ] 2.2.2 — Web UI
-  - [ ] 2.2.3 — QA
-- [ ] 2.3 — Lore, backstory & portrait
-  - [ ] 2.3.1 — Backend
-  - [ ] 2.3.2 — Web UI
-  - [ ] 2.3.3 — QA
-- [ ] 2.4 — Spells/abilities & personal journal
-  - [ ] 2.4.1 — Backend
-  - [ ] 2.4.2 — Web UI
-  - [ ] 2.4.3 — QA
+- [x] 2.1 — Character record & flexible sheet (sections + fields)
+  - [x] 2.1.1 — Backend *(migration 0010: characters + sheet_sections + sheet_fields; owner read/write, DM read-only, other players no access; advisors clean)*
+  - [x] 2.1.2 — Web UI *(CharacterPanel: creation, free-form sections/fields, debounced autosave + optimistic UI, drag-to-reorder, portrait upload, starter layout; wired into the "My character" tab)*
+  - [x] 2.1.3 — QA *(2026-07-09 PASS — both areas; RLS owner/DM-read/other-none verified in-browser; 3 non-blocking follow-ups logged: delete confirmations, drag-to-bottom + drop indicator, offline-save retry)*
+- [x] 2.2 — Inventory
+  - [x] 2.2.1 — Backend *(migration 0012: inventory_items — name/qty/notes/equipped/position; RLS reuses 0010 can_read/can_write_character; advisors clean)*
+  - [x] 2.2.2 — Web UI *(InventoryPanel on the "Inventory" tab: add/edit/remove, qty, equipped flag, notes; debounced autosave + optimistic + offline retry; drag-to-reorder)*
+  - [x] 2.2.3 — QA *(2026-07-09 PASS — both areas; RLS owner/DM-read/others-none verified in-browser; added expandable notes + ghost item name (migration 0013))*
+- [x] 2.3 — Lore, backstory & portrait
+  - [x] 2.3.1 — Backend *(migration 0014: backstory/appearance/personality text cols on characters; RLS unchanged (0010 covers them); portrait already on characters.portrait_asset_id via 1.6 pipeline)*
+  - [x] 2.3.2 — Web UI *(LorePanel on the "Backstory" tab: 3 lore fields w/ Edit/Preview, XSS-safe markdown subset, debounced autosave + offline retry. NOTE: portrait upload stays on the "My character" tab from 2.1, not duplicated here)*
+  - [x] 2.3.3 — QA *(2026-07-13 PASS — both areas; lore edit/autosave/persist, XSS-safe markdown Preview (HTML/script inert), portrait access owner+DM signed URL / non-member denied (0008 Storage RLS); added lore preview-on-load; blank-name create error message)*
+- [x] 2.4 — Spells/abilities & personal journal
+  - [x] 2.4.1 — Backend *(migration 0015 journal_entries (owner-only; DM reads only shared=true); migration 0016 abilities (features/feats: name/description/optional uses) + spells (name/level 0-9/prepared/description) — both reuse 0010 predicates; advisors clean)*
+  - [x] 2.4.2 — Web UI *(3 separate player tabs: "Abilities & Feats" (AbilitiesPanel, drag-reorder) · "Spells" (SpellsPanel, grouped by level, prepared toggle) · "Journal" (JournalPanel, per-entry Share-with-DM). All autosave + offline retry)*
+  - [x] 2.4.3 — QA *(2026-07-14 PASS — both areas; abilities/spells edit/reorder/persist + RLS (DM read-only: update→[], insert→403; co-player/anon read→[]); journal privacy (headline 2.4.3): DM sees only shared=true, unshared-by-id→[], DM update→[], co-player/anon→[], un-share re-hides. Added during QA: AutoTextarea auto-grow boxes; spell within-level drag-reorder (locked to level); journal entry drag-reorder + view-only sort (Manual/Newest/Oldest/Title A–Z/Z–A, manual order persists) + per-entry timestamp)*
 
 ### Phase 3: DM workspace
 - [ ] 3.1 — Notes & session log/recaps

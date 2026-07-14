@@ -14,6 +14,47 @@ export type Database = {
   }
   public: {
     Tables: {
+      abilities: {
+        Row: {
+          character_id: string
+          created_at: string
+          description: string
+          id: string
+          name: string
+          position: number
+          updated_at: string
+          uses: number | null
+        }
+        Insert: {
+          character_id: string
+          created_at?: string
+          description?: string
+          id?: string
+          name: string
+          position?: number
+          updated_at?: string
+          uses?: number | null
+        }
+        Update: {
+          character_id?: string
+          created_at?: string
+          description?: string
+          id?: string
+          name?: string
+          position?: number
+          updated_at?: string
+          uses?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "abilities_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campaign_members: {
         Row: {
           campaign_id: string
@@ -135,6 +176,104 @@ export type Database = {
         }
         Relationships: []
       }
+      characters: {
+        Row: {
+          appearance: string
+          backstory: string
+          campaign_id: string
+          created_at: string
+          id: string
+          name: string
+          owner_id: string
+          personality: string
+          portrait_asset_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          appearance?: string
+          backstory?: string
+          campaign_id: string
+          created_at?: string
+          id?: string
+          name: string
+          owner_id: string
+          personality?: string
+          portrait_asset_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          appearance?: string
+          backstory?: string
+          campaign_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+          owner_id?: string
+          personality?: string
+          portrait_asset_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "characters_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "characters_portrait_asset_id_fkey"
+            columns: ["portrait_asset_id"]
+            isOneToOne: false
+            referencedRelation: "media_assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      inventory_items: {
+        Row: {
+          character_id: string
+          created_at: string
+          equipped: boolean
+          id: string
+          name: string
+          notes: string
+          position: number
+          qty: number
+          updated_at: string
+        }
+        Insert: {
+          character_id: string
+          created_at?: string
+          equipped?: boolean
+          id?: string
+          name: string
+          notes?: string
+          position?: number
+          qty?: number
+          updated_at?: string
+        }
+        Update: {
+          character_id?: string
+          created_at?: string
+          equipped?: boolean
+          id?: string
+          name?: string
+          notes?: string
+          position?: number
+          qty?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventory_items_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invite_codes: {
         Row: {
           campaign_id: string
@@ -175,6 +314,47 @@ export type Database = {
             columns: ["campaign_id"]
             isOneToOne: false
             referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      journal_entries: {
+        Row: {
+          body: string
+          character_id: string
+          created_at: string
+          id: string
+          position: number
+          shared: boolean
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          body?: string
+          character_id: string
+          created_at?: string
+          id?: string
+          position?: number
+          shared?: boolean
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          character_id?: string
+          created_at?: string
+          id?: string
+          position?: number
+          shared?: boolean
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "journal_entries_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
             referencedColumns: ["id"]
           },
         ]
@@ -290,6 +470,123 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      sheet_fields: {
+        Row: {
+          created_at: string
+          id: string
+          label: string
+          position: number
+          section_id: string
+          updated_at: string
+          value: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          label: string
+          position?: number
+          section_id: string
+          updated_at?: string
+          value?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          label?: string
+          position?: number
+          section_id?: string
+          updated_at?: string
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sheet_fields_section_id_fkey"
+            columns: ["section_id"]
+            isOneToOne: false
+            referencedRelation: "sheet_sections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sheet_sections: {
+        Row: {
+          character_id: string
+          created_at: string
+          id: string
+          position: number
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          character_id: string
+          created_at?: string
+          id?: string
+          position?: number
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          character_id?: string
+          created_at?: string
+          id?: string
+          position?: number
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sheet_sections_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      spells: {
+        Row: {
+          character_id: string
+          created_at: string
+          description: string
+          id: string
+          level: number
+          name: string
+          position: number
+          prepared: boolean
+          updated_at: string
+        }
+        Insert: {
+          character_id: string
+          created_at?: string
+          description?: string
+          id?: string
+          level?: number
+          name: string
+          position?: number
+          prepared?: boolean
+          updated_at?: string
+        }
+        Update: {
+          character_id?: string
+          created_at?: string
+          description?: string
+          id?: string
+          level?: number
+          name?: string
+          position?: number
+          prepared?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "spells_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       trial_redemptions: {
         Row: {

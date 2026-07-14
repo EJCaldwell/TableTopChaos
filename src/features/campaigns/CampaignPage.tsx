@@ -20,6 +20,12 @@ import { FormError } from '../../components/ui'
 import { OverviewPanel } from './OverviewPanel'
 import { PlaceholderPanel } from './PlaceholderPanel'
 import { BillingPanel } from '../billing/BillingPanel'
+import { CharacterPanel } from '../character/CharacterPanel'
+import { InventoryPanel } from '../inventory/InventoryPanel'
+import { LorePanel } from '../lore/LorePanel'
+import { JournalPanel } from '../journal/JournalPanel'
+import { AbilitiesPanel } from '../abilities/AbilitiesPanel'
+import { SpellsPanel } from '../spells/SpellsPanel'
 import { tabsForRole } from './tabs'
 import {
   getCampaign,
@@ -219,6 +225,18 @@ export function CampaignPage() {
               />
             ) : activeTabDef?.key === 'billing' ? (
               <BillingPanel campaignId={campaign.id} />
+            ) : activeTabDef?.key === 'character' && user ? (
+              <CharacterPanel campaignId={campaign.id} currentUserId={user.id} />
+            ) : activeTabDef?.key === 'inventory' && user ? (
+              <InventoryPanel campaignId={campaign.id} currentUserId={user.id} />
+            ) : activeTabDef?.key === 'lore' && user ? (
+              <LorePanel campaignId={campaign.id} currentUserId={user.id} />
+            ) : activeTabDef?.key === 'abilities' && user ? (
+              <AbilitiesPanel campaignId={campaign.id} currentUserId={user.id} />
+            ) : activeTabDef?.key === 'spells' && user ? (
+              <SpellsPanel campaignId={campaign.id} currentUserId={user.id} />
+            ) : activeTabDef?.key === 'journal' && user ? (
+              <JournalPanel campaignId={campaign.id} currentUserId={user.id} />
             ) : activeTabDef ? (
               <PlaceholderPanel tab={activeTabDef} />
             ) : null}

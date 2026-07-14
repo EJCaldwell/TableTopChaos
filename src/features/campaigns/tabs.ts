@@ -139,10 +139,16 @@ export const WORKSPACE_TABS: WorkspaceTab[] = [
     blurb: 'The gear, items, and currency your character is carrying.',
   },
   {
-    key: 'spells',
-    label: 'Spells & abilities',
+    key: 'abilities',
+    label: 'Abilities & Feats',
     audience: 'player',
-    blurb: 'Your spells, features, and other usable abilities.',
+    blurb: 'Your class/racial features and feats, with optional use tracking.',
+  },
+  {
+    key: 'spells',
+    label: 'Spells',
+    audience: 'player',
+    blurb: 'Your spells, organized by level, with a prepared toggle.',
   },
   {
     key: 'lore',

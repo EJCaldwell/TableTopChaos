@@ -26,6 +26,11 @@ Manual checklist files follow a fixed shape: **Prerequisites → Steps
 | 1.3 | Campaigns, membership & invite codes | Verified in browser (no checklist authored) |
 | 1.4 | Role-based app shell & navigation | Checklists authored — see [`1.4_tests/`](1.4_tests/) |
 | 1.5 | Monetization (per-campaign subscriptions) | Checklists authored — see [`1.5_tests/`](1.5_tests/); switch-ON areas pending an `enforce_active` flip + Stripe test clock |
+| 1.6 | Media upload pipeline & content safety | Checklists authored — see [`1.6_tests/`](1.6_tests/) |
+| 2.1 | Character record & flexible sheet | Checklists authored — see [`2.1_tests/`](2.1_tests/) |
+| 2.2 | Inventory | Checklists authored — see [`2.2_tests/`](2.2_tests/) |
+| 2.3 | Lore, backstory & portrait | Checklists authored — see [`2.3_tests/`](2.3_tests/) |
+| 2.4 | Abilities/feats, spells & journal | Checklists authored — see [`2.4_tests/`](2.4_tests/) |
 
 > Phases 1.1–1.3 were QA'd interactively before this folder existed, so they
 > have no checklist files. New phases author their `<phase>_tests/` folder as

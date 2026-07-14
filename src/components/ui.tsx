@@ -11,8 +11,9 @@ import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
   ReactNode,
+  TextareaHTMLAttributes,
 } from 'react'
-import { useId } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef } from 'react'
 
 /**
  * Button — a token-styled button with a primary/secondary variant and a
@@ -93,6 +94,59 @@ export function TextField({
         {...rest}
       />
     </div>
+  )
+}
+
+/**
+ * AutoTextarea — a textarea that grows to fit its content instead of scrolling
+ * inside a fixed height, so long descriptions don't leave a cramped scroll box
+ * (and short ones don't waste vertical space). Height is recomputed on every
+ * value change and once after mount, by resetting `height` to `auto` and then
+ * pinning it to `scrollHeight`.
+ *
+ * The user can still drag-resize taller (`resize: vertical`); a manual resize
+ * only persists until the next value change re-fits it. A `minRows` sets the
+ * collapsed floor via the native `rows` attribute.
+ *
+ * @param value - Controlled text value (drives the auto-fit recompute).
+ * @param minRows - Minimum visible rows when empty/short (default 2).
+ * Remaining props are forwarded to the native <textarea>.
+ */
+export function AutoTextarea({
+  value,
+  minRows = 2,
+  style,
+  ...rest
+}: TextareaHTMLAttributes<HTMLTextAreaElement> & { minRows?: number }) {
+  const ref = useRef<HTMLTextAreaElement>(null)
+
+  // Resize to fit: clear the height so scrollHeight reflects content (not the
+  // previous, possibly-taller box), then set it to exactly that content height.
+  // useLayoutEffect so the fit happens before paint — no visible jump.
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [value])
+
+  // A one-off refit after mount covers the case where the element's font/box
+  // metrics aren't final on the first layout pass (e.g. late-loading styles).
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [])
+
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      rows={minRows}
+      style={{ resize: 'vertical', overflow: 'hidden', ...style }}
+      {...rest}
+    />
   )
 }
 
