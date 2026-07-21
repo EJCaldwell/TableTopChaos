@@ -57,6 +57,25 @@ export async function getMyCharacter(
 }
 
 /**
+ * Lists ALL characters in a campaign (one per player who created one), for the
+ * DM's read-only Party view (Phase 3.4). Ordered by creation so the roster is
+ * stable. RLS (characters_select_owner_or_dm) returns every character to the
+ * campaign DM and only their own to a player, so this is safe to call as either
+ * — the DM gets the whole party, a player would get just themselves.
+ * @param campaignId - The campaign whose characters to load.
+ * @returns Every character row the caller may read in the campaign.
+ */
+export async function listCampaignCharacters(campaignId: string): Promise<Character[]> {
+  const { data, error } = await supabase
+    .from('characters')
+    .select('*')
+    .eq('campaign_id', campaignId)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return data ?? []
+}
+
+/**
  * Creates a new character owned by the current user in a campaign.
  *
  * Supabase call: insert into `characters` (campaign_id, owner_id, name).

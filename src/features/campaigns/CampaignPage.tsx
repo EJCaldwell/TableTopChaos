@@ -26,6 +26,13 @@ import { LorePanel } from '../lore/LorePanel'
 import { JournalPanel } from '../journal/JournalPanel'
 import { AbilitiesPanel } from '../abilities/AbilitiesPanel'
 import { SpellsPanel } from '../spells/SpellsPanel'
+import { NotesPanel } from '../dm/NotesPanel'
+import { SessionLogPanel } from '../dm/SessionLogPanel'
+import { PartyPanel } from '../party/PartyPanel'
+import { NpcsPanel } from '../dm/NpcsPanel'
+import { EncountersPanel } from '../dm/EncountersPanel'
+import { QuestsPanel } from '../dm/QuestsPanel'
+import { CombatPanel } from '../dm/CombatPanel'
 import { tabsForRole } from './tabs'
 import {
   getCampaign,
@@ -35,6 +42,11 @@ import {
   type CampaignWithRole,
   type Member,
 } from './api'
+
+/** localStorage key holding the last-selected tab for a given campaign. */
+function tabStorageKey(campaignId: string): string {
+  return `campaign:${campaignId}:activeTab`
+}
 
 export function CampaignPage() {
   const { id } = useParams<{ id: string }>()
@@ -49,8 +61,12 @@ export function CampaignPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // The key of the currently selected tab (defaults to Overview).
-  const [activeTab, setActiveTab] = useState('overview')
+  // The key of the currently selected tab. Persisted PER CAMPAIGN in
+  // localStorage so a refresh (or coming back later) lands on the same tab
+  // instead of resetting to Overview. Lazily initialized from storage.
+  const [activeTab, setActiveTab] = useState(() =>
+    id ? localStorage.getItem(tabStorageKey(id)) ?? 'overview' : 'overview',
+  )
 
   // The caller's role in THIS campaign. Prefer the membership list; fall back to
   // the roster (both are RLS-scoped to the caller anyway).
@@ -91,17 +107,29 @@ export function CampaignPage() {
     void refresh()
   }, [refresh])
 
-  // Reset to Overview whenever the campaign changes, so switching campaigns
-  // never lands on a tab that was scrolled/selected in the previous one.
+  // When the campaign changes, restore THAT campaign's last-selected tab (or
+  // Overview if it has none saved), so each campaign remembers its own tab.
   useEffect(() => {
-    setActiveTab('overview')
+    if (!id) return
+    setActiveTab(localStorage.getItem(tabStorageKey(id)) ?? 'overview')
   }, [id])
 
-  // If the caller's role changes such that the active tab is no longer visible
-  // (e.g. a player-only tab while viewing as DM), fall back to Overview.
+  // Persist the active tab for this campaign whenever it changes — but NOT while
+  // the campaign is still loading. During load `myRole` isn't known yet, so a
+  // restored DM tab would look "invalid" to the guard below; persisting then
+  // would clobber the saved value with 'overview'. Waiting for load avoids that.
   useEffect(() => {
+    if (id && !loading) localStorage.setItem(tabStorageKey(id), activeTab)
+  }, [id, activeTab, loading])
+
+  // If the caller's role changes such that the active tab is no longer visible
+  // (e.g. a player-only tab while viewing as DM), fall back to Overview. Gated on
+  // `!loading` so it doesn't fire before the role is known and bounce a valid
+  // (e.g. DM-only) restored tab back to Overview on every refresh.
+  useEffect(() => {
+    if (loading) return
     if (!visibleTabs.some((t) => t.key === activeTab)) setActiveTab('overview')
-  }, [visibleTabs, activeTab])
+  }, [visibleTabs, activeTab, loading])
 
   /** Campaign switcher: navigate to the chosen campaign's workspace. */
   function handleSwitch(nextId: string) {
@@ -237,6 +265,20 @@ export function CampaignPage() {
               <SpellsPanel campaignId={campaign.id} currentUserId={user.id} />
             ) : activeTabDef?.key === 'journal' && user ? (
               <JournalPanel campaignId={campaign.id} currentUserId={user.id} />
+            ) : activeTabDef?.key === 'secretnotes' && isDm ? (
+              <NotesPanel campaignId={campaign.id} />
+            ) : activeTabDef?.key === 'sessionlog' && isDm ? (
+              <SessionLogPanel campaignId={campaign.id} />
+            ) : activeTabDef?.key === 'party' && isDm ? (
+              <PartyPanel campaignId={campaign.id} />
+            ) : activeTabDef?.key === 'npcs' && isDm ? (
+              <NpcsPanel campaignId={campaign.id} />
+            ) : activeTabDef?.key === 'encounters' && isDm ? (
+              <EncountersPanel campaignId={campaign.id} />
+            ) : activeTabDef?.key === 'quests' && isDm ? (
+              <QuestsPanel campaignId={campaign.id} />
+            ) : activeTabDef?.key === 'combat' && isDm ? (
+              <CombatPanel campaignId={campaign.id} />
             ) : activeTabDef ? (
               <PlaceholderPanel tab={activeTabDef} />
             ) : null}

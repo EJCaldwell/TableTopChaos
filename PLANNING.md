@@ -110,26 +110,26 @@ These framed the whole plan and should not be quietly reversed:
   - [x] 2.4.3 — QA *(2026-07-14 PASS — both areas; abilities/spells edit/reorder/persist + RLS (DM read-only: update→[], insert→403; co-player/anon read→[]); journal privacy (headline 2.4.3): DM sees only shared=true, unshared-by-id→[], DM update→[], co-player/anon→[], un-share re-hides. Added during QA: AutoTextarea auto-grow boxes; spell within-level drag-reorder (locked to level); journal entry drag-reorder + view-only sort (Manual/Newest/Oldest/Title A–Z/Z–A, manual order persists) + per-entry timestamp)*
 
 ### Phase 3: DM workspace
-- [ ] 3.1 — Notes & session log/recaps
-  - [ ] 3.1.1 — Backend
-  - [ ] 3.1.2 — Web UI
-  - [ ] 3.1.3 — QA
-- [ ] 3.2 — Encounters (with images)
-  - [ ] 3.2.1 — Backend
-  - [ ] 3.2.2 — Web UI
-  - [ ] 3.2.3 — QA
-- [ ] 3.3 — NPC roster & quest/plot tracker
-  - [ ] 3.3.1 — Backend
-  - [ ] 3.3.2 — Web UI
-  - [ ] 3.3.3 — QA
-- [ ] 3.4 — Party view (read player sheets)
-  - [ ] 3.4.1 — Backend
-  - [ ] 3.4.2 — Web UI
-  - [ ] 3.4.3 — QA
-- [ ] 3.5 — DM private helpers (initiative list + dice roller)
-  - [ ] 3.5.1 — Backend
-  - [ ] 3.5.2 — Web UI
-  - [ ] 3.5.3 — QA
+- [x] 3.1 — Notes & session log/recaps
+  - [x] 3.1.1 — Backend *(migration 0017: dm_notes (title/body/tags/position) + sessions (title/date/recap/attendees/position); RLS DM-only for every op via private.is_campaign_dm; NPC/quest/encounter links deferred to 3.2/3.3, tags cover organize/filter for now)*
+  - [x] 3.1.2 — Web UI *(Secret notes tab: NotesPanel w/ tags + tag-filter bar; Session log tab: SessionLogPanel w/ date + attendees + recap. Shared dm/autosave hook (debounce + offline retry + drag-reorder) extracted from the character panels; both DM-only tabs gated in CampaignPage; build clean)*
+  - [x] 3.1.3 — QA *(2026-07-15 PASS — all 3 areas; notes editing (tags comma/space typing + filter bar + drag-reorder) and session-log editing (date-clears-to-null + attendees typing + reorder) verified in-browser; headline access-control: DM full CRUD, player (member) reads []/[] + insert→403 + update→[], non-member + anon read nothing; tabs absent from player UI. Policy layer confirmed via pg_policies (8 DM-only policies on is_campaign_dm); advisors clean for 0017)*
+- [x] 3.2 — Encounters (with images)
+  - [x] 3.2.1 — Backend *(migration 0020 (re-spec): encounters (name/description/hidden_notes) + encounter_images (asset→media_assets) + encounter_npcs link; npcs roster (name/description/optional portrait) + npc_stat_sections/npc_stat_fields (configurable stat block like the player sheet). DM-only RLS every op via is_campaign_dm + new is_encounter_dm / is_npc_dm / is_npc_section_dm helpers; advisors clean. NOTE: also delivers the 3.3 shared NPC roster)*
+  - [x] 3.2.2 — Web UI *(NpcsPanel on "NPCs" tab: roster master/detail + portrait + description + configurable stat block (add sections/fields, drag-reorder, autosave). EncountersPanel on "Encounters" tab: master/detail + description + DM-only "Hidden nearby" box + multi-image upload/caption/reorder + full-screen Present view + link roster NPCs (with read-only inline stat block). New reusable useDragReorder hook in dm/autosave; build clean)*
+  - [x] 3.2.3 — QA *(2026-07-15 PASS — all 4 areas; NPC roster + configurable stat blocks (+ Duplicate NPC, ghost-text titles, grow/scroll value boxes), encounters (description/hidden notes/images/linked NPCs), presentation view full-screen; headline access-control: DM full CRUD, player/member reads []/insert 403, non-member+anon [] across all 6 tables; both tabs absent from player UI. Also added per-campaign active-tab persistence across refresh)*
+- [x] 3.3 — NPC roster & quest/plot tracker
+  - [x] 3.3.1 — Backend *(NPC roster `npcs` (+ stat blocks) shipped with 3.2's migration 0020; migration 0021 adds `quests` (title/status active|completed/description/plot_notes/position); RLS DM-only every op via is_campaign_dm; advisors clean. NOTE: plan's npcs.status field folded into the stat-block model — not added as a column)*
+  - [x] 3.3.2 — Web UI *(NPCs roster tab shipped in 3.2 (NpcsPanel). QuestsPanel on the "Quests" tab: board grouped by status (Active/Completed), per-quest title + status select (moves group) + description + DM-only plot notes, drag-reorder within a group, autosave. Reuses dm/autosave + useDragReorder; build clean)*
+  - [x] 3.3.3 — QA *(2026-07-15 PASS — quests editing (status grouping Active/Completed, reorder, autosave, persist) + access-control (DM full CRUD; player/member []/403; non-member+anon []); NPC invisibility covered by 3.2.3. NPCs + quests invisible to players confirmed)*
+- [x] 3.4 — Party view (read player sheets)
+  - [x] 3.4.1 — Backend *(no migration — confirmed via pg_policies that the DM read scope already spans characters (owner OR is_campaign_dm), sheet sections/fields, inventory, abilities, spells (can_read_character/can_read_section), and lore/portrait; journal excluded — journal_entries select is owner OR (shared AND is_character_dm), so the DM sees only shared entries)*
+  - [x] 3.4.2 — Web UI *(read-only PartyPanel on the DM "Party" tab: roster of every player character (name + owner), select one for a read-only sheet — portrait, lore (safe markdown), flexible sections/fields, inventory, abilities, spells grouped by level. No journal surfaced; new listCampaignCharacters + party/api.ts bundle; build clean)*
+  - [x] 3.4.3 — QA *(2026-07-15 PASS — both areas; DM Party tab lists all player characters and opens each read-only (portrait, lore, collapsible sheet sections, inventory, abilities, spells), nothing editable; headline journal-exclusion: no Journal on the view, and DM journal_entries read returns only shared entries ([] here, both journals private) while inventory/abilities/spells read fine)*
+- [x] 3.5 — DM private helpers (initiative list + dice roller)
+  - [x] 3.5.1 — Backend *(migration 0022: initiative_entries (name/initiative/notes/position); RLS DM-only every op via is_campaign_dm; advisors clean. Dice roller is client-side — no table (optional dm_dice_log intentionally omitted). Migration 0023 added hp/max_hp/npc_id (FK npcs ON DELETE SET NULL) for the per-combatant HP tracker + inline NPC stat-block link)*
+  - [x] 3.5.2 — Web UI *(CombatPanel on the DM "Combat" tab: initiative tracker (add blank / seed from party / add roster NPC, edit name/initiative/notes, sort by initiative + drag-reorder ties, step-through current-turn + round counter (client-only), clear) and a client-side dice roller (standard notation e.g. 2d6+3 + quick d20/d12/… buttons, in-session history). Reuses dm/autosave + useDragReorder. Per-combatant HP tracker shown as current/max (saves immediately); adding an NPC links it + auto-seeds HP from an HP-labelled stat field; ▸ Stats expands a read-only inline panel with the NPC's description + full stat block so attacks/abilities are visible without leaving Combat; build clean)*
+  - [x] 3.5.3 — QA *(2026-07-21 PASS — both areas. Combat tools: add/seed/edit/sort/reorder/step/persist + dice parsing/validation/history; HP tracker current/max persists, NPC add auto-seeds HP + ▸ Stats inline view (description + stat block). Access control: Combat tab absent for players; DM full CRUD; player insert 403; anon select [] after real signOut; pg_policy audit confirms all four policies authenticated-only + is_campaign_dm, no anon policy)*
 
 ### Phase 4: In-app sharing & data export/import
 - [ ] 4.1 — Shared items model & visibility

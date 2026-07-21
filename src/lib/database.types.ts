@@ -230,6 +230,229 @@ export type Database = {
           },
         ]
       }
+      dm_notes: {
+        Row: {
+          body: string
+          campaign_id: string
+          created_at: string
+          id: string
+          position: number
+          tags: string[]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          body?: string
+          campaign_id: string
+          created_at?: string
+          id?: string
+          position?: number
+          tags?: string[]
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          campaign_id?: string
+          created_at?: string
+          id?: string
+          position?: number
+          tags?: string[]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dm_notes_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      encounter_images: {
+        Row: {
+          asset_id: string
+          caption: string
+          created_at: string
+          encounter_id: string
+          id: string
+          position: number
+          updated_at: string
+        }
+        Insert: {
+          asset_id: string
+          caption?: string
+          created_at?: string
+          encounter_id: string
+          id?: string
+          position?: number
+          updated_at?: string
+        }
+        Update: {
+          asset_id?: string
+          caption?: string
+          created_at?: string
+          encounter_id?: string
+          id?: string
+          position?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "encounter_images_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "media_assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "encounter_images_encounter_id_fkey"
+            columns: ["encounter_id"]
+            isOneToOne: false
+            referencedRelation: "encounters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      encounter_npcs: {
+        Row: {
+          created_at: string
+          encounter_id: string
+          id: string
+          npc_id: string
+          position: number
+        }
+        Insert: {
+          created_at?: string
+          encounter_id: string
+          id?: string
+          npc_id: string
+          position?: number
+        }
+        Update: {
+          created_at?: string
+          encounter_id?: string
+          id?: string
+          npc_id?: string
+          position?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "encounter_npcs_encounter_id_fkey"
+            columns: ["encounter_id"]
+            isOneToOne: false
+            referencedRelation: "encounters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "encounter_npcs_npc_id_fkey"
+            columns: ["npc_id"]
+            isOneToOne: false
+            referencedRelation: "npcs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      encounters: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          description: string
+          hidden_notes: string
+          id: string
+          name: string
+          position: number
+          updated_at: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          description?: string
+          hidden_notes?: string
+          id?: string
+          name?: string
+          position?: number
+          updated_at?: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          description?: string
+          hidden_notes?: string
+          id?: string
+          name?: string
+          position?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "encounters_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      initiative_entries: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          hp: number | null
+          id: string
+          initiative: number | null
+          max_hp: number | null
+          name: string
+          notes: string
+          npc_id: string | null
+          position: number
+          updated_at: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          hp?: number | null
+          id?: string
+          initiative?: number | null
+          max_hp?: number | null
+          name?: string
+          notes?: string
+          npc_id?: string | null
+          position?: number
+          updated_at?: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          hp?: number | null
+          id?: string
+          initiative?: number | null
+          max_hp?: number | null
+          name?: string
+          notes?: string
+          npc_id?: string | null
+          position?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "initiative_entries_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "initiative_entries_npc_id_fkey"
+            columns: ["npc_id"]
+            isOneToOne: false
+            referencedRelation: "npcs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       inventory_items: {
         Row: {
           character_id: string
@@ -447,6 +670,127 @@ export type Database = {
           },
         ]
       }
+      npc_stat_fields: {
+        Row: {
+          created_at: string
+          id: string
+          label: string
+          position: number
+          section_id: string
+          updated_at: string
+          value: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          label?: string
+          position?: number
+          section_id: string
+          updated_at?: string
+          value?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          label?: string
+          position?: number
+          section_id?: string
+          updated_at?: string
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "npc_stat_fields_section_id_fkey"
+            columns: ["section_id"]
+            isOneToOne: false
+            referencedRelation: "npc_stat_sections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      npc_stat_sections: {
+        Row: {
+          created_at: string
+          id: string
+          npc_id: string
+          position: number
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          npc_id: string
+          position?: number
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          npc_id?: string
+          position?: number
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "npc_stat_sections_npc_id_fkey"
+            columns: ["npc_id"]
+            isOneToOne: false
+            referencedRelation: "npcs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      npcs: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          description: string
+          id: string
+          name: string
+          portrait_asset_id: string | null
+          position: number
+          updated_at: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          description?: string
+          id?: string
+          name?: string
+          portrait_asset_id?: string | null
+          position?: number
+          updated_at?: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          description?: string
+          id?: string
+          name?: string
+          portrait_asset_id?: string | null
+          position?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "npcs_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "npcs_portrait_asset_id_fkey"
+            columns: ["portrait_asset_id"]
+            isOneToOne: false
+            referencedRelation: "media_assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -470,6 +814,94 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      quests: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          description: string
+          id: string
+          plot_notes: string
+          position: number
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          description?: string
+          id?: string
+          plot_notes?: string
+          position?: number
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          description?: string
+          id?: string
+          plot_notes?: string
+          position?: number
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quests_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sessions: {
+        Row: {
+          attendees: string[]
+          campaign_id: string
+          created_at: string
+          id: string
+          position: number
+          recap: string
+          session_date: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          attendees?: string[]
+          campaign_id: string
+          created_at?: string
+          id?: string
+          position?: number
+          recap?: string
+          session_date?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          attendees?: string[]
+          campaign_id?: string
+          created_at?: string
+          id?: string
+          position?: number
+          recap?: string
+          session_date?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sessions_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       sheet_fields: {
         Row: {

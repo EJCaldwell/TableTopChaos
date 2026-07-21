@@ -31,6 +31,7 @@ Manual checklist files follow a fixed shape: **Prerequisites → Steps
 | 2.2 | Inventory | Checklists authored — see [`2.2_tests/`](2.2_tests/) |
 | 2.3 | Lore, backstory & portrait | Checklists authored — see [`2.3_tests/`](2.3_tests/) |
 | 2.4 | Abilities/feats, spells & journal | Checklists authored — see [`2.4_tests/`](2.4_tests/) |
+| 3.1 | DM notes & session log/recaps | Checklists authored — see [`3.1_tests/`](3.1_tests/); pending execution |
 
 > Phases 1.1–1.3 were QA'd interactively before this folder existed, so they
 > have no checklist files. New phases author their `<phase>_tests/` folder as

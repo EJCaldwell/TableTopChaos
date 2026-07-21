@@ -13,7 +13,7 @@ import type {
   ReactNode,
   TextareaHTMLAttributes,
 } from 'react'
-import { useEffect, useId, useLayoutEffect, useRef } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef } from 'react'
 
 /**
  * Button — a token-styled button with a primary/secondary variant and a
@@ -99,52 +99,72 @@ export function TextField({
 
 /**
  * AutoTextarea — a textarea that grows to fit its content instead of scrolling
- * inside a fixed height, so long descriptions don't leave a cramped scroll box
- * (and short ones don't waste vertical space). Height is recomputed on every
- * value change and once after mount, by resetting `height` to `auto` and then
- * pinning it to `scrollHeight`.
+ * inside a fixed height, so long text doesn't leave a cramped scroll box (and
+ * short text doesn't waste vertical space). Height is recomputed on every value
+ * change and once after mount.
  *
- * The user can still drag-resize taller (`resize: vertical`); a manual resize
- * only persists until the next value change re-fits it. A `minRows` sets the
- * collapsed floor via the native `rows` attribute.
+ * Bounds:
+ *  - `minRows` sets the collapsed FLOOR (via the native `rows` attribute) — the
+ *    box never shrinks below this even when empty.
+ *  - `maxRows` (optional) sets a CEILING: once the content is taller than
+ *    `maxRows` lines the box stops growing and SCROLLS instead. Without it the
+ *    box grows unbounded to fit everything.
+ *
+ * The user can still drag-resize (`resize: vertical`); a manual resize persists
+ * until the next value change re-fits it.
  *
  * @param value - Controlled text value (drives the auto-fit recompute).
  * @param minRows - Minimum visible rows when empty/short (default 2).
+ * @param maxRows - Optional cap; content beyond it scrolls instead of growing.
  * Remaining props are forwarded to the native <textarea>.
  */
 export function AutoTextarea({
   value,
   minRows = 2,
+  maxRows,
   style,
   ...rest
-}: TextareaHTMLAttributes<HTMLTextAreaElement> & { minRows?: number }) {
+}: TextareaHTMLAttributes<HTMLTextAreaElement> & { minRows?: number; maxRows?: number }) {
   const ref = useRef<HTMLTextAreaElement>(null)
 
-  // Resize to fit: clear the height so scrollHeight reflects content (not the
-  // previous, possibly-taller box), then set it to exactly that content height.
+  // Fit the box to its content, clamped to `maxRows`. Reset height to 'auto'
+  // first so scrollHeight reflects the content (not the previous box height),
+  // then pin to min(content, cap). When content exceeds the cap, switch overflow
+  // to 'auto' so the overflow scrolls; otherwise hide it (no phantom scrollbar).
+  const fit = useCallback(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    const cs = getComputedStyle(el)
+    const line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2
+    const chrome =
+      parseFloat(cs.paddingTop) +
+      parseFloat(cs.paddingBottom) +
+      parseFloat(cs.borderTopWidth) +
+      parseFloat(cs.borderBottomWidth)
+    const content = el.scrollHeight
+    const cap = maxRows ? line * maxRows + chrome : Infinity
+    const target = Math.min(content, cap)
+    el.style.height = `${target}px`
+    el.style.overflowY = content > target ? 'auto' : 'hidden'
+  }, [maxRows])
+
   // useLayoutEffect so the fit happens before paint — no visible jump.
   useLayoutEffect(() => {
-    const el = ref.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${el.scrollHeight}px`
-  }, [value])
+    fit()
+  }, [value, fit])
 
-  // A one-off refit after mount covers the case where the element's font/box
-  // metrics aren't final on the first layout pass (e.g. late-loading styles).
+  // A one-off refit after mount covers late-final font/box metrics.
   useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${el.scrollHeight}px`
-  }, [])
+    fit()
+  }, [fit])
 
   return (
     <textarea
       ref={ref}
       value={value}
       rows={minRows}
-      style={{ resize: 'vertical', overflow: 'hidden', ...style }}
+      style={{ resize: 'vertical', ...style }}
       {...rest}
     />
   )
