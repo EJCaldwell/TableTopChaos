@@ -45,8 +45,6 @@ with 3+ fields, so there's room to reorder.
 - [x] **No cross-section field moves.** While dragging a field, hover a *different*
       section's fields → no indicator appears there (fields reorder only within
       their own section). Dropping there is a no-op.
-- [x] **Indicator clears.** After any drop (or pressing Esc / dropping outside),
-      the insertion line disappears.
 
 ## 3 — Offline save retried on reconnect
 

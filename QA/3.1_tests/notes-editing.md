@@ -10,13 +10,8 @@ DM (`ejcaldwell06@gmail.com`), open campaign **"Test 1"**, **Secret notes** tab.
 
 ## Steps — editing
 
-- [x] Open **Secret notes** → the privacy note ("Private to you as the DM…") and
-      **+ New note** are shown; empty state reads "No notes yet."
-- [x] Click **+ New note** → a card appears with an empty title, body, and a
-      "Tags (comma separated)" input. Indicator shows **Saving… → All changes
-      saved**.
-- [x] Give the note a title and body → indicator debounces to **All changes
-      saved**.
+- [x] Click **+ New note**, give the note a title and body → indicator debounces
+      to **All changes saved**.
 - [x] Add a **second** note with a different title/body.
 - [x] Delete a pristine (blank) note → no prompt; delete one with content →
       confirm prompt ("Delete this note?").
@@ -41,7 +36,6 @@ DM (`ejcaldwell06@gmail.com`), open campaign **"Test 1"**, **Secret notes** tab.
       an **All** chip plus one chip per distinct tag (sorted).
 - [x] Click a tag chip → only notes carrying that tag are listed; the chip is
       highlighted.
-- [x] Click **All** → every note is listed again.
 - [x] Remove the last note carrying the active filter's tag (delete or retag it)
       → the filter automatically falls back to **All** (no "nothing matches a
       tag that's gone" dead end).

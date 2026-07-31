@@ -10,11 +10,8 @@ character owner (`ejcaldwell000@gmail.com`), open campaign "Test 1", select the
 
 ## Steps — edit & autosave
 
-- [x] The panel shows three fields: **Backstory**, **Appearance**, **Personality**,
-      each with an **Edit/Preview** toggle, plus a formatting hint line.
 - [x] Type text into **Backstory** (include a blank line to make two paragraphs).
       The indicator shows **"Saving…"** → **"All changes saved"** (debounced).
-- [x] Fill in **Appearance** and **Personality** too.
 - [x] **Refresh** → all three fields persist exactly.
 
 ## Steps — safe markdown Preview
@@ -22,7 +19,6 @@ character owner (`ejcaldwell000@gmail.com`), open campaign "Test 1", select the
 - [x] In Backstory type: `This is **bold**, this is *italic*, and this is ` +
       `` `code` ``. Click **Preview** → bold/italic/code render accordingly;
       paragraphs separate on blank lines.
-- [x] Toggle back to **Edit** → the raw markdown text is intact and editable.
 
 ## Steps — XSS safety (important)
 

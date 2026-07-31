@@ -11,13 +11,8 @@ DM (`ejcaldwell06@gmail.com`), open campaign **"Test 1"**, **Session log** tab.
 
 ## Steps — editing
 
-- [x] Open **Session log** → the privacy note ("Private to you as the DM…") and
-      **+ New session** are shown; empty state reads "No sessions logged yet."
-- [x] Click **+ New session** → a card appears with an empty title, a **Date
-      played** picker, an **Attendees** input, and a recap box. Indicator shows
-      **Saving… → All changes saved**.
-- [x] Set a title, pick a **date**, and write a **recap** → indicator debounces
-      to **All changes saved**.
+- [x] Click **+ New session**, set a title, pick a **date**, and write a **recap**
+      → indicator debounces to **All changes saved**.
 - [x] Clear the date (empty the picker) and refresh → the date reads as unset
       (stored as `null`, not an empty string):
       ```js

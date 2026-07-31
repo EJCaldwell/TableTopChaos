@@ -10,11 +10,6 @@ least one NPC in the roster (see [npcs-editing.md](npcs-editing.md)) to test lin
 
 ## Steps — encounter fields
 
-- [x] Open **Encounters** → privacy note + **+ New encounter**; empty state reads
-      "No encounters yet."
-- [x] **+ New encounter** → a row appears, auto-selected; detail shows Name,
-      Description, a **🔒 Hidden nearby (DM only)** box (accent-dashed), Images,
-      and NPCs.
 - [x] Set **name**, **description**, and **hidden notes** → each debounces to
       **All changes saved**.
 - [x] Add a **second** encounter; switch between them; **drag** to reorder.

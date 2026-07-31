@@ -8,10 +8,6 @@ DM (`ejcaldwell06@gmail.com`), open campaign **"Test 1"**, **NPCs** tab.
 
 ## Steps — roster
 
-- [x] Open **NPCs** → privacy note + **+ New NPC**; empty state reads "No NPCs yet."
-- [x] **+ New NPC** → a roster row appears and is auto-selected; the detail pane
-      shows Portrait, Name, Description, and a Stat block. Indicator shows
-      **Saving… → All changes saved**.
 - [x] Set a **name** (e.g. `Goblin Boss`) and **description** → debounces to
       **All changes saved**; the roster row shows the name.
 - [x] Upload a **portrait** → it appears in the detail header and persists.
@@ -23,7 +19,6 @@ DM (`ejcaldwell06@gmail.com`), open campaign **"Test 1"**, **NPCs** tab.
 
 ## Steps — configurable stat block
 
-- [x] **+ Add section** → a section with an editable title and **+ Add field**.
 - [x] Set the section title (e.g. `Combat`); **+ Add field** → a label/value row.
 - [x] Fill fields (e.g. `HP` / `21`, `AC` / `17`, `Speed` / `30 ft`) → debounces
       to **All changes saved**.

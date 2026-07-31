@@ -15,9 +15,6 @@ account (B) is only needed to set up Campaign Two.
 - [X] Open **Campaign One**. Badge = "You are the DM"; DM tab set shows; a
       **"Switch to"** dropdown appears in the header (present because A has >1
       campaign).
-- [X] The dropdown lists both campaigns with role suffixes, e.g.
-      "Campaign One (DM)" and "Campaign Two (Player)"; the current one is
-      selected.
 - [X] Select **Campaign Two** from the dropdown → URL changes to that campaign,
       badge flips to **"You are a player"**, and the tab set changes to the
       **player** tabs. No page reload/flash of the wrong tabs.

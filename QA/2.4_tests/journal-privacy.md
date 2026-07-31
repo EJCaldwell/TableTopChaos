@@ -11,8 +11,6 @@ tab. Have the owner's `<char_id>` handy.
 
 ## Steps — editing (owner)
 
-- [x] Journal shows the privacy note ("The DM can't see an entry unless you turn
-      on Share with DM") and **+ New entry**.
 - [x] Add an entry; give it a title and body. Indicator debounces to **All
       changes saved**.
 - [x] Add a **second** entry. Leave one entry **unshared** and toggle

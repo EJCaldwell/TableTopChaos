@@ -8,12 +8,6 @@ DM (`ejcaldwell06@gmail.com`), open **"Test 1"**, **Quests** tab.
 
 ## Steps — editing
 
-- [x] Open **Quests** → privacy note + **+ New quest**; empty state reads "No
-      quests yet." Two group headers appear once quests exist: **Active** and
-      **Completed** (each with a count).
-- [x] **+ New quest** → a card appears under **Active** with title, a status
-      select, Description, and a **🔒 Plot notes (DM only)** box (accent-dashed).
-      Indicator shows **Saving… → All changes saved**.
 - [x] Set a **title**, **description**, and **plot notes** → each debounces to
       **All changes saved**.
 - [x] Add a **second** and **third** quest.

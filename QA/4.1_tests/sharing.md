@@ -8,8 +8,6 @@ them; un-sharing removes them; players can't read DM content that was never shar
 
 ## Steps — DM shares (Handouts tab)
 
-- [ ] DM → **Handouts** tab: a **Share a note** composer, a **Share an image**
-      uploader, and a **Currently shared** list.
 - [ ] Share a **note** (title + body with **bold**/*italic*/`code`) → appears in
       Currently shared; indicator Saving→saved.
 - [ ] Share an **image** (upload) → appears with a thumbnail.

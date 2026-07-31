@@ -15,8 +15,6 @@ throwaway campaign owned by **Account A**. Stripe test card `4242 4242 4242 4242
 
 ## Steps
 
-- [x] As **Account A (owner/DM)**, open the campaign → **Plan & billing** tab. The
-      status card reads **"No active plan."**
 - [x] The interval selector shows three options — **monthly $9.99**, **semi-annual
       $49.99**, **annual $79.99** — with the longer terms showing a savings note,
       and **annual** pre-selected. *(Picked monthly for this run.)*

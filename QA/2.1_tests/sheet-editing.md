@@ -10,7 +10,6 @@ character"** tab.
 
 ## Steps — creation
 
-- [x] With no character yet, the panel shows the **"Create your character"** form.
 - [x] Submit an empty name → nothing happens (create is a no-op on blank).
 - [x] Enter a name (e.g. `Thorin`) → **Create character**. The form is replaced by
       the editable sheet; the name field shows `Thorin`; the sheet is empty and
@@ -71,8 +70,7 @@ character"** tab.
 ## Steps — portrait
 
 - [x] In the header, use **Portrait** to upload a test image (drag or browse).
-- [x] After processing, the portrait thumbnail renders in the header and the label
-      becomes **"Change portrait"**.
+- [x] After processing, the portrait thumbnail renders in the header.
 - [x] **Refresh** → the portrait still renders (resolved via a fresh signed URL
       from the stored `portrait_asset_id`).
 

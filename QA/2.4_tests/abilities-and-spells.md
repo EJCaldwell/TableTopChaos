@@ -9,10 +9,7 @@ character owner (`ejcaldwell000@gmail.com`), open campaign "Test 1".
 
 ## Steps — Abilities & Feats tab
 
-- [x] Open **Abilities & Feats** → empty state + **+ Add ability / feat**.
-- [x] Click add → a row with an empty **name (ghost placeholder)**, empty uses,
-      and an expand chevron appears.
-- [x] Set a name (e.g. `Second Wind`), set **uses** to `1`, expand and type a
+- [x] Click **+ Add ability / feat**, then set a name (e.g. `Second Wind`), set **uses** to `1`, expand and type a
       description. Indicator shows **Saving… → All changes saved** (debounced).
 - [x] Leave **uses** blank on a second ability → that's valid ("at-will").
 - [x] **Drag** an ability by its `⠿` handle to reorder, incl. to the bottom.
@@ -22,9 +19,6 @@ character owner (`ejcaldwell000@gmail.com`), open campaign "Test 1".
 
 ## Steps — Spells tab
 
-- [x] Open **Spells** → empty state + **+ Add spell** and an "at level" picker.
-- [x] **+ Add spell** → a spell appears under **Cantrip** with a ghost-placeholder
-      name, a **Prep** checkbox, and a level selector.
 - [x] Add a spell "at level" **1** using the picker → it appears under a **Level 1**
       group header.
 - [x] Name a couple of spells; tick **Prep** on one; expand and add a description.

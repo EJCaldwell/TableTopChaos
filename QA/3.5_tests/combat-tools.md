@@ -8,8 +8,6 @@ DM (`ejcaldwell06@gmail.com`), open **"Test 1"**, **Combat** tab.
 
 ## Steps — initiative: add & seed
 
-- [ ] Open **Combat** → an **Initiative** section (privacy note + add controls)
-      and a **Dice roller** section below it.
 - [ ] **+ Add combatant** → a blank row (initiative `—`, name, notes) appears;
       indicator shows **Saving… → All changes saved**.
 - [ ] **+ Add party** → one row per player character, pre-named.
@@ -38,8 +36,6 @@ DM (`ejcaldwell06@gmail.com`), open **"Test 1"**, **Combat** tab.
 - [ ] Try `1d8+1d4+2` → both dice groups appear in the breakdown and sum right.
 - [ ] Enter nonsense (e.g. `hello`, `2x6`) → a friendly **error**, no roll.
 - [ ] Enter something huge (e.g. `999d999`) → an out-of-range **error** (no hang).
-- [ ] Multiple rolls accumulate a **history** (newest first); it's not persisted
-      across refresh (client-only).
 
 ## Pass criteria
 

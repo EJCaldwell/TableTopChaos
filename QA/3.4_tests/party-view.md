@@ -18,7 +18,6 @@ DM (`ejcaldwell06@gmail.com`), open campaign **"Test 1"**, **Party** tab.
 
 For a character with data (owner `ejcaldwell000`):
 
-- [x] **Portrait** displays (if the player uploaded one).
 - [x] **Lore** — Backstory / Appearance / Personality render with their safe
       markdown (bold/italic/code); empty lore fields are omitted.
 - [x] **Character sheet** — the player's flexible sections and their label/value

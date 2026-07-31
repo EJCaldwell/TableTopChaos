@@ -37,7 +37,6 @@ NPCs, encounters w/ images, quests, sessions, shared items). Dev server :5173.
 
 - [ ] Player → **Journal** → **Download my journal** → a `.json` and a `.md`
       download; contents are only that player's own entries.
-- [ ] DM uses the same button for their own character's journal (their own only).
 
 ## Pass criteria
 

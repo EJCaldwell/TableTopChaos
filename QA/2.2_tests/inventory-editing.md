@@ -20,19 +20,15 @@ character owner (`ejcaldwell000@gmail.com`), open campaign "Test 1", select the
       line ("Nothing carried yet…") plus **+ Add item**.
 - [x] Click **+ Add item** → a row appears with an **empty name showing the
       "Item name" ghost placeholder** (no literal text to delete), qty **1**, empty
-      notes, equipped unchecked. Column headers (Equip / Item / Qty / Notes) appear.
+      notes, equipped unchecked.
 - [x] Edit the **name** (e.g. `Longsword`); set **qty** (e.g. 2); type **notes**
       (e.g. "+1, from the vault"); tick **equipped**.
 - [x] The save indicator shows **"Saving…"** then **"All changes saved"** shortly
       after you stop (debounced — not on every keystroke).
-- [x] Add a few more items.
 - [x] **Refresh** → all items, names, quantities, notes, and equipped states persist.
 
 ## Steps — expandable notes
 
-- [x] The notes cell is a single-line **preview** that ends in an oversized,
-      spaced ellipsis (`. . .`) when the text is longer than the line (custom dots,
-      shown only on real overflow); empty shows a muted "Notes".
 - [x] Clicking the notes preview (or the **expand chevron** `▸` next to delete ✕)
       opens a full multi-line **textarea** ("Full description / notes") below the
       row; the chevron turns to `▾`.

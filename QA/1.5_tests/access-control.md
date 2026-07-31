@@ -13,8 +13,6 @@ to call the Edge Functions directly (browser devtools console on the running app
 
 ## Steps
 
-- [X] **UI gating.** Signed in as **Account B (player)**, open the campaign → there
-      is **no** "Plan & billing" tab in the tab bar (it's DM-audience only).
 - [X] **Checkout function, non-owner.** As **Account B**, call
       `create-checkout-session` directly with the campaign id and a valid interval,
       using B's bearer token. Expect **HTTP 403** with an "only the campaign owner

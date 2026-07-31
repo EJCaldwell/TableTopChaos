@@ -19,15 +19,11 @@ Shared tabs (everyone): **Overview, Dice, Party loot, Scheduling**.
 
 ## Steps
 
-- [X] As **Account A (DM)**, open the campaign. Badge reads **"You are the DM"**
-      (accent-colored).
-- [X] Confirm all 8 DM tabs above are present and **none** of the player-only
-      tabs (My character, Inventory, …) appear.
-- [X] Click each non-Overview DM tab → a "Coming soon" placeholder with the
-      tab's title + blurb renders; Overview shows roster + invite codes.
-- [X] As **Account B (player)**, open the same campaign. Badge reads **"You are
-      a player"** (muted).
-- [X] Confirm the 7 player-only tabs are present and **no** DM-only tab appears.
+- [X] As **Account A (DM)**, open the campaign. Confirm all 8 DM tabs above are
+      present and **none** of the player-only tabs (My character, Inventory, …)
+      appear.
+- [X] As **Account B (player)**, open the same campaign. Confirm the 7
+      player-only tabs are present and **no** DM-only tab appears.
       In particular **Secret notes** and **Party** are absent.
 - [X] Click Overview as the player → roster is visible, but **no** invite-code
       section and **no** danger zone.
