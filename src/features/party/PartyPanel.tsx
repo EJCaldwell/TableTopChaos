@@ -19,6 +19,8 @@ import { SPELL_LEVELS, levelLabel } from '../spells/api'
 import { listCampaignCharacters, type Character } from '../character/api'
 import { listMembers, type Member } from '../campaigns/api'
 import { loadPartySheet, type PartySheet } from './api'
+import type { CharacterStatus } from '../status/api'
+import { useRealtimeSync } from '../realtime/useRealtimeRefresh'
 
 /**
  * @param campaignId - The campaign whose party this is.
@@ -86,6 +88,16 @@ export function PartyPanel({ campaignId }: { campaignId: string }) {
       cancelled = true
     }
   }, [selected])
+
+  // Live: a player editing HP/conditions updates character_status; merge the new
+  // status into the OPEN sheet in place (no full sheet reload). RLS scopes events
+  // to characters this DM may read; we only apply the one currently shown.
+  useRealtimeSync<CharacterStatus>('character_status', (e) => {
+    const affectedId =
+      e.eventType === 'DELETE' ? (e.old as Partial<CharacterStatus>).character_id : e.new.character_id
+    if (!selected || affectedId !== selected.id) return
+    setSheet((prev) => (prev ? { ...prev, status: e.eventType === 'DELETE' ? null : e.new } : prev))
+  })
 
   if (loading) {
     return <p style={{ color: 'var(--color-text-muted)', marginTop: 'var(--space-6)' }}>Loading…</p>
@@ -193,6 +205,9 @@ function ReadOnlySheet({
         <p style={{ color: 'var(--color-text-muted)' }}>Loading sheet…</p>
       ) : sheet ? (
         <>
+          {/* HP & conditions (read-only). Shown open by default — combat-relevant. */}
+          {sheet.status && <StatusBlock status={sheet.status} />}
+
           {/* Lore: backstory / appearance / personality (safe-markdown, read-only). */}
           <LoreBlock label="Backstory" value={character.backstory} />
           <LoreBlock label="Appearance" value={character.appearance} />
@@ -284,6 +299,37 @@ function ReadOnlySheet({
         </>
       ) : null}
     </div>
+  )
+}
+
+/**
+ * StatusBlock — read-only HP / temp HP / death saves / conditions for the DM.
+ * Starts OPEN (unlike the other sections) because it's the combat-relevant info
+ * the DM most wants at a glance. Purely presentational; the DM can't edit here.
+ * @param status - The character's live status row.
+ */
+function StatusBlock({ status }: { status: CharacterStatus }) {
+  const hp =
+    status.current_hp == null && status.max_hp == null
+      ? '—'
+      : `${status.current_hp ?? '—'} / ${status.max_hp ?? '—'}`
+  return (
+    <Section title="HP & conditions" defaultOpen>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-5)', alignItems: 'baseline' }}>
+        <span><strong style={{ fontSize: '1.1rem' }}>{hp}</strong> <span style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>HP</span></span>
+        {status.temp_hp > 0 && <span style={{ color: 'var(--color-accent)' }}>+{status.temp_hp} temp</span>}
+        <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+          Death saves: {status.death_save_successes}✓ / {status.death_save_failures}✗
+        </span>
+      </div>
+      {status.conditions.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+          {status.conditions.map((c) => (
+            <span key={c} style={{ fontSize: '0.8rem', borderRadius: '999px', padding: '2px var(--space-3)', border: '1px solid var(--color-accent)', color: 'var(--color-accent)' }}>{c}</span>
+          ))}
+        </div>
+      )}
+    </Section>
   )
 }
 

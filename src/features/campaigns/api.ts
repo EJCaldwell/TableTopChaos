@@ -90,6 +90,24 @@ export async function deleteCampaign(campaignId: string): Promise<void> {
 }
 
 /**
+ * Renames a campaign. Enforced by RLS (campaigns_update_dm — DM only); a
+ * non-DM's update matches no rows.
+ * @param campaignId - The campaign to rename.
+ * @param name - The new name (trimmed; caller validates non-empty).
+ * @returns The updated campaign row.
+ */
+export async function renameCampaign(campaignId: string, name: string): Promise<Campaign> {
+  const { data, error } = await supabase
+    .from('campaigns')
+    .update({ name })
+    .eq('id', campaignId)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+/**
  * Joins a campaign by redeeming an invite code.
  *
  * Supabase call: RPC `redeem_invite_code(p_code)` (SECURITY DEFINER).

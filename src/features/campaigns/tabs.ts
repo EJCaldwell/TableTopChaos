@@ -51,18 +51,6 @@ export const WORKSPACE_TABS: WorkspaceTab[] = [
     blurb: 'Campaign roster, invite codes, and campaign settings.',
   },
   {
-    key: 'dice',
-    label: 'Dice',
-    audience: 'all',
-    blurb: 'A shared dice roller with a live roll log for the whole table.',
-  },
-  {
-    key: 'loot',
-    label: 'Party loot',
-    audience: 'all',
-    blurb: 'Shared party inventory and treasure the group has claimed together.',
-  },
-  {
     key: 'schedule',
     label: 'Scheduling',
     audience: 'all',

@@ -12,6 +12,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { AutoTextarea, Button, FormError } from '../../components/ui'
 import { getMyCharacter, type Character } from '../character/api'
+import { exportMyJournal } from '../exportImport/api'
 import {
   createEntry,
   deleteEntry,
@@ -63,6 +64,20 @@ export function JournalPanel({
   // Current on-screen ordering. Defaults to the persisted manual order; changing
   // it is a view-only preference (not saved) and disables drag except in manual.
   const [sortMode, setSortMode] = useState<SortMode>('manual')
+  // "Download my journal" (Phase 4.2): true while the export is running.
+  const [downloading, setDownloading] = useState(false)
+
+  /** Downloads the caller's own journal (JSON + Markdown) via the Edge Function. */
+  async function handleDownloadJournal() {
+    setDownloading(true)
+    try {
+      await exportMyJournal(campaignId)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Journal download failed.')
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const inFlight = useRef(0)
@@ -301,9 +316,12 @@ export function JournalPanel({
 
       <FormError message={error} />
 
-      <div style={{ marginTop: 'var(--space-4)' }}>
+      <div style={{ marginTop: 'var(--space-4)', display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
         <Button variant="secondary" onClick={handleAdd} style={{ width: 'auto' }}>
           + New entry
+        </Button>
+        <Button variant="secondary" busy={downloading} onClick={handleDownloadJournal} style={{ width: 'auto' }}>
+          Download my journal
         </Button>
       </div>
 

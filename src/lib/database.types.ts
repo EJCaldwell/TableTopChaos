@@ -176,6 +176,50 @@ export type Database = {
         }
         Relationships: []
       }
+      character_status: {
+        Row: {
+          character_id: string
+          conditions: string[]
+          created_at: string
+          current_hp: number | null
+          death_save_failures: number
+          death_save_successes: number
+          max_hp: number | null
+          temp_hp: number
+          updated_at: string
+        }
+        Insert: {
+          character_id: string
+          conditions?: string[]
+          created_at?: string
+          current_hp?: number | null
+          death_save_failures?: number
+          death_save_successes?: number
+          max_hp?: number | null
+          temp_hp?: number
+          updated_at?: string
+        }
+        Update: {
+          character_id?: string
+          conditions?: string[]
+          created_at?: string
+          current_hp?: number | null
+          death_save_failures?: number
+          death_save_successes?: number
+          max_hp?: number | null
+          temp_hp?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "character_status_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: true
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       characters: {
         Row: {
           appearance: string
@@ -859,6 +903,82 @@ export type Database = {
           },
         ]
       }
+      schedule_rsvps: {
+        Row: {
+          created_at: string
+          id: string
+          session_id: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          session_id: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          session_id?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_rsvps_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "schedule_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      schedule_sessions: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          id: string
+          notes: string
+          position: number
+          proposed_at: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          id?: string
+          notes?: string
+          position?: number
+          proposed_at?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          id?: string
+          notes?: string
+          position?: number
+          proposed_at?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_sessions_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sessions: {
         Row: {
           attendees: string[]
@@ -896,6 +1016,60 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "sessions_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shared_items: {
+        Row: {
+          asset_id: string | null
+          body: string
+          campaign_id: string
+          created_at: string
+          id: string
+          position: number
+          shared_at: string
+          title: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          asset_id?: string | null
+          body?: string
+          campaign_id: string
+          created_at?: string
+          id?: string
+          position?: number
+          shared_at?: string
+          title?: string
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          asset_id?: string | null
+          body?: string
+          campaign_id?: string
+          created_at?: string
+          id?: string
+          position?: number
+          shared_at?: string
+          title?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shared_items_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "media_assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shared_items_campaign_id_fkey"
             columns: ["campaign_id"]
             isOneToOne: false
             referencedRelation: "campaigns"

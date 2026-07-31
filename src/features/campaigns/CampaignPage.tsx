@@ -33,6 +33,9 @@ import { NpcsPanel } from '../dm/NpcsPanel'
 import { EncountersPanel } from '../dm/EncountersPanel'
 import { QuestsPanel } from '../dm/QuestsPanel'
 import { CombatPanel } from '../dm/CombatPanel'
+import { HandoutsPanel, SharedWithUsPanel } from '../shared/SharedPanel'
+import { HpConditionsPanel } from '../status/HpConditionsPanel'
+import { SchedulePanel } from '../schedule/SchedulePanel'
 import { tabsForRole } from './tabs'
 import {
   getCampaign,
@@ -224,6 +227,7 @@ export function CampaignPage() {
                     onClick={() => setActiveTab(tab.key)}
                     style={{
                       font: 'inherit',
+                      fontSize: '1.15rem',
                       cursor: 'pointer',
                       background: 'none',
                       border: 'none',
@@ -250,6 +254,7 @@ export function CampaignPage() {
                 isDm={isDm}
                 isOwner={isOwner}
                 currentUserId={user?.id}
+                onRenamed={(name) => setCampaign((c) => (c ? { ...c, name } : c))}
               />
             ) : activeTabDef?.key === 'billing' ? (
               <BillingPanel campaignId={campaign.id} />
@@ -279,6 +284,14 @@ export function CampaignPage() {
               <QuestsPanel campaignId={campaign.id} />
             ) : activeTabDef?.key === 'combat' && isDm ? (
               <CombatPanel campaignId={campaign.id} />
+            ) : activeTabDef?.key === 'handouts' && isDm ? (
+              <HandoutsPanel campaignId={campaign.id} />
+            ) : activeTabDef?.key === 'shared' && !isDm ? (
+              <SharedWithUsPanel campaignId={campaign.id} />
+            ) : activeTabDef?.key === 'schedule' && user ? (
+              <SchedulePanel campaignId={campaign.id} currentUserId={user.id} isDm={isDm} />
+            ) : activeTabDef?.key === 'hp' && user ? (
+              <HpConditionsPanel campaignId={campaign.id} currentUserId={user.id} />
             ) : activeTabDef ? (
               <PlaceholderPanel tab={activeTabDef} />
             ) : null}

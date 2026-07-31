@@ -18,6 +18,7 @@ import { getSheet, type Character, type SectionWithFields } from '../character/a
 import { listItems, type InventoryItem } from '../inventory/api'
 import { listAbilities, type Ability } from '../abilities/api'
 import { listSpells, type Spell } from '../spells/api'
+import { getStatus, type CharacterStatus } from '../status/api'
 
 /**
  * Everything the Party view renders for one character (read-only). Deliberately
@@ -32,6 +33,8 @@ export interface PartySheet {
   abilities: Ability[]
   /** Spells (each carries its level; the UI groups them). */
   spells: Spell[]
+  /** Live HP/conditions status (null if the player hasn't set any yet). */
+  status: CharacterStatus | null
   /** Resolved signed URL for the portrait, or null if none/unreadable. */
   portraitUrl: string | null
 }
@@ -42,16 +45,17 @@ export interface PartySheet {
  * @returns The bundled sheet/inventory/abilities/spells + portrait URL.
  */
 export async function loadPartySheet(character: Character): Promise<PartySheet> {
-  const [sections, inventory, abilities, spells, portraitUrl] = await Promise.all([
+  const [sections, inventory, abilities, spells, status, portraitUrl] = await Promise.all([
     getSheet(character.id),
     listItems(character.id),
     listAbilities(character.id),
     listSpells(character.id),
+    getStatus(character.id),
     character.portrait_asset_id
       ? resolvePortraitUrl(character.portrait_asset_id)
       : Promise.resolve(null),
   ])
-  return { sections, inventory, abilities, spells, portraitUrl }
+  return { sections, inventory, abilities, spells, status, portraitUrl }
 }
 
 /**

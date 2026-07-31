@@ -19,10 +19,12 @@ import {
   deleteCampaign,
   deleteInviteCode,
   listInviteCodes,
+  renameCampaign,
   type Campaign,
   type InviteCode,
   type Member,
 } from './api'
+import { CampaignDataPanel } from '../exportImport/CampaignDataPanel'
 
 /**
  * @param campaign - The loaded campaign (name, owner_id…).
@@ -38,12 +40,15 @@ export function OverviewPanel({
   isDm,
   isOwner,
   currentUserId,
+  onRenamed,
 }: {
   campaign: Campaign
   members: Member[]
   isDm: boolean
   isOwner: boolean
   currentUserId: string | undefined
+  /** Called after a successful rename so the shell can update its header. */
+  onRenamed?: (name: string) => void
 }) {
   const navigate = useNavigate()
 
@@ -52,6 +57,34 @@ export function OverviewPanel({
   const [working, setWorking] = useState(false)
   // Whether the destructive delete confirmation is currently showing.
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  // Campaign rename (DM only): editing flag + the in-progress name draft.
+  const [renaming, setRenaming] = useState(false)
+  const [nameDraft, setNameDraft] = useState(campaign.name)
+  const [savingName, setSavingName] = useState(false)
+
+  /** DM: persist the renamed campaign, then update the header via onRenamed. */
+  async function handleRename() {
+    const next = nameDraft.trim()
+    if (!next) {
+      setError('Campaign name cannot be empty.')
+      return
+    }
+    if (next === campaign.name) {
+      setRenaming(false)
+      return
+    }
+    setSavingName(true)
+    setError(null)
+    try {
+      await renameCampaign(campaign.id, next)
+      onRenamed?.(next)
+      setRenaming(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not rename the campaign.')
+    } finally {
+      setSavingName(false)
+    }
+  }
 
   /**
    * Loads invite codes for DMs. Players are blocked by RLS, so we only attempt
@@ -124,6 +157,40 @@ export function OverviewPanel({
   return (
     <div style={{ marginTop: 'var(--space-6)' }}>
       {error && <div style={{ marginBottom: 'var(--space-4)' }}><FormError message={error} /></div>}
+
+      {/* Campaign name + DM rename. */}
+      <section style={{ marginBottom: 'var(--space-6)' }}>
+        {renaming ? (
+          <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center' }}>
+            <input
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              maxLength={120}
+              aria-label="Campaign name"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleRename()
+                if (e.key === 'Escape') { setNameDraft(campaign.name); setRenaming(false) }
+              }}
+              style={{ flex: '1 1 220px', minWidth: 180, font: 'inherit', fontSize: '1.3rem', fontWeight: 700, background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: 'var(--space-2)', color: 'var(--color-text)' }}
+            />
+            <Button style={{ width: 'auto' }} busy={savingName} onClick={handleRename}>Save</Button>
+            <Button variant="secondary" style={{ width: 'auto' }} disabled={savingName} onClick={() => { setNameDraft(campaign.name); setRenaming(false) }}>Cancel</Button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'baseline', flexWrap: 'wrap' }}>
+            <h1 style={{ margin: 0, fontSize: '1.4rem' }}>{campaign.name}</h1>
+            {isDm && (
+              <button
+                onClick={() => { setNameDraft(campaign.name); setRenaming(true) }}
+                style={{ font: 'inherit', fontSize: '0.85rem', background: 'none', border: '1px solid var(--color-border)', color: 'var(--color-text-muted)', borderRadius: 'var(--radius)', padding: 'var(--space-1) var(--space-3)', cursor: 'pointer' }}
+              >
+                Rename campaign
+              </button>
+            )}
+          </div>
+        )}
+      </section>
 
       {/* Roster — visible to all members. */}
       <section>
@@ -224,6 +291,9 @@ export function OverviewPanel({
           )}
         </section>
       )}
+
+      {/* Backup & data — export/import (Phase 4.2). DM only. */}
+      {isDm && <CampaignDataPanel campaignId={campaign.id} campaignName={campaign.name} />}
 
       {/* Danger zone — deleting the campaign. Owner (creating DM) only, to match
           the campaigns_delete_owner RLS policy. */}

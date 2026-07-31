@@ -132,43 +132,75 @@ These framed the whole plan and should not be quietly reversed:
   - [x] 3.5.3 — QA *(2026-07-21 PASS — both areas. Combat tools: add/seed/edit/sort/reorder/step/persist + dice parsing/validation/history; HP tracker current/max persists, NPC add auto-seeds HP + ▸ Stats inline view (description + stat block). Access control: Combat tab absent for players; DM full CRUD; player insert 403; anon select [] after real signOut; pg_policy audit confirms all four policies authenticated-only + is_campaign_dm, no anon policy)*
 
 ### Phase 4: In-app sharing & data export/import
-- [ ] 4.1 — Shared items model & visibility
-  - [ ] 4.1.1 — Backend
-  - [ ] 4.1.2 — Web UI
-  - [ ] 4.1.3 — QA
-- [ ] 4.2 — Campaign export & import (ZIP archive)
-  - [ ] 4.2.1 — Backend
-  - [ ] 4.2.2 — Web UI
-  - [ ] 4.2.3 — QA
+- [x] 4.1 — Shared items model & visibility
+  - [x] 4.1.1 — Backend *(migration 0024: shared_items (type note|image, title, body, asset_id→media_assets ON DELETE CASCADE, shared_at, position); type-shape CHECK ensures image⇒asset / note⇒no asset. RLS asymmetry — SELECT is_campaign_member (DM+players read), INSERT/UPDATE/DELETE is_campaign_dm (DM writes/un-shares). Advisors clean for shared_items)*
+  - [x] 4.1.2 — Web UI *(shared/SharedPanel.tsx: HandoutsPanel (DM "Handouts" tab) — note composer (title + safe-markdown body) + image upload (reuses ImageUpload/1.6 pipeline, shares on upload), plus a manage list with inline title/body/caption edit (debounced autosave) and Un-share (confirm); SharedWithUsPanel (player "Shared with us" tab) — read-only feed newest-first, notes via renderSafeMarkdown, images signed-URL-resolved. Wired in CampaignPage (handouts&&isDm, shared&&!isDm); typecheck + build clean)*
+  - [x] 4.1.3 — QA *(2026-07-21 PASS — DM shares note+image; player sees them (Shared with us); un-share removes for all; player insert 403, un-shared dm_notes []; positive read Array(1) under confirmed player session + server-side is_campaign_member/count simulation. Earlier [] was a stale browser session, not RLS)*
+- [x] 4.2 — Campaign export & import (ZIP archive)
+  - [x] 4.2.1 — Backend *(3 Edge Functions, deployed, verify_jwt=false + getUser inside. export-campaign (DM-only, service role, no writability check so it works read-only/pending-deletion): gathers every campaign-scoped row → campaign.json (ids preserved; members as display names) + manifest.json (schemaVersion 1, app version, counts, sha256 of campaign.json) + images/<storage_path> bytes, returns application/zip Blob. Includes player journals (documented privacy exception). import-campaign (creates a BRAND-NEW campaign owned by importer — never overwrites; new ids everywhere via in-memory old→new maps, images re-uploaded to fresh paths + refs rewritten, importer sole DM, characters re-owned to importer; validates manifest version + checksum; best-effort rollback deletes half-built campaign + uploaded objects on any failure). export-journal (any member; USER client so RLS scopes to caller's own entries; returns entries + Markdown). No temp bucket — zip returned/consumed directly. **Schema v2** (export v3 / import v4) added character_status + schedule_sessions + schedule_rsvps to the archive; import rebuilds character_status (PK character_id) + schedule_sessions but intentionally skips schedule_rsvps (per-user availability tied to specific accounts). Import accepts v1 or v2)*
+  - [x] 4.2.2 — Web UI *(exportImport/api.ts wrappers (blob download helper, JSON {error} extraction); CampaignDataPanel ("Backup & data" in DM Overview) — Export campaign (.zip) + Import (choose .zip → confirm → import → summary of counts + "Open the new campaign"); "Download my journal" button in JournalPanel (JSON + Markdown, every member incl. DM for their own). typecheck + build clean)*
+  - [x] 4.2.3 — QA *(2026-07-21 PASS — export produced a valid ZIP (manifest counts matched: 2 chars/4 NPCs/2 encounters/2 quests/3 sessions/1 shared/1 journal/10 assets/20 image files), import rebuilt a new "(imported)" campaign with encounters + portraits rendering and the original untouched, journal export gave JSON+MD of the caller's own entries. 2 bugs fixed: (1) invoke only Blob-decodes octet-stream → export now octet-stream + client re-labels zip; (2) import 500 dup campaign_members (owner auto-added by trigger) → upsert ignoreDuplicates, plus PostgrestError message surfacing)*
+- [x] 4.3 — Player HP & conditions + shared scheduling *(added after Phase 4: fills two placeholder tabs the user asked for; Dice + Party loot placeholders removed)*
+  - [x] 4.3.1 — Backend *(migration 0025 character_status: one row per character (current/max/temp HP, death-save tallies 0..3 CHECK, conditions text[]); RLS mirrors character children — SELECT can_read_character (owner OR DM), write can_write_character (owner only). migration 0026 scheduling: schedule_sessions (DM-proposed title/proposed_at/notes; RLS members read, DM write) + schedule_rsvps (per-member yes/maybe/no, unique(session,user); RLS members read via can_access_session SECURITY DEFINER helper, member writes only own). Advisors clean for all 3 tables)*
+  - [x] 4.3.2 — Web UI *(status/HpConditionsPanel.tsx (player "HP & conditions" tab): current/max/temp HP, Damage/Heal (temp-first), 3+3 death-save pips, 15 standard-condition toggle chips; lazy upsert on first edit. schedule/SchedulePanel.tsx (shared "Scheduling" tab): DM proposes/edits/deletes sessions, every member RSVPs + sees tally with names. Removed Dice + Party loot from tabs.ts; wired schedule&&user, hp&&user in CampaignPage. Types regenerated. typecheck + build clean. (Export/import extended to cover these — see 4.2 schema v2))*
+  - [x] 4.3.3 — QA *(2026-07-29 PASS — HP: temp-first damage/heal-cap/death saves/conditions persist; DM read + no-write proven server-side (can_read=true, can_write=false). Scheduling: DM propose/edit/delete, member RSVP + tally-with-names, player session insert 403; +Today quick-fill button. Also added a read-only HP & conditions block to the DM Party view. Bug fixed: listRsvps profiles-embed had no FK relationship → "failed to load"; now resolves names via a second profiles query)*
+- [x] 4.4 — Realtime sync (no-refresh live updates)
+  **Goal:** DM and player screens reflect each other's changes live, without a
+  manual page refresh, using Supabase Realtime (Postgres change broadcasts over
+  a websocket). RLS still gates every event — a client only receives changes for
+  rows it may already read — so no new exposure surface.
+  - [x] 4.4.1 — Backend *(migration 0027: added character_status, shared_items, schedule_sessions, schedule_rsvps, initiative_entries to the supabase_realtime publication + REPLICA IDENTITY FULL on each (so UPDATE/DELETE events carry the full old row for RLS evaluation). No new RLS — existing read policies scope which events each client receives)*
+  - [x] 4.4.2 — Web UI *(realtime/useRealtimeRefresh.ts exports useRealtimeSync (granular, per-row MERGE — preferred) + useRealtimeRefresh (coarse debounced re-fetch, fallback) + mergeById helper; unique channel per useId, removeChannel on unmount. Wired with ROW-LEVEL MERGE (only the changed row/field re-renders, no flicker/focus loss): CombatPanel initiative_entries (mergeById), SharedPanel DM+player (resolveSharedItem re-signs image URLs, merge/prepend/remove), SchedulePanel (sessions mergeById+re-sort; rsvps keyed by session+user with one-time profile name lookup), HpConditionsPanel (own character_status fields), PartyPanel (patches sheet.status on the open sheet). Editors keep optimistic local updates; Realtime drives OTHER viewers (self-echoes merge idempotently). typecheck + build clean)*
+  - [x] 4.4.3 — QA *(2026-07-29 PASS — two concurrent sessions: HP→Party, Handouts→Shared, Scheduling both ways, Initiative across DM tabs all merged live (~1–2s, per-row, no flicker); signed-out tab got nothing; tab-switch teardown clean. Row-level merge approach verified)*
 
 ### Phase 5: Accounts, roles & compliance
 - [ ] 5.1 — Account deletion, data rights & cascade
   - [ ] 5.1.1 — Backend
   - [ ] 5.1.2 — Web UI
   - [ ] 5.1.3 — QA
-- [ ] 5.2 — Co-DM & campaign ownership transfer
+- [ ] 5.2 — Legal & policy pages (ToS, Privacy, refunds)
   - [ ] 5.2.1 — Backend
   - [ ] 5.2.2 — Web UI
   - [ ] 5.2.3 — QA
-- [ ] 5.3 — Legal & policy pages (ToS, Privacy, refunds)
-  - [ ] 5.3.1 — Backend
-  - [ ] 5.3.2 — Web UI
-  - [ ] 5.3.3 — QA
 
-### Phase 6: Polish & deployment
-- [ ] 6.1 — Responsive/mobile, theming, accessibility
-  - [ ] 6.1.1 — Web UI
-  - [ ] 6.1.2 — QA
-- [ ] 6.2 — Rate limiting & abuse prevention
-  - [ ] 6.2.1 — Backend
-  - [ ] 6.2.2 — QA
-- [ ] 6.3 — Analytics & observability
-  - [ ] 6.3.1 — Backend
-  - [ ] 6.3.2 — Web UI
-  - [ ] 6.3.3 — QA
-- [ ] 6.4 — Deployment, backups & monitoring
-  - [ ] 6.4.1 — Backend
-  - [ ] 6.4.2 — QA
+### Phase 6: Automated testing & CI
+- [ ] 6.1 — Test infrastructure + unit/component tests (Vitest + RTL)
+- [ ] 6.2 — RLS / database policy tests
+- [ ] 6.3 — End-to-end smoke tests (Playwright) + CI pipeline
+
+### Phase 7: Transactional email & notifications
+- [ ] 7.1 — Backend (email provider + send functions)
+  - [ ] 7.1.1 — Backend
+  - [ ] 7.1.2 — QA
+- [ ] 7.2 — In-app wiring (invite-by-email, notification prefs/opt-out)
+  - [ ] 7.2.1 — Web UI
+  - [ ] 7.2.2 — QA
+
+### Phase 8: Content moderation & safety
+- [ ] 8.1 — Moderation pipeline + report→review→takedown
+  - [ ] 8.1.1 — Backend
+  - [ ] 8.1.2 — Web UI
+  - [ ] 8.1.3 — QA
+
+### Phase 9: Launch hardening
+- [ ] 9.1 — Rate limiting & abuse prevention
+  - [ ] 9.1.1 — Backend
+  - [ ] 9.1.2 — QA
+- [ ] 9.2 — Analytics & observability
+  - [ ] 9.2.1 — Backend
+  - [ ] 9.2.2 — Web UI
+  - [ ] 9.2.3 — QA
+- [ ] 9.3 — Deployment, backups & monitoring
+  - [ ] 9.3.1 — Backend
+  - [ ] 9.3.2 — QA
+
+### Post-launch backlog (after public launch)
+- [ ] PL.1 — Responsive/mobile, theming & accessibility
+  - [ ] PL.1.1 — Web UI
+  - [ ] PL.1.2 — QA
+- [ ] PL.2 — Onboarding, empty states & sample content
+- [ ] PL.3 — Shared dice roller (table-wide, realtime)
+- [ ] PL.4 — Performance & code-splitting
 
 ---
 
@@ -648,16 +680,16 @@ journal** at any time.
 ## Phase 5: Accounts, roles & compliance
 **Goal:** The legal and account-lifecycle obligations that come with storing
 personal data and taking payments — user-initiated account deletion with correct
-data cascade, flexible campaign roles (co-DM, ownership transfer), and the
-required policy pages.
+data cascade, and the required policy pages.
 
 ### Subphase 5.1: Account deletion, data rights & cascade
 
 #### 5.1.1 — Backend
 - "Delete my account" path (GDPR/CCPA right to erasure), distinct from campaign
   deletion. Define and implement the **cascade rules**:
-  - Campaigns the user **DMs**: the campaign and its content are deleted (or
-    transferred first — see 5.2); any active Stripe subscription is cancelled.
+  - Campaigns the user **DMs**: the campaign and its content are deleted (all
+    members lose access — there is no ownership-transfer path); any active Stripe
+    subscription is cancelled.
   - Campaigns where the user is a **player**: their character/sheet/inventory/
     journal are removed; the campaign and other players are unaffected.
 - A grace/confirmation step (and email confirmation) before irreversible
@@ -672,90 +704,161 @@ required policy pages.
 - Deleting an account removes the right data in every role and cancels its
   subscriptions; other users' campaigns are untouched; Storage objects are gone.
 
-### Subphase 5.2: Co-DM & campaign ownership transfer
+### Subphase 5.2: Legal & policy pages (ToS, Privacy, refunds)
 
 #### 5.2.1 — Backend
-- **Co-DM:** allow more than one `dm` member per campaign (the data model already
-  supports it); `is_campaign_dm()` already grants co-DMs full DM access. Decide
-  billing/owner rules: exactly one member is the **billing owner**; co-DMs get
-  content access but not billing control.
-- **Ownership transfer:** reassign the billing-owner role to another member
-  (and move/re-create the Stripe subscription association accordingly); guard so
-  a campaign always has exactly one billing owner.
-
-#### 5.2.2 — Web UI
-- Manage-DMs UI: promote a player to co-DM / demote; "transfer ownership" flow
-  with confirmation.
-
-#### 5.2.3 — QA
-- A co-DM can edit DM content but cannot change billing; transferring ownership
-  moves billing control and leaves exactly one owner.
-
-### Subphase 5.3: Legal & policy pages (ToS, Privacy, refunds)
-
-#### 5.3.1 — Backend
 - Store acceptance (versioned ToS/Privacy acceptance timestamp on the profile);
   re-prompt on material updates.
 
-#### 5.3.2 — Web UI
+#### 5.2.2 — Web UI
 - **Terms of Service**, **Privacy Policy** (what's stored, Stripe as processor,
   retention, deletion rights), and a **refund/cancellation policy** page; signup
   consent checkbox; footer links.
 
-#### 5.3.3 — QA
+#### 5.2.3 — QA
 - Signup records policy acceptance; pages are reachable; refund policy matches the
   actual billing behavior (read-only on lapse, 3-month deletion).
 
 ---
 
-## Phase 6: Polish & deployment
-**Goal:** Production-ready: usable on phones at the table, abuse-resistant,
-observable, deployed, and backed up.
+## Phase 6: Automated testing & CI
+**Goal:** Replace "manual QA + typecheck only" with a real regression safety net,
+so future changes can't silently break existing behavior — especially the RLS
+security model, which has repeatedly had subtle edge cases. Runs continuously in
+CI. (Existing per-phase manual checklists in `QA/` stay as the human-verification
+layer; this adds the automated layer beneath them.)
 
-### Subphase 6.1: Responsive/mobile, theming, accessibility
+### Subphase 6.1: Test infrastructure + unit/component tests
+- Stand up **Vitest + React Testing Library** (jsdom); wire `npm test` and a
+  coverage report. Add unit tests for pure logic that's easy to regress:
+  dice-notation parsing, HP damage/heal (temp-first, cap-at-max), death-save
+  clamps, initiative sort, `extractNpcHp`, safe-markdown escaping, id-remap in
+  import, the realtime `mergeById` helper. Component tests for a couple of
+  high-traffic panels (autosave indicator, a sheet section editor).
+- QA: `npm test` runs green locally; coverage report generated.
 
-#### 6.1.1 — Web UI
-- Mobile layouts (players will use phones at the table); light/dark theme;
-  keyboard nav and an a11y pass.
+### Subphase 6.2: RLS / database policy tests
+- A **pgTAP (or SQL) harness** that seeds a DM + player + non-member + anon and
+  asserts every table's read/write matrix — the checks we've been running by hand
+  each phase (owner-only writes, DM read scope, member-vs-non-member, journal
+  privacy, DM-only workspace, shared-items asymmetry, per-user rsvp). This makes
+  the security model a **regression test**, not a one-time manual pass.
+- QA: the suite fails loudly if any policy is loosened/removed.
 
-#### 6.1.2 — QA
-- Core flows work on a phone viewport; basic screen-reader/keyboard pass.
+### Subphase 6.3: End-to-end smoke tests (Playwright) + CI pipeline
+- A few **Playwright** flows against a test project: sign up → create campaign →
+  start trial → invite/join → fill a sheet → DM views party → DM shares a handout
+  → player sees it. Plus an export→import round-trip.
+- Wire **CI** (GitHub Actions or similar): typecheck + build + unit + RLS + e2e on
+  every push; block merge on failure.
+- QA: CI is green on main; a deliberately broken policy/logic change is caught.
 
-### Subphase 6.2: Rate limiting & abuse prevention
+## Phase 7: Transactional email & notifications
+**Goal:** Close the communication gaps — invites, session reminders, and billing
+notices — that the app currently has no channel for. Makes the Scheduling feature
+(4.3) actually useful with reminders.
 
-#### 6.2.1 — Backend
+### Subphase 7.1: Backend
+#### 7.1.1 — Backend
+- Integrate an email provider (e.g. **Resend/Postmark**) via an Edge Function;
+  templated, from a verified domain. Sends: **campaign invite** (email a join
+  link/code), **session reminder** (scheduled via cron ahead of a
+  `schedule_sessions.proposed_at`), and **billing notices** (trial ending,
+  payment failed/dunning, subscription cancelled) driven off Stripe webhook
+  events. Idempotent; respects a per-user opt-out.
+#### 7.1.2 — QA
+- Each email type fires on its trigger, renders correctly, and honors opt-out;
+  reminders send once, at the right lead time.
+
+### Subphase 7.2: In-app wiring
+#### 7.2.1 — Web UI
+- Invite-by-email entry alongside invite codes; a **notification preferences**
+  screen (reminder lead time, opt-out toggles); unsubscribe handling.
+#### 7.2.2 — QA
+- Sending an email invite enrolls correctly on click; preferences persist and
+  take effect; unsubscribe link works.
+
+## Phase 8: Content moderation & safety
+**Goal:** Make user-uploaded images that are visible to others (portraits,
+encounter images, **shared handouts**) safe to ship. Today the upload pipeline
+has only a **pass-through moderation seam** and `report_media` exists but isn't
+wired to any action — a legal/safety gap before public launch.
+
+### Subphase 8.1: Moderation pipeline + report→review→takedown
+#### 8.1.1 — Backend
+- Replace the pass-through moderation hook in `upload-media` with a real check
+  (an automated image-moderation provider, or at minimum a quarantine-on-report
+  workflow). Wire `report_media` into a real **review + takedown** path
+  (`set_media_status` → hidden/blocked propagates everywhere the asset renders,
+  which already degrades to a placeholder). Optional admin/review surface.
+#### 8.1.2 — Web UI
+- A **Report** control on shared/other-authored images; clear "under review /
+  removed" states; a reporter sees confirmation.
+#### 8.1.3 — QA
+- A reported image can be taken down and then renders as a placeholder for all
+  viewers; blocked uploads never go live; a normal image is unaffected.
+
+## Phase 9: Launch hardening
+**Goal:** The remaining production-readiness work: abuse-resistant, observable,
+deployed, and backed up.
+
+### Subphase 9.1: Rate limiting & abuse prevention
+#### 9.1.1 — Backend
 - Rate-limit sensitive endpoints (auth, invite redemption, uploads, checkout,
   export/import) to curb spam/scraping/cost-abuse; sensible per-user/IP ceilings.
-- Abuse guards: invite-code brute-force protection, upload flood limits (ties to
-  1.6), and a report/takedown path for shared content.
-
-#### 6.2.2 — QA
+- Abuse guards: invite-code brute-force protection and upload flood limits (ties
+  to 1.6). (The report/takedown path now lives in Phase 8.)
+#### 9.1.2 — QA
 - Hammering a rate-limited endpoint is throttled with clear errors; normal use is
   unaffected.
 
-### Subphase 6.3: Analytics & observability
-
-#### 6.3.1 — Backend
+### Subphase 9.2: Analytics & observability
+#### 9.2.1 — Backend
 - Error monitoring (e.g. Sentry) on the frontend + Edge Functions; structured
   logs; alerts on webhook failures and the cleanup/cron job.
-
-#### 6.3.2 — Web UI
+#### 9.2.2 — Web UI
 - Privacy-respecting product analytics (key funnels: signup → campaign → trial →
   subscribe), disclosed in the Privacy Policy.
-
-#### 6.3.3 — QA
+#### 9.2.3 — QA
 - Errors surface in monitoring; a failed Stripe webhook raises an alert;
   analytics events fire on the core funnel.
 
-### Subphase 6.4: Deployment, backups & monitoring
-
-#### 6.4.1 — Backend
+### Subphase 9.3: Deployment, backups & monitoring
+#### 9.3.1 — Backend
 - Production Supabase config; automated DB backups; run the Supabase security &
   performance advisors and resolve findings.
-
-#### 6.4.2 — QA
+#### 9.3.2 — QA
 - Fresh prod deploy: sign up → create campaign → start trial → join → fill a
   sheet → DM views it → DM shares a handout. Smoke test passes end to end.
+
+---
+
+## Post-launch backlog (after public launch)
+**Goal:** Valuable but not launch-blocking; sequenced after a public launch.
+Mobile is first — players use the app at the table on phones, so it's the highest
+post-launch priority.
+
+### PL.1: Responsive/mobile, theming & accessibility
+#### PL.1.1 — Web UI
+- Mobile layouts (players will use phones at the table); light/dark theme;
+  keyboard nav and an a11y pass.
+#### PL.1.2 — QA
+- Core flows work on a phone viewport; basic screen-reader/keyboard pass.
+
+### PL.2: Onboarding, empty states & sample content
+- First-run guidance so a new DM isn't staring at blank tabs: helpful empty
+  states, a short "create your first campaign/character" flow, optional sample
+  content. QA: a brand-new user can reach a filled sheet without guessing.
+
+### PL.3: Shared dice roller (table-wide, realtime)
+- A campaign-wide dice roller with a shared, live roll log everyone at the table
+  sees (builds on Phase 4.4 Realtime), distinct from the DM's private Combat-tab
+  roller. QA: a roll by one member appears in every member's log live.
+
+### PL.4: Performance & code-splitting
+- Route-level code-splitting to shrink the initial bundle (currently one >500 kB
+  chunk); lazy-load heavy panels. QA: first-load bundle meaningfully smaller;
+  no regressions.
 
 ---
 
@@ -846,7 +949,7 @@ backup feature and the escape hatch before deletion.
   tax logic in our code. Revisit tax registration thresholds as revenue grows.
 - **Legal:** Terms of Service, Privacy Policy (discloses Stripe as payment
   processor, the email provider, analytics, retention, and deletion rights), and
-  a refund/cancellation policy. Versioned acceptance recorded at signup. (Phase 5.3.)
+  a refund/cancellation policy. Versioned acceptance recorded at signup. (Phase 5.2.)
 - **Data rights:** user-initiated account deletion with role-aware cascade (5.1);
   export/portability via the 4.2 functions.
 - **Content safety:** all user images flow through the 1.6 pipeline
@@ -855,7 +958,7 @@ backup feature and the escape hatch before deletion.
 - **Email:** one transactional provider for lifecycle/billing/legal mail; Supabase
   Auth covers verify/reset only.
 - **Observability & abuse:** error monitoring + alerts on webhooks and the cleanup
-  cron; rate limiting on sensitive endpoints (Phase 6.2–6.3).
+  cron; rate limiting on sensitive endpoints (Phase 9).
 
 ### Cost model (sanity check — needs real numbers)
 - Main variable costs: **Supabase Storage** (images) and **egress/bandwidth**,
@@ -917,6 +1020,7 @@ Per the project-wide standard, all code is heavily commented:
 - **Open questions for later:** whether players should be able to share a single
   journal entry with the DM in-app; optional light "live refresh" so the DM sees
   player edits without reloading; exact pricing caps and cost-model numbers (see
-  *Compliance & Operations*). (Co-DM, ownership transfer, account deletion, tax,
-  and campaign export are now planned in Phases 4–5.)
+  *Compliance & Operations*). (Account deletion, tax, and campaign export are
+  now planned in Phases 4–5. Co-DM / ownership transfer were considered and
+  intentionally dropped from scope.)
 ```

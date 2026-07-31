@@ -6,11 +6,12 @@
  * The role-aware campaign workspace itself lives on CampaignPage (and gets its
  * full tabbed shell in subphase 1.4).
  */
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
 import { AppHeader } from '../../components/AppHeader'
 import { Button, FormError, TextField } from '../../components/ui'
+import { importCampaign } from '../exportImport/api'
 import {
   createCampaign,
   joinByCode,
@@ -35,6 +36,12 @@ export function DashboardPage() {
   const [code, setCode] = useState('')
   const [joining, setJoining] = useState(false)
   const [joinError, setJoinError] = useState<string | null>(null)
+
+  // Import-campaign state: the chosen .zip awaiting confirmation, and status.
+  const importInputRef = useRef<HTMLInputElement>(null)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
 
   /** (Re)loads the campaign list for the current user. */
   const refresh = useCallback(async () => {
@@ -68,6 +75,22 @@ export function DashboardPage() {
       setCreateError(err instanceof Error ? err.message : 'Could not create campaign.')
     } finally {
       setCreating(false)
+    }
+  }
+
+  /** Imports the chosen .zip as a brand-new campaign, then navigates into it. */
+  async function handleImport() {
+    if (!importFile) return
+    setImportError(null)
+    setImporting(true)
+    try {
+      const result = await importCampaign(importFile)
+      setImportFile(null)
+      navigate(`/campaigns/${result.campaignId}`)
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : 'Could not import campaign.')
+    } finally {
+      setImporting(false)
     }
   }
 
@@ -175,6 +198,43 @@ export function DashboardPage() {
                 Create (you'll be the DM)
               </Button>
             </form>
+
+            {/* Import an exported campaign ZIP → creates a brand-new campaign. */}
+            <div style={{ marginTop: 'var(--space-6)', paddingTop: 'var(--space-6)', borderTop: '1px solid var(--color-border)' }}>
+              <h3 style={{ margin: '0 0 var(--space-3)', fontSize: '0.95rem' }}>Import from a backup</h3>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".zip,application/zip"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null
+                  e.target.value = ''
+                  setImportError(null)
+                  if (f) setImportFile(f)
+                }}
+              />
+              <FormError message={importError} />
+              {importFile ? (
+                <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.85rem' }}>{importFile.name}</span>
+                  <Button style={{ width: 'auto' }} busy={importing} onClick={handleImport}>
+                    Import as new campaign
+                  </Button>
+                  <Button variant="secondary" style={{ width: 'auto' }} disabled={importing} onClick={() => setImportFile(null)}>
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="secondary" style={{ width: 'auto' }} onClick={() => importInputRef.current?.click()}>
+                  Choose a .zip to import…
+                </Button>
+              )}
+              <p style={{ margin: 'var(--space-3) 0 0', color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>
+                Upload a campaign <code>.zip</code> you exported before. It creates a
+                brand-new campaign — it never changes an existing one.
+              </p>
+            </div>
           </section>
 
           <section

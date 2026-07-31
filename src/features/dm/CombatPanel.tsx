@@ -24,6 +24,7 @@ import {
 } from './initiativeApi'
 import { listNpcs, getNpcSheet, extractNpcHp, type Npc, type NpcSectionWithFields } from './npcsApi'
 import { listCampaignCharacters } from '../character/api'
+import { useRealtimeSync, mergeById } from '../realtime/useRealtimeRefresh'
 
 /** @param campaignId - The campaign whose combat tools these are. */
 export function CombatPanel({ campaignId }: { campaignId: string }) {
@@ -86,6 +87,14 @@ function InitiativeTracker({ campaignId }: { campaignId: string }) {
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  // Live: merge initiative changes from another DM session (co-DM / other tab)
+  // row-by-row, so only the changed combatant re-renders (no full reload).
+  useRealtimeSync<InitiativeEntry>(
+    'initiative_entries',
+    (e) => setEntries((prev) => mergeById(prev, e)),
+    `campaign_id=eq.${campaignId}`,
+  )
 
   // Display order: initiative desc (nulls last), then the manual `position`.
   const sorted = useMemo(() => {
