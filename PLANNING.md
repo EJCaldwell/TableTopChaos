@@ -153,46 +153,83 @@ These framed the whole plan and should not be quietly reversed:
   - [x] 4.4.2 — Web UI *(realtime/useRealtimeRefresh.ts exports useRealtimeSync (granular, per-row MERGE — preferred) + useRealtimeRefresh (coarse debounced re-fetch, fallback) + mergeById helper; unique channel per useId, removeChannel on unmount. Wired with ROW-LEVEL MERGE (only the changed row/field re-renders, no flicker/focus loss): CombatPanel initiative_entries (mergeById), SharedPanel DM+player (resolveSharedItem re-signs image URLs, merge/prepend/remove), SchedulePanel (sessions mergeById+re-sort; rsvps keyed by session+user with one-time profile name lookup), HpConditionsPanel (own character_status fields), PartyPanel (patches sheet.status on the open sheet). Editors keep optimistic local updates; Realtime drives OTHER viewers (self-echoes merge idempotently). typecheck + build clean)*
   - [x] 4.4.3 — QA *(2026-07-29 PASS — two concurrent sessions: HP→Party, Handouts→Shared, Scheduling both ways, Initiative across DM tabs all merged live (~1–2s, per-row, no flicker); signed-out tab got nothing; tab-switch teardown clean. Row-level merge approach verified)*
 
-### Phase 5: Accounts, roles & compliance
-- [ ] 5.1 — Account deletion, data rights & cascade
+### Phase 5: Game mode foundation & selection
+- [ ] 5.1 — Mode data model & switching
   - [ ] 5.1.1 — Backend
   - [ ] 5.1.2 — Web UI
   - [ ] 5.1.3 — QA
-- [ ] 5.2 — Legal & policy pages (ToS, Privacy, refunds)
-  - [ ] 5.2.1 — Backend
-  - [ ] 5.2.2 — Web UI
-  - [ ] 5.2.3 — QA
+- [ ] 5.2 — Mode-aware app shell (sidebar + pop-out)
+  - [ ] 5.2.1 — Web UI
+  - [ ] 5.2.2 — QA
 
-### Phase 6: Automated testing & CI
-- [ ] 6.1 — Test infrastructure + unit/component tests (Vitest + RTL)
-- [ ] 6.2 — RLS / database policy tests
-- [ ] 6.3 — End-to-end smoke tests (Playwright) + CI pipeline
+### Phase 6: Playspace mode (grid battlemap + dynamic vision & lighting)
+- [ ] 6.1 — Battlemap & tokens
+  - [ ] 6.1.1 — Backend
+  - [ ] 6.1.2 — Web UI
+  - [ ] 6.1.3 — QA
+- [ ] 6.2 — Vision toggle & obstructions (walls + freehand)
+  - [ ] 6.2.1 — Backend
+  - [ ] 6.2.2 — Web UI
+  - [ ] 6.2.3 — QA
+- [ ] 6.3 — Token-based line of sight & sight range
+  - [ ] 6.3.1 — Backend
+  - [ ] 6.3.2 — Web UI
+  - [ ] 6.3.3 — QA
+- [ ] 6.4 — Light levels & darkness
+  - [ ] 6.4.1 — Backend
+  - [ ] 6.4.2 — Web UI
+  - [ ] 6.4.3 — QA
 
-### Phase 7: Transactional email & notifications
-- [ ] 7.1 — Backend (email provider + send functions)
+### Phase 7: Full RPG mode (round-based combat)
+- [ ] 7.1 — Side-based round combat engine
   - [ ] 7.1.1 — Backend
-  - [ ] 7.1.2 — QA
-- [ ] 7.2 — In-app wiring (invite-by-email, notification prefs/opt-out)
-  - [ ] 7.2.1 — Web UI
-  - [ ] 7.2.2 — QA
+  - [ ] 7.1.2 — Web UI
+  - [ ] 7.1.3 — QA
+- [ ] 7.2 — Combat ↔ playspace integration
+  - [ ] 7.2.1 — Backend
+  - [ ] 7.2.2 — Web UI
+  - [ ] 7.2.3 — QA
 
-### Phase 8: Content moderation & safety
-- [ ] 8.1 — Moderation pipeline + report→review→takedown
+### Phase 8: Accounts, roles & compliance
+- [ ] 8.1 — Account deletion, data rights & cascade
   - [ ] 8.1.1 — Backend
   - [ ] 8.1.2 — Web UI
   - [ ] 8.1.3 — QA
+- [ ] 8.2 — Legal & policy pages (ToS, Privacy, refunds)
+  - [ ] 8.2.1 — Backend
+  - [ ] 8.2.2 — Web UI
+  - [ ] 8.2.3 — QA
 
-### Phase 9: Launch hardening
-- [ ] 9.1 — Rate limiting & abuse prevention
-  - [ ] 9.1.1 — Backend
-  - [ ] 9.1.2 — QA
-- [ ] 9.2 — Analytics & observability
-  - [ ] 9.2.1 — Backend
-  - [ ] 9.2.2 — Web UI
-  - [ ] 9.2.3 — QA
-- [ ] 9.3 — Deployment, backups & monitoring
-  - [ ] 9.3.1 — Backend
-  - [ ] 9.3.2 — QA
+### Phase 9: Automated testing & CI
+- [ ] 9.1 — Test infrastructure + unit/component tests (Vitest + RTL)
+- [ ] 9.2 — RLS / database policy tests
+- [ ] 9.3 — End-to-end smoke tests (Playwright) + CI pipeline
+
+### Phase 10: Transactional email & notifications
+- [ ] 10.1 — Backend (email provider + send functions)
+  - [ ] 10.1.1 — Backend
+  - [ ] 10.1.2 — QA
+- [ ] 10.2 — In-app wiring (invite-by-email, notification prefs/opt-out)
+  - [ ] 10.2.1 — Web UI
+  - [ ] 10.2.2 — QA
+
+### Phase 11: Content moderation & safety
+- [ ] 11.1 — Moderation pipeline + report→review→takedown
+  - [ ] 11.1.1 — Backend
+  - [ ] 11.1.2 — Web UI
+  - [ ] 11.1.3 — QA
+
+### Phase 12: Launch hardening
+- [ ] 12.1 — Rate limiting & abuse prevention
+  - [ ] 12.1.1 — Backend
+  - [ ] 12.1.2 — QA
+- [ ] 12.2 — Analytics & observability
+  - [ ] 12.2.1 — Backend
+  - [ ] 12.2.2 — Web UI
+  - [ ] 12.2.3 — QA
+- [ ] 12.3 — Deployment, backups & monitoring
+  - [ ] 12.3.1 — Backend
+  - [ ] 12.3.2 — QA
 
 ### Post-launch backlog (after public launch)
 - [ ] PL.1 — Responsive/mobile, theming & accessibility
@@ -201,6 +238,7 @@ These framed the whole plan and should not be quietly reversed:
 - [ ] PL.2 — Onboarding, empty states & sample content
 - [ ] PL.3 — Shared dice roller (table-wide, realtime)
 - [ ] PL.4 — Performance & code-splitting
+- [ ] PL.5 — Server-authoritative playspace vision (anti-peek)
 
 ---
 
@@ -677,14 +715,212 @@ journal** at any time.
 
 ---
 
-## Phase 5: Accounts, roles & compliance
+## Phase 5: Game mode foundation & selection
+**Goal:** Give the DM a choice of how their campaign plays. Every campaign gets a
+**game mode** — `notetaker` (exactly what exists today), `playspace`, or `rpg` —
+that the DM can switch **at any time**. The app shell adapts to the selected mode;
+`notetaker` keeps its current tab bar untouched. This phase ships only the
+foundation and the mode-aware chrome; the playspace itself (Phase 6) and
+round-based combat (Phase 7) fill it in. The three modes are cumulative tiers:
+`playspace` = notetaker + a shared map; `rpg` = playspace + round-based combat.
+
+### Subphase 5.1: Mode data model & switching
+
+#### 5.1.1 — Backend
+- Migration: add `campaigns.game_mode` as an enum
+  (`'notetaker' | 'playspace' | 'rpg'`), `not null default 'notetaker'` so every
+  existing campaign is unaffected. Switching mode is a plain campaign update, so it
+  reuses the existing `campaigns_update_dm` RLS policy (DM-only; a player's update
+  matches zero rows).
+- **Switch-down is non-destructive.** Because a DM can move freely between modes,
+  moving to a *simpler* mode must never delete higher-mode data. Playspace rows
+  (maps/tokens/walls/lights — Phase 6) and combat rows (Phase 7) are simply not
+  read/rendered while the campaign is in a lower mode; switching back restores them
+  intact. No cascade delete is wired to `game_mode`; document this invariant next
+  to the column.
+- Expose `game_mode` through the existing `getCampaign` / `listMyCampaigns` reads
+  (no new endpoint needed).
+
+#### 5.1.2 — Web UI
+- **Create-campaign flow:** a mode picker (segmented control) with a one-line
+  description of each mode; defaults to `notetaker`.
+- **Overview tab (DM only):** a "Game mode" control to switch anytime, with a
+  confirm step that explains switching *down* only hides the richer features (data
+  is kept) and switching *up* unlocks the map/combat. Reuses the `renameCampaign`
+  pattern (`onModeChanged` callback updates the shell immediately).
+
+#### 5.1.3 — QA
+- Mode persists across refresh; DM-only switch (player switch blocked by RLS —
+  verify server-side); switching up→down→up leaves playspace/combat data intact;
+  a `notetaker` campaign is visually identical to today.
+
+### Subphase 5.2: Mode-aware app shell (sidebar + pop-out)
+
+#### 5.2.1 — Web UI
+- `CampaignPage` reads `game_mode` and branches its chrome:
+  - `notetaker` → the current top tab bar, unchanged.
+  - `playspace` / `rpg` → the tabs become a **collapsible left sidebar**, and the
+    main area is reserved for the playspace (an empty placeholder until Phase 6).
+  - Each sidebar panel can **pop out into a detached, draggable/resizable floating
+    window** (or a separate browser window via `window.open`) so a player can watch
+    the map while editing their sheet. Panel open/pop-out layout persists per user
+    (localStorage), like the per-campaign active-tab persistence already in place.
+
+#### 5.2.2 — QA
+- `notetaker` renders exactly as today; `playspace`/`rpg` show the sidebar with
+  working collapse and pop-out/pop-in; role-based tab gating is unchanged across
+  all modes; layout persists across refresh.
+
+---
+
+## Phase 6: Playspace mode (grid battlemap + dynamic vision & lighting)
+**Goal:** In `playspace` and `rpg` campaigns, a shared grid battlemap where the DM
+sets a map and each player drags **their own** character token in real time, with
+**optional** obstruction-aware dynamic vision: sight is computed from each
+character's token position (not a whole-map reveal), limited by a sight range and
+by lighting. Vision is computed **client-side** for the MVP — smooth and instant
+on token movement, appropriate for a friendly home game; a determined player could
+inspect client data to peek, so a **server-authoritative** version is tracked as a
+post-launch hardening item (PL.5). Builds directly on Phase 4.4 Realtime.
+
+### Subphase 6.1: Battlemap & tokens
+
+#### 6.1.1 — Backend
+- Migration: `playspace_maps` (campaign_id, `background_asset_id` → media_assets
+  via the existing 1.6 pipeline, grid size in px, width/height, `active` flag,
+  `vision_enabled` boolean default false) and `playspace_tokens` (map_id,
+  owner_user_id and/or character_id, npc_id nullable, x, y, size, color, label).
+- RLS: members read maps/tokens; the DM manages maps and **all** tokens; a player
+  may insert/move/delete **only their own** token (predicate on
+  `owner_user_id = auth.uid()` within a campaign they belong to). Add both tables
+  to the `supabase_realtime` publication + `REPLICA IDENTITY FULL`.
+
+#### 6.1.2 — Web UI
+- Grid canvas that renders the map image and a square-grid overlay; tokens are
+  drag-positioned with grid snapping. Token position changes sync live via
+  `useRealtimeSync` + `mergeById` (optimistic local move; realtime drives other
+  viewers). DM can add/place any token; a player can move only their own.
+
+#### 6.1.3 — QA
+- A token drag persists and appears on other clients live (~1–2 s, per-row);
+  a player can move only their own token and is blocked from moving others
+  (verify RLS server-side); grid snapping works; the map loads for all members.
+
+### Subphase 6.2: Vision toggle & obstructions (walls + freehand)
+
+#### 6.2.1 — Backend
+- Migration: `playspace_walls` (map_id, kind `'segment' | 'freehand'`, geometry as
+  an ordered point list / JSON). RLS: DM-write, member-read; realtime.
+- The `vision_enabled` toggle already lives on the map (6.1.1).
+
+#### 6.2.2 — Web UI
+- DM vision toggle: **off ⇒ no fog, the whole map is visible to everyone**;
+  on ⇒ the vision system (6.3/6.4) applies.
+- DM obstruction tools: a **wall tool** (click-drag straight segments / rectangles
+  to place walls & blockages) and a **freehand draw tool** for arbitrary shapes.
+  Walls render for the DM and block player sight (consumed by 6.3).
+
+#### 6.2.3 — QA
+- Vision off = full visibility for all; walls and freehand shapes both block sight;
+  only the DM can add/edit walls (verify server-side); walls persist and sync.
+
+### Subphase 6.3: Token-based line of sight & sight range
+
+#### 6.3.1 — Backend
+- Add per-token sight config to `playspace_tokens`: a normal **sight range** and a
+  separate **dark sight / darkvision range** (D&D-style "see N ft in the dark").
+
+#### 6.3.2 — Web UI
+- Each player's visible area is **ray-cast from their own token(s)** against the
+  walls (6.2) and clipped to their sight range; everything outside is fogged. The
+  DM always sees the whole map. Moving a token recomputes vision live. If a player
+  controls multiple tokens, they see the union of their tokens' visibility.
+
+#### 6.3.3 — QA
+- A player sees only what their token can — blocked by walls, limited by range;
+  moving the token updates the visible area in real time; the DM is unaffected;
+  a second player sees from *their* token, not the first's.
+
+### Subphase 6.4: Light levels & darkness
+
+#### 6.4.1 — Backend
+- Add an **ambient darkness level** to `playspace_maps` and a `playspace_lights`
+  table (or token-attached lights) with bright/dim radii and position. RLS DM-write
+  (players may carry a light on their own token), member-read; realtime.
+
+#### 6.4.2 — Web UI
+- Combine lighting with sight (6.3): in **bright** light a character sees to full
+  sight range; in **dim** light, reduced; in **darkness** they see only as far as
+  their darkvision (or not at all) — so the map gets darker the further from a
+  light source. Lights render their bright/dim radii; player vision = (what walls
+  allow) ∩ (sight range) ∩ (what light/darkvision reveals).
+
+#### 6.4.3 — QA
+- Darkness shortens effective sight; a light source illuminates its bright/dim
+  radii; darkvision lets a token see a set distance in the dark; changes persist
+  and sync live.
+
+---
+
+## Phase 7: Full RPG mode (round-based combat)
+**Goal:** In `rpg` campaigns, combat is **round-based** and shared (players
+participate), distinct from the notetaker's private, turn-by-turn DM Combat tracker
+(Phase 3.5), which remains for `notetaker`/`playspace`. Rounds are **side-based and
+alternating**: one side acts (all of its combatants act within that round), then
+the other side acts the next round, and so on. The DM sets which side goes first
+(players-first or DM/NPCs-first) and can flip it. Players act on their own turn —
+moving their token and updating their own HP/conditions during their side's round.
+
+### Subphase 7.1: Side-based round combat engine
+
+#### 7.1.1 — Backend
+- Migration: a combat session per encounter/map with a **round counter**, an
+  **active side** (`'players' | 'npcs'`), and a configurable **side order** (which
+  goes first); combatants belong to a side, carry per-round state (acted flag,
+  HP/conditions), and link to a `playspace_token` where present.
+- RLS: DM manages the session, NPC combatants, and round advancement; a **player**
+  may update **only their own** combatant's acted flag / HP / conditions, and only
+  while it is their side's active round; all members read the shared combat state.
+  Add to Realtime + `REPLICA IDENTITY FULL`.
+
+#### 7.1.2 — Web UI
+- A round tracker showing the current round and active side, the roster of each
+  side with per-combatant acted/HP/condition state, "Advance round" (DM) which
+  flips to the other side and resets acted flags, and a side-order control (DM).
+- On their side's active round, a player marks their combatant acted and edits
+  their own HP/conditions; the DM drives NPC combatants and round flow.
+
+#### 7.1.3 — QA
+- Rounds alternate sides correctly; advancing resets the acted checklist and flips
+  the side; a player can act only for their own combatant and only during their
+  side's round (verify server-side); DM/NPCs-first vs players-first both work;
+  state persists and syncs live; combat UI appears only in `rpg` mode.
+
+### Subphase 7.2: Combat ↔ playspace integration
+
+#### 7.2.1 — Backend
+- Link combatants to their `playspace_tokens` so combat and map share position and
+  identity; movement during combat writes token position (7 reuses 6.1's token RLS).
+
+#### 7.2.2 — Web UI
+- Start combat from the map; the active side's combatants are highlighted on the
+  map; a player moves their token during their side's round; token HP/condition
+  chips reflect combat state.
+
+#### 7.2.3 — QA
+- Combat reflects on the map (active-combatant highlight, positions); movement
+  during a side's round syncs live; ending combat leaves tokens in place.
+
+---
+
+## Phase 8: Accounts, roles & compliance
 **Goal:** The legal and account-lifecycle obligations that come with storing
 personal data and taking payments — user-initiated account deletion with correct
 data cascade, and the required policy pages.
 
-### Subphase 5.1: Account deletion, data rights & cascade
+### Subphase 8.1: Account deletion, data rights & cascade
 
-#### 5.1.1 — Backend
+#### 8.1.1 — Backend
 - "Delete my account" path (GDPR/CCPA right to erasure), distinct from campaign
   deletion. Define and implement the **cascade rules**:
   - Campaigns the user **DMs**: the campaign and its content are deleted (all
@@ -696,39 +932,39 @@ data cascade, and the required policy pages.
   deletion; remove Storage objects, not just rows.
 - Data-access/portability request handling reuses the export functions (4.2).
 
-#### 5.1.2 — Web UI
+#### 8.1.2 — Web UI
 - Account settings: delete account (with clear warnings about what's removed and
   a prompt to export first), and links to export tools.
 
-#### 5.1.3 — QA
+#### 8.1.3 — QA
 - Deleting an account removes the right data in every role and cancels its
   subscriptions; other users' campaigns are untouched; Storage objects are gone.
 
-### Subphase 5.2: Legal & policy pages (ToS, Privacy, refunds)
+### Subphase 8.2: Legal & policy pages (ToS, Privacy, refunds)
 
-#### 5.2.1 — Backend
+#### 8.2.1 — Backend
 - Store acceptance (versioned ToS/Privacy acceptance timestamp on the profile);
   re-prompt on material updates.
 
-#### 5.2.2 — Web UI
+#### 8.2.2 — Web UI
 - **Terms of Service**, **Privacy Policy** (what's stored, Stripe as processor,
   retention, deletion rights), and a **refund/cancellation policy** page; signup
   consent checkbox; footer links.
 
-#### 5.2.3 — QA
+#### 8.2.3 — QA
 - Signup records policy acceptance; pages are reachable; refund policy matches the
   actual billing behavior (read-only on lapse, 3-month deletion).
 
 ---
 
-## Phase 6: Automated testing & CI
+## Phase 9: Automated testing & CI
 **Goal:** Replace "manual QA + typecheck only" with a real regression safety net,
 so future changes can't silently break existing behavior — especially the RLS
 security model, which has repeatedly had subtle edge cases. Runs continuously in
 CI. (Existing per-phase manual checklists in `QA/` stay as the human-verification
 layer; this adds the automated layer beneath them.)
 
-### Subphase 6.1: Test infrastructure + unit/component tests
+### Subphase 9.1: Test infrastructure + unit/component tests
 - Stand up **Vitest + React Testing Library** (jsdom); wire `npm test` and a
   coverage report. Add unit tests for pure logic that's easy to regress:
   dice-notation parsing, HP damage/heal (temp-first, cap-at-max), death-save
@@ -737,7 +973,7 @@ layer; this adds the automated layer beneath them.)
   high-traffic panels (autosave indicator, a sheet section editor).
 - QA: `npm test` runs green locally; coverage report generated.
 
-### Subphase 6.2: RLS / database policy tests
+### Subphase 9.2: RLS / database policy tests
 - A **pgTAP (or SQL) harness** that seeds a DM + player + non-member + anon and
   asserts every table's read/write matrix — the checks we've been running by hand
   each phase (owner-only writes, DM read scope, member-vs-non-member, journal
@@ -745,7 +981,7 @@ layer; this adds the automated layer beneath them.)
   the security model a **regression test**, not a one-time manual pass.
 - QA: the suite fails loudly if any policy is loosened/removed.
 
-### Subphase 6.3: End-to-end smoke tests (Playwright) + CI pipeline
+### Subphase 9.3: End-to-end smoke tests (Playwright) + CI pipeline
 - A few **Playwright** flows against a test project: sign up → create campaign →
   start trial → invite/join → fill a sheet → DM views party → DM shares a handout
   → player sees it. Plus an export→import round-trip.
@@ -753,81 +989,81 @@ layer; this adds the automated layer beneath them.)
   every push; block merge on failure.
 - QA: CI is green on main; a deliberately broken policy/logic change is caught.
 
-## Phase 7: Transactional email & notifications
+## Phase 10: Transactional email & notifications
 **Goal:** Close the communication gaps — invites, session reminders, and billing
 notices — that the app currently has no channel for. Makes the Scheduling feature
 (4.3) actually useful with reminders.
 
-### Subphase 7.1: Backend
-#### 7.1.1 — Backend
+### Subphase 10.1: Backend
+#### 10.1.1 — Backend
 - Integrate an email provider (e.g. **Resend/Postmark**) via an Edge Function;
   templated, from a verified domain. Sends: **campaign invite** (email a join
   link/code), **session reminder** (scheduled via cron ahead of a
   `schedule_sessions.proposed_at`), and **billing notices** (trial ending,
   payment failed/dunning, subscription cancelled) driven off Stripe webhook
   events. Idempotent; respects a per-user opt-out.
-#### 7.1.2 — QA
+#### 10.1.2 — QA
 - Each email type fires on its trigger, renders correctly, and honors opt-out;
   reminders send once, at the right lead time.
 
-### Subphase 7.2: In-app wiring
-#### 7.2.1 — Web UI
+### Subphase 10.2: In-app wiring
+#### 10.2.1 — Web UI
 - Invite-by-email entry alongside invite codes; a **notification preferences**
   screen (reminder lead time, opt-out toggles); unsubscribe handling.
-#### 7.2.2 — QA
+#### 10.2.2 — QA
 - Sending an email invite enrolls correctly on click; preferences persist and
   take effect; unsubscribe link works.
 
-## Phase 8: Content moderation & safety
+## Phase 11: Content moderation & safety
 **Goal:** Make user-uploaded images that are visible to others (portraits,
 encounter images, **shared handouts**) safe to ship. Today the upload pipeline
 has only a **pass-through moderation seam** and `report_media` exists but isn't
 wired to any action — a legal/safety gap before public launch.
 
-### Subphase 8.1: Moderation pipeline + report→review→takedown
-#### 8.1.1 — Backend
+### Subphase 11.1: Moderation pipeline + report→review→takedown
+#### 11.1.1 — Backend
 - Replace the pass-through moderation hook in `upload-media` with a real check
   (an automated image-moderation provider, or at minimum a quarantine-on-report
   workflow). Wire `report_media` into a real **review + takedown** path
   (`set_media_status` → hidden/blocked propagates everywhere the asset renders,
   which already degrades to a placeholder). Optional admin/review surface.
-#### 8.1.2 — Web UI
+#### 11.1.2 — Web UI
 - A **Report** control on shared/other-authored images; clear "under review /
   removed" states; a reporter sees confirmation.
-#### 8.1.3 — QA
+#### 11.1.3 — QA
 - A reported image can be taken down and then renders as a placeholder for all
   viewers; blocked uploads never go live; a normal image is unaffected.
 
-## Phase 9: Launch hardening
+## Phase 12: Launch hardening
 **Goal:** The remaining production-readiness work: abuse-resistant, observable,
 deployed, and backed up.
 
-### Subphase 9.1: Rate limiting & abuse prevention
-#### 9.1.1 — Backend
+### Subphase 12.1: Rate limiting & abuse prevention
+#### 12.1.1 — Backend
 - Rate-limit sensitive endpoints (auth, invite redemption, uploads, checkout,
   export/import) to curb spam/scraping/cost-abuse; sensible per-user/IP ceilings.
 - Abuse guards: invite-code brute-force protection and upload flood limits (ties
-  to 1.6). (The report/takedown path now lives in Phase 8.)
-#### 9.1.2 — QA
+  to 1.6). (The report/takedown path now lives in Phase 11.)
+#### 12.1.2 — QA
 - Hammering a rate-limited endpoint is throttled with clear errors; normal use is
   unaffected.
 
-### Subphase 9.2: Analytics & observability
-#### 9.2.1 — Backend
+### Subphase 12.2: Analytics & observability
+#### 12.2.1 — Backend
 - Error monitoring (e.g. Sentry) on the frontend + Edge Functions; structured
   logs; alerts on webhook failures and the cleanup/cron job.
-#### 9.2.2 — Web UI
+#### 12.2.2 — Web UI
 - Privacy-respecting product analytics (key funnels: signup → campaign → trial →
   subscribe), disclosed in the Privacy Policy.
-#### 9.2.3 — QA
+#### 12.2.3 — QA
 - Errors surface in monitoring; a failed Stripe webhook raises an alert;
   analytics events fire on the core funnel.
 
-### Subphase 9.3: Deployment, backups & monitoring
-#### 9.3.1 — Backend
+### Subphase 12.3: Deployment, backups & monitoring
+#### 12.3.1 — Backend
 - Production Supabase config; automated DB backups; run the Supabase security &
   performance advisors and resolve findings.
-#### 9.3.2 — QA
+#### 12.3.2 — QA
 - Fresh prod deploy: sign up → create campaign → start trial → join → fill a
   sheet → DM views it → DM shares a handout. Smoke test passes end to end.
 
@@ -859,6 +1095,14 @@ post-launch priority.
 - Route-level code-splitting to shrink the initial bundle (currently one >500 kB
   chunk); lazy-load heavy panels. QA: first-load bundle meaningfully smaller;
   no regressions.
+
+### PL.5: Server-authoritative playspace vision (anti-peek)
+- Harden Phase 6 vision: move the ray-cast/lighting computation server-side so each
+  player's client receives **only** the map area, tokens, and lights they can
+  actually see — closing the client-side-peek gap accepted for the MVP. Weigh
+  against the added latency on every token move. QA: a player's client cannot
+  observe walls/tokens/lights outside their computed vision, even via network/state
+  inspection; movement still feels responsive.
 
 ---
 
@@ -949,7 +1193,7 @@ backup feature and the escape hatch before deletion.
   tax logic in our code. Revisit tax registration thresholds as revenue grows.
 - **Legal:** Terms of Service, Privacy Policy (discloses Stripe as payment
   processor, the email provider, analytics, retention, and deletion rights), and
-  a refund/cancellation policy. Versioned acceptance recorded at signup. (Phase 5.2.)
+  a refund/cancellation policy. Versioned acceptance recorded at signup. (Phase 8.2.)
 - **Data rights:** user-initiated account deletion with role-aware cascade (5.1);
   export/portability via the 4.2 functions.
 - **Content safety:** all user images flow through the 1.6 pipeline
@@ -958,7 +1202,7 @@ backup feature and the escape hatch before deletion.
 - **Email:** one transactional provider for lifecycle/billing/legal mail; Supabase
   Auth covers verify/reset only.
 - **Observability & abuse:** error monitoring + alerts on webhooks and the cleanup
-  cron; rate limiting on sensitive endpoints (Phase 9).
+  cron; rate limiting on sensitive endpoints (Phase 12).
 
 ### Cost model (sanity check — needs real numbers)
 - Main variable costs: **Supabase Storage** (images) and **egress/bandwidth**,
