@@ -10,6 +10,13 @@ dist-ssr/
 .env.local
 .env.*.local
 
+# Self-hosted (Railway) backend stack secrets. Unlike the frontend .env these are
+# real server secrets: JWT_SECRET, service-role key, Postgres password.
+# Only railway/.env.stack.example is tracked.
+railway/.env.stack
+railway/.env.stack.*
+!railway/.env.stack.example
+
 # Supabase local stack & secrets
 supabase/.branches/
 supabase/.temp/

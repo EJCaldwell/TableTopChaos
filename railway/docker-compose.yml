@@ -1,0 +1,183 @@
+# ---------------------------------------------------------------------------
+# Local mirror of the Railway stack. Verify HERE before deploying — the gateway
+# routing and the auth.uid() wiring are the two things most likely to be wrong,
+# and both fail identically locally, where the loop is seconds instead of a deploy.
+#
+# Binds the gateway to :8000. Nothing here touches :5173 (the user's dev server).
+#
+# Run:  docker compose -f railway/docker-compose.yml --env-file railway/.env.stack up
+# Then: VITE_SUPABASE_URL=http://localhost:8000 in your frontend .env
+#
+# Every service reads JWT_SECRET from the same variable. That single shared secret
+# is what makes GoTrue-issued sessions verifiable by PostgREST, and therefore what
+# makes auth.uid() resolve inside the RLS policies.
+# ---------------------------------------------------------------------------
+
+x-jwt: &jwt
+  JWT_SECRET: ${JWT_SECRET:?run railway/scripts/gen-keys.mjs first}
+
+services:
+  # --- Postgres -----------------------------------------------------------
+  # supabase/postgres, NOT stock postgres: ships the roles, auth/storage schemas
+  # and extensions the 27 migrations assume. See railway/README.md.
+  postgres:
+    image: supabase/postgres:15.8.1.060
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Runs ONCE on an empty volume, before any app migration. Ordering matters:
+      # the 00_ prefix guarantees roles + auth.uid() exist first.
+      - ./init:/docker-entrypoint-initdb.d:ro
+    ports:
+      # Exposed only so you can psql in to run migrations and the RLS matrix.
+      - '54322:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # --- PostgREST ----------------------------------------------------------
+  # Serves all 45 supabase.from() sites. Connects as `authenticator`, then
+  # switches to the JWT's role per request so RLS applies.
+  rest:
+    image: postgrest/postgrest:v12.2.3
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@postgres:5432/postgres
+      PGRST_DB_SCHEMAS: public,storage
+      # Role used when no JWT is present — signed-out requests. RLS still applies.
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_JWT_AUD: authenticated
+      PGRST_DB_USE_LEGACY_GUCS: 'false'
+
+  # --- GoTrue (auth) ------------------------------------------------------
+  # Issues the JWTs whose `sub` claim becomes auth.uid().
+  auth:
+    image: supabase/gotrue:v2.170.0
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      <<: *jwt
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres?search_path=auth
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: '9999'
+      # Must be the PUBLIC gateway origin — it is what goes into confirmation
+      # email links, and what detectSessionInUrl reads tokens back from.
+      GOTRUE_SITE_URL: ${SITE_URL:-http://localhost:5173}
+      API_EXTERNAL_URL: ${PUBLIC_URL:-http://localhost:8000}
+      GOTRUE_URI_ALLOW_LIST: ${SITE_URL:-http://localhost:5173}/*
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      # These two are a contract with PostgREST: tokens must carry
+      # role=authenticated and aud=authenticated or every query 401s.
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: '3600'
+      GOTRUE_DISABLE_SIGNUP: 'false'
+      # Local only: skip email confirmation so QA can create users freely.
+      # MUST be false in production or anyone can sign up as any address.
+      GOTRUE_MAILER_AUTOCONFIRM: ${MAILER_AUTOCONFIRM:-true}
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: 'true'
+
+  # --- Storage ------------------------------------------------------------
+  # Required rather than raw S3: migration 0008 enforces media access with an
+  # RLS policy on storage.objects. See railway/README.md.
+  storage:
+    image: supabase/storage-api:v1.11.13
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      rest: { condition: service_started }
+    environment:
+      ANON_KEY: ${ANON_KEY:?required}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY:?required}
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres
+      POSTGREST_URL: http://rest:3000
+      FILE_SIZE_LIMIT: '52428800'
+      # 'file' = a mounted volume. Switch to 's3' with R2 credentials if media
+      # ever outgrows the volume; the RLS policy keeps applying either way.
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: stub
+      REGION: stub
+      GLOBAL_S3_BUCKET: stub
+    volumes:
+      - storagedata:/var/lib/storage
+
+  # --- Realtime -----------------------------------------------------------
+  # Backs src/features/realtime/useRealtimeRefresh.ts (postgres_changes).
+  realtime:
+    image: supabase/realtime:v2.34.7
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      PORT: '4000'
+      DB_HOST: postgres
+      DB_PORT: '5432'
+      DB_USER: postgres
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: postgres
+      DB_ENC_KEY: ${REALTIME_ENC_KEY:?16-char key required}
+      API_JWT_SECRET: ${JWT_SECRET}
+      SECRET_KEY_BASE: ${REALTIME_SECRET_KEY_BASE:?64-char key required}
+      ERL_AFLAGS: -proto_dist inet_tcp
+      DNS_NODES: "''"
+      RLIMIT_NOFILE: '10000'
+      SEED_SELF_HOST: 'true'
+      RUN_JANITOR: 'true'
+
+  # --- Edge Functions ----------------------------------------------------
+  # The 7 Deno functions, served as one process. SUPABASE_URL points at the
+  # gateway (not at rest: directly) so the functions' own supabase-js clients
+  # resolve the same sub-paths the browser does.
+  functions:
+    build:
+      context: ..
+      dockerfile: railway/functions/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      rest: { condition: service_started }
+      auth: { condition: service_started }
+    environment:
+      SUPABASE_URL: http://gateway:8000
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
+      APP_URL: ${SITE_URL:-http://localhost:5173}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRICE_MONTHLY: ${STRIPE_PRICE_MONTHLY:-}
+      STRIPE_PRICE_SEMIANNUAL: ${STRIPE_PRICE_SEMIANNUAL:-}
+      STRIPE_PRICE_ANNUAL: ${STRIPE_PRICE_ANNUAL:-}
+      TRIAL_PERIOD_DAYS: ${TRIAL_PERIOD_DAYS:-14}
+
+  # --- Gateway -----------------------------------------------------------
+  # The ONE public origin. This is what VITE_SUPABASE_URL points to, and the
+  # reason the frontend needs no code changes.
+  gateway:
+    build: ./gateway
+    restart: unless-stopped
+    depends_on:
+      - rest
+      - auth
+      - storage
+      - realtime
+      - functions
+    environment:
+      PORT: '8000'
+      GATEWAY_DOMAIN: ''
+    ports:
+      - '8000:8000'
+
+volumes:
+  pgdata:
+  storagedata:

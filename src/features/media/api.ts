@@ -46,7 +46,7 @@ export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
  * decoding images much above ~4.5 MP (2048² = 4.19 MP is the safe max), so the
  * server rejects sources over that. Downscaling here — using the browser's
  * native decoder, which has no such limit — is what lets a 12 MP+ phone photo be
- * uploaded successfully. (See QA/1.6_tests/processing-and-variants.md.)
+ * uploaded successfully. (See QA/1.9_tests/processing-and-variants.md.)
  */
 export const MAX_IMAGE_DIM = 2048
 

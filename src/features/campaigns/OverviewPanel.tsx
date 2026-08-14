@@ -1,36 +1,57 @@
 /**
  * OverviewPanel — the "Overview" tab body of the campaign workspace.
  *
- * Owns (extracted from the old flat CampaignPage in 1.4): the member roster
- * (all members), DM-only invite-code management (create/copy/revoke), and the
- * owner-only danger zone (delete campaign). This panel is self-contained: it
- * manages its own invite-code and delete state so the shell (CampaignPage) only
- * has to hand it the campaign, roster, and the caller's role flags.
+ * Owns the *people and timing* side of a campaign: the member roster (visible to
+ * everyone), DM-only invite-code management (create/copy/revoke), a read-only
+ * note of which game mode the campaign is in, and — since 5.2.1h — session
+ * **scheduling**, folded in from what used to be its own tab. Scheduling answers
+ * the same question as the roster ("who's in this campaign and when are we
+ * playing?") and didn't need a rail slot of its own.
  *
- * All DM/owner gating here is UI convenience; the real enforcement is RLS
- * (migrations 0003–0004): a player's client cannot read/write invite codes and
- * a non-owner's delete matches zero rows.
+ * Campaign *administration* — renaming, switching game mode, backups, and
+ * deleting — used to live here too, and moved to the DM-only Settings tab
+ * (<SettingsPanel>) once this tab had grown too many unrelated jobs. The rule of
+ * thumb: Overview answers "who's in this campaign, how do I add someone, and
+ * when are we playing?"; Settings answers "how is this campaign configured?".
+ *
+ * Overview is reached from the APP HEADER ("Campaign overview", beside the home
+ * link), not from the tab rail at all, and also opens by itself when you enter
+ * the campaign from the dashboard. It is campaign-level reference material —
+ * the same altitude as the home link next to it — while the rail lists the
+ * places you actually work. Being in the header also means it is reachable from
+ * anywhere, including a playspace campaign where the map owns the middle.
+ *
+ * DM gating here is UI convenience; the real enforcement is RLS (migrations
+ * 0003–0004): a player's client cannot read or write invite codes at all.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { Button, FormError } from '../../components/ui'
+import { SchedulePanel } from '../schedule/SchedulePanel'
 import {
   createInviteCode,
-  deleteCampaign,
   deleteInviteCode,
   listInviteCodes,
-  renameCampaign,
+  GAME_MODES,
   type Campaign,
+  type GameMode,
   type InviteCode,
   type Member,
 } from './api'
-import { CampaignDataPanel } from '../exportImport/CampaignDataPanel'
 
 /**
- * @param campaign - The loaded campaign (name, owner_id…).
- * @param members - The full roster (already sorted DMs-first by the shell).
- * @param isDm - Whether the caller is a DM (gates the invite-code section).
- * @param isOwner - Whether the caller owns the campaign (gates the danger zone).
+ * Human-readable name for a game mode, for the read-only line below.
+ * @param mode - The mode to label.
+ * @returns Its display label from GAME_MODES, or the raw value if unknown.
+ */
+function labelFor(mode: GameMode): string {
+  return GAME_MODES.find((m) => m.value === mode)?.label ?? mode
+}
+
+/**
+ * @param campaign - The loaded campaign (for its id and current game mode).
+ * @param members - The full roster (already sorted DM-first by the shell).
+ * @param isDm - Whether the caller is a DM (gates the invite-code section, and
+ *        decides whether the mode line points at Settings).
  * @param currentUserId - The caller's auth id, to mark "(you)" and stamp
  *        created_by on new invite codes.
  */
@@ -38,53 +59,16 @@ export function OverviewPanel({
   campaign,
   members,
   isDm,
-  isOwner,
   currentUserId,
-  onRenamed,
 }: {
   campaign: Campaign
   members: Member[]
   isDm: boolean
-  isOwner: boolean
   currentUserId: string | undefined
-  /** Called after a successful rename so the shell can update its header. */
-  onRenamed?: (name: string) => void
 }) {
-  const navigate = useNavigate()
-
   const [codes, setCodes] = useState<InviteCode[]>([])
   const [error, setError] = useState<string | null>(null)
   const [working, setWorking] = useState(false)
-  // Whether the destructive delete confirmation is currently showing.
-  const [confirmingDelete, setConfirmingDelete] = useState(false)
-  // Campaign rename (DM only): editing flag + the in-progress name draft.
-  const [renaming, setRenaming] = useState(false)
-  const [nameDraft, setNameDraft] = useState(campaign.name)
-  const [savingName, setSavingName] = useState(false)
-
-  /** DM: persist the renamed campaign, then update the header via onRenamed. */
-  async function handleRename() {
-    const next = nameDraft.trim()
-    if (!next) {
-      setError('Campaign name cannot be empty.')
-      return
-    }
-    if (next === campaign.name) {
-      setRenaming(false)
-      return
-    }
-    setSavingName(true)
-    setError(null)
-    try {
-      await renameCampaign(campaign.id, next)
-      onRenamed?.(next)
-      setRenaming(false)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not rename the campaign.')
-    } finally {
-      setSavingName(false)
-    }
-  }
 
   /**
    * Loads invite codes for DMs. Players are blocked by RLS, so we only attempt
@@ -109,7 +93,7 @@ export function OverviewPanel({
     setWorking(true)
     setError(null)
     try {
-      await createInviteCode(campaign.id, currentUserId, 'player')
+      await createInviteCode(campaign.id, currentUserId)
       setCodes(await listInviteCodes(campaign.id))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create code.')
@@ -137,60 +121,19 @@ export function OverviewPanel({
     void navigator.clipboard?.writeText(code)
   }
 
-  /**
-   * Owner: permanently delete the campaign, then return to the dashboard.
-   * Cascade FKs remove all members and invite codes at the DB level.
-   */
-  async function handleDeleteCampaign() {
-    setWorking(true)
-    setError(null)
-    try {
-      await deleteCampaign(campaign.id)
-      navigate('/', { replace: true })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not delete campaign.')
-      setWorking(false)
-      setConfirmingDelete(false)
-    }
-  }
-
   return (
     <div style={{ marginTop: 'var(--space-6)' }}>
-      {error && <div style={{ marginBottom: 'var(--space-4)' }}><FormError message={error} /></div>}
+      {error && (
+        <div style={{ marginBottom: 'var(--space-4)' }}>
+          <FormError message={error} />
+        </div>
+      )}
 
-      {/* Campaign name + DM rename. */}
-      <section style={{ marginBottom: 'var(--space-6)' }}>
-        {renaming ? (
-          <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center' }}>
-            <input
-              value={nameDraft}
-              onChange={(e) => setNameDraft(e.target.value)}
-              maxLength={120}
-              aria-label="Campaign name"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void handleRename()
-                if (e.key === 'Escape') { setNameDraft(campaign.name); setRenaming(false) }
-              }}
-              style={{ flex: '1 1 220px', minWidth: 180, font: 'inherit', fontSize: '1.3rem', fontWeight: 700, background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: 'var(--space-2)', color: 'var(--color-text)' }}
-            />
-            <Button style={{ width: 'auto' }} busy={savingName} onClick={handleRename}>Save</Button>
-            <Button variant="secondary" style={{ width: 'auto' }} disabled={savingName} onClick={() => { setNameDraft(campaign.name); setRenaming(false) }}>Cancel</Button>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'baseline', flexWrap: 'wrap' }}>
-            <h1 style={{ margin: 0, fontSize: '1.4rem' }}>{campaign.name}</h1>
-            {isDm && (
-              <button
-                onClick={() => { setNameDraft(campaign.name); setRenaming(true) }}
-                style={{ font: 'inherit', fontSize: '0.85rem', background: 'none', border: '1px solid var(--color-border)', color: 'var(--color-text-muted)', borderRadius: 'var(--radius)', padding: 'var(--space-1) var(--space-3)', cursor: 'pointer' }}
-              >
-                Rename campaign
-              </button>
-            )}
-          </div>
-        )}
-      </section>
+      {/* Game mode — read-only here for everyone; the DM changes it in Settings. */}
+      <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem', marginTop: 0 }}>
+        This campaign plays as <strong>{labelFor(campaign.game_mode)}</strong>.
+        {isDm ? ' Change it in the Settings tab.' : ' Only the DM can change it.'}
+      </p>
 
       {/* Roster — visible to all members. */}
       <section>
@@ -292,54 +235,13 @@ export function OverviewPanel({
         </section>
       )}
 
-      {/* Backup & data — export/import (Phase 4.2). DM only. */}
-      {isDm && <CampaignDataPanel campaignId={campaign.id} campaignName={campaign.name} />}
-
-      {/* Danger zone — deleting the campaign. Owner (creating DM) only, to match
-          the campaigns_delete_owner RLS policy. */}
-      {isOwner && (
-        <section
-          style={{
-            marginTop: 'var(--space-8)',
-            padding: 'var(--space-6)',
-            border: '1px solid var(--color-danger)',
-            borderRadius: 'var(--radius)',
-          }}
-        >
-          <h2 style={{ fontSize: '1.1rem', marginTop: 0, color: 'var(--color-danger)' }}>
-            Danger zone
-          </h2>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
-            Deleting this campaign permanently removes it for everyone, along with
-            all memberships and invite codes. This cannot be undone.
-          </p>
-          {confirmingDelete ? (
-            <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-              <Button
-                style={{ width: 'auto', background: 'var(--color-danger)' }}
-                busy={working}
-                onClick={handleDeleteCampaign}
-              >
-                Yes, delete “{campaign.name}”
-              </Button>
-              <Button
-                variant="secondary"
-                style={{ width: 'auto' }}
-                disabled={working}
-                onClick={() => setConfirmingDelete(false)}
-              >
-                Cancel
-              </Button>
-            </div>
-          ) : (
-            <Button
-              variant="secondary"
-              style={{ width: 'auto', color: 'var(--color-danger)' }}
-              onClick={() => setConfirmingDelete(true)}
-            >
-              Delete campaign
-            </Button>
-          )}
+      {/* Scheduling — folded in from its own tab in 5.2.1h. It is the other
+          "who is in this campaign and when are we playing" question, so it sits
+          with the roster rather than competing for a rail slot of its own.
+          SchedulePanel renders its own heading and owns its data/RLS. */}
+      {currentUserId && (
+        <section style={{ marginTop: 'var(--space-8)' }}>
+          <SchedulePanel campaignId={campaign.id} currentUserId={currentUserId} isDm={isDm} />
         </section>
       )}
     </div>

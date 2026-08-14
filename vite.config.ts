@@ -1,5 +1,5 @@
 /**
- * Vite build/dev configuration for the D&D Campaign Manager SPA.
+ * Vite build/dev configuration for the TableTopChaos SPA.
  *
  * Owns: the dev server and production bundling for the React/TypeScript front
  * end. There is no app server in this project — the built static assets talk

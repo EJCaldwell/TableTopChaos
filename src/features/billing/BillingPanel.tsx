@@ -1,5 +1,10 @@
 /**
- * BillingPanel — the DM-only "Plan & Billing" tab body (Phase 1.5.2).
+ * BillingPanel — the DM-only plan & billing controls (Phase 1.5.2).
+ *
+ * As of Phase 5.2 this is a **section of the Settings tab**, not a tab of its
+ * own: billing is campaign administration, visited rarely, and it belongs with
+ * the other rarely-visited administration in Settings rather than taking a slot
+ * in the day-to-day rail. Nothing about its behavior changed with the move.
  *
  * Owns: showing the campaign's current billing state (not started / trialing /
  * active / past-due / lapsed) and the matching action — start a trial, subscribe
@@ -7,8 +12,9 @@
  * selector (monthly / semi-annual / annual) is shown when the DM needs to choose
  * a plan.
  *
- * This panel is only reachable on the DM-gated "billing" tab, and the underlying
- * subscription row is DM-only at the RLS layer, so a player can never load it.
+ * This panel is only reachable inside the DM-gated Settings tab, and the
+ * underlying subscription row is DM-only at the RLS layer, so a player can never
+ * load it.
  *
  * Note: while private.billing_config.enforce_active is false (pre-launch), the
  * app does not actually gate features on any of this — starting a subscription

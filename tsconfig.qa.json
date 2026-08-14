@@ -1,0 +1,21 @@
+{
+  // Type-checks the QA harness under QA/tools/.
+  //
+  // The app's own tsconfig covers src/ only, so without this the harness would
+  // rot silently: it imports app types (CampaignLayout, WorkspaceTab), and a
+  // field added to one of them would leave the checks compiling against a shape
+  // that no longer exists. `npm run qa:checks` runs this before executing.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["QA/tools/**/*.mts", "src/features/campaigns/layout.ts", "src/features/campaigns/tabs.ts"]
+}

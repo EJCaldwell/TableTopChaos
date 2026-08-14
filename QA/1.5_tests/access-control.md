@@ -33,16 +33,12 @@ to call the Edge Functions directly (browser devtools console on the running app
       ✔ Returned `data: []`.
 - [X] **DM can read.** As **Account A (owner/DM)**, the same select returns the
       one row. The "Plan & billing" tab loads its status normally.
-- [ ] *(Optional, other-DM)* If you can make a second DM in the campaign who is not
-      the owner, confirm they also get **403** from `create-checkout-session`
-      (owner-only, stricter than DM-only) but *can* read the subscription row (the
-      RLS read policy is DM-wide).
 
 ## Pass criteria
 
 Players (and unauthenticated callers) cannot open Checkout or the portal and
-cannot read the subscription row; the owner can do all three; a non-owner DM can
-read but not buy. All of this holds against direct API calls, not only the hidden
+cannot read the subscription row; and the owner — who is a campaign's only DM —
+can do all three. All of this holds against direct API calls, not only the hidden
 UI.
 
 > Owner checks live in

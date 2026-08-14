@@ -16,7 +16,7 @@ trial ≈ 500 MB, paid ≈ 5 GB, and unlimited-of-concern while `enforce_active 
 false`), but nothing writes image bytes to meter against it until the media
 pipeline in **Phase 1.6**.
 
-**Where it gets tested:** as part of **`QA/1.6_tests/`**. When 1.6 wires uploads,
+**Where it gets tested:** as part of **`QA/1.9_tests/`**. When 1.6 wires uploads,
 that phase must:
 - meter per-campaign bytes and block uploads over `campaign_storage_cap()` in the
   upload Edge Function / RLS (with `enforce_active = true`);

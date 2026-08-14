@@ -88,7 +88,7 @@ function InitiativeTracker({ campaignId }: { campaignId: string }) {
     void refresh()
   }, [refresh])
 
-  // Live: merge initiative changes from another DM session (co-DM / other tab)
+  // Live: merge initiative changes from another of the DM's own sessions/tabs
   // row-by-row, so only the changed combatant re-renders (no full reload).
   useRealtimeSync<InitiativeEntry>(
     'initiative_entries',

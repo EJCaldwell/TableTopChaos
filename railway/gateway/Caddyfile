@@ -1,0 +1,69 @@
+# ---------------------------------------------------------------------------
+# Gateway — presents the five backend services as ONE Supabase-shaped origin.
+#
+# Owns: path routing only. No auth decisions are made here. Every service behind
+# this gateway independently verifies the JWT against the shared JWT_SECRET, so a
+# request that slips through with a bad token is still rejected downstream — the
+# gateway is not a trust boundary.
+#
+# `handle_path` (not `handle`) is used deliberately: it STRIPS the matched prefix.
+# PostgREST expects /campaigns, not /rest/v1/campaigns. Using `handle` here is the
+# single most likely cause of a stack that boots clean but 404s every query.
+# ---------------------------------------------------------------------------
+
+{$GATEWAY_DOMAIN:localhost}:{$PORT:8000} {
+	log {
+		output stdout
+		format console
+	}
+
+	# --- Auth (GoTrue) -----------------------------------------------------
+	# supabase.auth.* → /auth/v1/token, /auth/v1/user, /auth/v1/signup, …
+	# GoTrue serves these at its root, so the prefix is stripped.
+	handle_path /auth/v1/* {
+		reverse_proxy {$AUTH_HOST:auth:9999}
+	}
+
+	# --- Data (PostgREST) --------------------------------------------------
+	# Serves all 45 supabase.from() sites and the 3 .rpc() calls.
+	# RLS is enforced by Postgres; PostgREST only forwards the JWT claims.
+	handle_path /rest/v1/* {
+		reverse_proxy {$REST_HOST:rest:3000}
+	}
+
+	# --- Storage -----------------------------------------------------------
+	# Backs media/api.ts createSignedUrl(). storage-api serves /object/*,
+	# /bucket/* at its root, so the prefix is stripped.
+	handle_path /storage/v1/* {
+		reverse_proxy {$STORAGE_HOST:storage:5000}
+	}
+
+	# --- Realtime (WebSocket) ---------------------------------------------
+	# Backs useRealtimeRefresh.ts. Realtime mounts its socket at /socket, and
+	# supabase-js requests /realtime/v1/websocket — so rewrite rather than a
+	# plain strip. Caddy upgrades WebSockets automatically; no extra config.
+	handle_path /realtime/v1/* {
+		rewrite * /socket{uri}
+		reverse_proxy {$REALTIME_HOST:realtime:4000}
+	}
+
+	# --- Edge Functions ----------------------------------------------------
+	# The 7 Deno functions. NOTE: stripe-webhook must receive the RAW body
+	# with its signature header intact — do not add any body-rewriting
+	# directive to this block or constructEventAsync() will fail verification.
+	handle_path /functions/v1/* {
+		reverse_proxy {$FUNCTIONS_HOST:functions:8000}
+	}
+
+	# --- Health ------------------------------------------------------------
+	# Point Railway's healthcheck here. It deliberately does NOT touch the
+	# database, so a DB blip doesn't cause Railway to cycle the gateway too.
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	# Anything else is not part of the Supabase surface.
+	handle {
+		respond "not found" 404
+	}
+}

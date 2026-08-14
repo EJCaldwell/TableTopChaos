@@ -1,4 +1,17 @@
-# D&D Campaign Manager — Master Implementation Plan
+# TableTopChaos — Master Implementation Plan
+
+> **Phases were renumbered on 2026-08-14** so the number matches the execution
+> order. Only *unbuilt* phases moved (old 6–13 → new 6–13); **Phases 1–5 kept
+> their numbers**, because they are built and referenced across ~88 code comments,
+> 21 migrations, the QA folders and the git history. Old → new:
+> 13→6, 8→7, 9→8, 6→9, 7→10, 10→11, 11→12, 12→13; 14 unchanged. Commit messages
+> and QA run logs written before that date use the old numbering.
+
+> **Owner actions before launch live in [PRE_LAUNCH.md](PRE_LAUNCH.md)** — the
+> Stripe sandbox→live switch, the `enforce_active` flip, the rename jobs that a
+> repo-wide find/replace cannot reach, test-data wipe, and the Phase 7 legal
+> blockers. This file is what to *build*; that file is what *you* have to go and
+> change by hand.
 
 **Project Goal:** A "glorified notepad" web app for tabletop campaigns: the DM
 keeps private tabs (encounters, notes, NPCs, etc.) and can view every player's
@@ -154,87 +167,126 @@ These framed the whole plan and should not be quietly reversed:
   - [x] 4.4.3 — QA *(2026-07-29 PASS — two concurrent sessions: HP→Party, Handouts→Shared, Scheduling both ways, Initiative across DM tabs all merged live (~1–2s, per-row, no flicker); signed-out tab got nothing; tab-switch teardown clean. Row-level merge approach verified)*
 
 ### Phase 5: Game mode foundation & selection
-- [ ] 5.1 — Mode data model & switching
-  - [ ] 5.1.1 — Backend
-  - [ ] 5.1.2 — Web UI
-  - [ ] 5.1.3 — QA
+- [x] 5.1 — Mode data model & switching
+  - [x] 5.1.1 — Backend *(migration 0028: public.game_mode enum ('notetaker' | 'playspace' | 'rpg') + campaigns.game_mode NOT NULL DEFAULT 'notetaker' — default means no backfill and every existing campaign is unaffected (verified: all read 'notetaker'). No new RLS: switching is a plain campaigns UPDATE, so it inherits campaigns_update_dm (private.is_campaign_dm(id), USING + WITH CHECK), the only UPDATE policy on the table. Deliberately NO trigger and NO cascade on the column — switch-down is non-destructive, documented next to the column: lower modes stop READING playspace (Phase 9) / combat (Phase 10) rows, never delete them. getCampaign/listMyCampaigns already select('*') so game_mode flows through with no new endpoint; api.ts adds GameMode, GAME_MODES (single source of option order + copy), gameModeRank, setGameMode (.single() so a blocked update throws), and a gameMode param on createCampaign)*
+  - [x] 5.1.2 — Web UI *(shared campaigns/ModePicker.tsx radio-group segmented control (label + one-line description per mode, accent border on the selected one, disabled while saving) used by BOTH surfaces so wording/order can't drift. DashboardPage create form: "How will this campaign play?" defaulting to Note taker, resets after create. OverviewPanel: new "Game mode" section above the roster — DM picks → confirm step whose copy branches on gameModeRank (up = "unlocks the extra features"; down = "only hides the richer features, nothing is deleted, they come back if you switch up") → setGameMode → onModeChanged updates the shell's campaign in place (no refetch), ready for 5.2's chrome branch. Re-picking the active mode clears the pending state instead of confirming a no-op. Players see a read-only "Only the DM can change it" line. Types regenerated (campaigns.game_mode + Enums.game_mode). typecheck + build clean)*
+  - [x] 5.1.2b — Web UI: DM Settings tab *(added on request after 5.1, since Overview had accumulated too many unrelated jobs. New DM-only 'settings' tab (tabs.ts, last in the DM group) rendering campaigns/SettingsPanel.tsx: Campaign name (rename), Game mode (the 5.1 picker + confirm), Backup & data (CampaignDataPanel), and the owner-only Danger zone. OverviewPanel trimmed to the people side — roster + DM invite codes + a read-only "plays as X, change it in Settings" line — and lost its isOwner/onRenamed/onModeChanged props; the shell now passes those to SettingsPanel instead. Pure relocation: no behavior change to rename/export/delete. Split rationale: Overview = "who's in this campaign and how do I add someone?", Settings = "how is this campaign configured?". typecheck + build clean)*
+  - [x] 5.1.2c — Cleanup: removed the co-DM concept *(co-DM was already "considered and intentionally dropped from scope" (see Technical summary), but stale language implied it was coming. Now: migration 0029 rewrites the in-DB comments on campaign_role / add_owner_as_dm / campaigns_update_dm to state the real invariant — exactly ONE 'dm' member per campaign, its owner (0003's matching comments corrected in place so a fresh DB and an existing one describe themselves identically; comments only, zero behavior change). createInviteCode lost its `role` parameter and hard-codes 'player', closing the only client path that could ever have minted a DM code. Reworded roster-sort / CombatPanel / SettingsPanel comments and dropped the "non-owner DM" optional steps from QA 1.5 + 5.1. Verified in the DB: all 7 campaigns have exactly 1 dm member and it is always the owner; all invite codes are role=player, so no data cleanup was needed. SettingsPanel still gates the danger zone on isOwner — that mirrors campaigns_delete_owner (owner-based) vs the rest of the panel (DM-based), which is belt-and-braces now that DM == owner)*
+  - [x] 5.1.3 — QA *(**COMPLETE/PASS 2026-08-07 — all three areas.** QA/5.1_tests/ rewritten from scratch 2026-07-31. **Automated + server-side: PASS** — build clean; advisors show no new lints from 0028/0029; mode-access.md re-ran the full four-role matrix live (DM update → 1 row; member player → 0; non-member → 0; anon read → 0; member read → 1), audited pg_policies on campaigns (4 policies, all {authenticated}, no anon policy, campaigns_update_dm is the only UPDATE and is is_campaign_dm in USING + WITH CHECK), confirmed the enum rejects an invalid value (22P02), that the only triggers on campaigns are add_owner_as_dm (AFTER INSERT) + set_updated_at (BEFORE UPDATE) with no cascade on the column, and that a DM's rpg→notetaker→playspace round trip leaves every child-row count identical. **Browser checklists: PASS 2026-08-07** — the user ran mode-selection.md (all 12 steps: create-picker default + reset, confirm-before-save, correct up/down copy, no confirm on a no-op re-pick, Cancel reverts unsaved, persistence across hard refresh + navigation, player sees a read-only line and no Settings tab, no chrome change or console errors on a notetaker campaign) and settings-tab.md (all 11: tab placement/gating, reduced Overview, rename + blank-name validation, export/import, journal export, owner-only delete confirm/cancel/delete, player-only invite codes). **One follow-up applied:** import was removed from Settings → Backup & data, which is now export-only — importing always creates a *brand-new* campaign, so it belongs to the dashboard flow that already owns it; offering it inside a campaign's settings implied it would overwrite that campaign. CampaignDataPanel lost its file input, pending-file confirm and post-import summary; importCampaign/ImportResult remain for DashboardPage; build clean after (652.99 → 650.63 kB). settings-tab.md step 8 now asserts the import controls are absent — re-verify that one step on the next browser pass. The maps/tokens/combat half of the non-destructive invariant stays deferred to Phase 9/10 QA)*
 - [ ] 5.2 — Mode-aware app shell (sidebar + pop-out)
-  - [ ] 5.2.1 — Web UI
-  - [ ] 5.2.2 — QA
+  - [x] 5.2.1 — Web UI *(CampaignPage now branches its chrome on campaign.game_mode: 'notetaker' keeps the original top tab bar untouched, 'playspace'/'rpg' render the new campaigns/PlayspaceShell.tsx and widen the container 860→1600. Enabling refactor first: the shell's long inline `activeTabDef?.key === …` chain was extracted to campaigns/TabBody.tsx, so BOTH chromes render the same panels from the same role guards and cannot drift; both also take visibleTabs from the one tabsForRole(isDm) memo, so the rail has no tab list of its own. PlayspaceShell = collapsible left rail (« Collapse → single-letter strip) + a docked drawer showing the active tab (drawer open/closed is state SEPARATE from which tab is active, so closing it to see the map doesn't lose your place) + a floating layer over a Phase-6 battlemap placeholder. A panel is docked, floating, or closed — never two at once (a second mount would run duplicate queries + realtime subs); clicking a floating tab in the rail focuses it instead of docking a copy. campaigns/FloatingPanel.tsx: drag by title bar, resize from a corner grip, both via Pointer Events + setPointerCapture (a fast drag can't strand the window), rect committed to the parent once on release rather than per pointermove so persistence isn't written 60×/s; clamped so some title bar always stays reachable; array order IS z-order, focus moves a panel to the end. campaigns/layout.ts persists {sidebarCollapsed, drawerOpen, floating[]} to localStorage per campaign (`campaign:<id>:layout`) — a per-user VIEW PREFERENCE, deliberately never in Postgres and so with no RLS story. loadLayout is defensive about untrusted input: bad JSON, non-finite coords, duplicate keys, off-screen/sub-minimum rects and — importantly — floating entries for tabs the caller may no longer see are all pruned, with a matching effect for a role change mid-session. Chosen over window.open pop-outs (the other option PLANNING allowed) on the user's call: no popup blockers, no second document to copy styles into, no orphaned windows on refresh. NO backend, NO migration, NO new query — 5.2 adds zero data access. typecheck + build clean, 650.63 → 659.90 kB)*
+  - [x] 5.2.1b — Web UI: shell revisions *(four changes on the user's request after running 5.2's QA. (1) **Plan & billing is no longer a tab** — it moved into SettingsPanel as a section between Game mode and Backup & data; 'billing' was deleted from the tabs.ts catalog with a comment telling future readers not to re-add it. Rarely visited, so it hadn't earned a permanent rail slot. Stale `activeTab:'billing'` falls back to Overview via the existing validity guard and a stale floating entry is pruned by loadLayout, so no migration of saved state was needed. (2) **Floating windows resize from all eight handles** (four edges + four corners), not just the bottom-right grip; north/west resizes derive the clamped dimension FIRST and move the origin by the difference, so the opposite edge stays pinned and the window doesn't slide sideways once it hits the minimum. The SE corner keeps its visible wedge as the affordance people look for; the other seven are invisible 8px hit zones. (3) **The workspace is full-bleed** — CampaignPage is now a 100dvh flex column (dvh not vh, so mobile browser chrome collapsing doesn't leave it short) with a compact full-width title bar; the centred 860px column is gone and the page itself no longer scrolls, panels scroll internally. (4) **Note taker uses the same shell** — the top tab bar is DELETED and PlayspaceShell became WorkspaceShell, used in every mode, so several panels can be open at once in a note-taking campaign too. Mode now only decides what sits in the middle: the docked panel fills it in notetaker (inside a 900px reading column so panels don't stretch), or becomes a fixed 460px column beside the battlemap placeholder in playspace/rpg. Structural fix that came with it: the floating layer is now positioned over the WHOLE content region rather than the space the docked panel left over, so windows can be dragged across the docked panel instead of being trapped beside it. (5) **Close tabs** — a rail button above the section list closing the docked panel and every floating window at once; shown to BOTH roles (layout is a personal view preference, nothing role-specific to gate) and only when openCount > 0, so it is never a dead control; deliberately leaves sidebarCollapsed alone (the rail is how you reopen anything, so clearing must not hide the way back) and leaves activeTab alone, so the next rail click lands where you left off. No confirm step — nothing is deleted and every panel is one click from returning. typecheck + build clean, 659.90 → 661.03 kB)*
+  - [x] 5.2.1c — Web UI: click-to-open rail *(four more changes on request. (1) **The campaign title bar is gone** — that row cost a full row of vertical space in a full-bleed workspace for one line of text; the campaign name + role badge moved into a new optional `center` slot on AppHeader (flex:1 centred, so it stays centred regardless of how wide the side groups are, and degrades when the email is long). (2) **The in-workspace campaign switcher was removed** with it — switching now goes via the dashboard; listMyCampaigns is still read, but only to learn the caller's role for tab gating. (3) **The rail is side-switchable and starts on the RIGHT** (layout.railSide, persisted); the divider and the selected-entry accent marker both flip so they always face the workspace, and the collapse chevron points the sensible way per side. (4) **Clicking a rail entry opens that panel directly as a floating window** — the old "click the tab, then click ⧉" was two actions for one intent. This DELETED the docked panel concept entirely, taking the ⧉ pop-out and ⇤ dock buttons with it: a rail entry is now a three-way toggle (closed → open; open but buried → raise; already frontmost → close), where raising before closing matters or clicking a half-buried window's entry to see it would dismiss it. Consequence recorded honestly: no panel gets full width any more, which is why all-edge resize (5.2.1b) matters more than it did. layout.ts dropped `drawerOpen` and gained `railSide`; old saved layouts carrying drawerOpen are ignored rather than migrated, since it describes a UI mode that no longer exists. The build caught the dead wiring both removals left (`activeTab` prop, `useNavigate`). typecheck + build clean, 661.03 → 659.04 kB)*
+  - [x] 5.2.1d — Web UI: layout robustness *(came out of explaining the QA gap rather than from a feature request, and found a REAL BUG in the process: loadLayout clamped saved window coords at zero but had NO upper bound, so a window parked near the right edge of a wide monitor restored outside the overflow:hidden workspace area — invisible, unreachable, and recoverable only via Close tabs, which closes it rather than retrieving it. Fixed with layout.clampRect (shrink-to-fit before moving, so an oversized window isn't shoved off the left edge satisfying the right), applied in an effect keyed on the measured bounds so it runs on first measure AND on every viewport resize, correcting STATE rather than just the rendered position so the recovery persists; the open() cascade clamps too. Also added LAYOUT_VERSION: saveLayout stamps it, loadLayout discards any layout without the current version. That replaces per-key defensive branches with one rule — version drift had already bitten twice ('billing' in 5.2.1b, 'drawerOpen' in 5.2.1c) and each instance otherwise needs its own branch and its own test case forever. Cost is one re-arrangement per schema change, which is the right trade for a view preference. QA consequence: layout-persistence.md went from five console snippets with no path to completion (the user does not run console steps) to console-free apart from one optional step, and its "player injects a DM-only panel" step was DELETED as theatre — a player owns their own localStorage, so it proved nothing about security; RLS is the control and role gating is tested with a real player account. typecheck + build clean, 659.04 → 659.58 kB. **Also added the project's first automated behavior test:** QA/tools/layout-checks.mts + `npm run qa:checks` (tsx devDependency), 30 assertions over loadLayout/saveLayout/clampRect against a stubbed localStorage — corrupt JSON, stale AND future schema versions, retired tab keys, role filtering, duplicates, non-finite numbers, the full clamp geometry incl. idempotence (which is what stops the correcting effect looping), and a round trip. This exists because the user instructed that console/devtools steps are never theirs to run; the answer is to test pure logic directly rather than hand them snippets. Not a general test runner — that is still Phase 8.)*
+  - [x] 5.2.1e — Web UI: draggable rail width *(the rail's expanded width is now user-dragged from its inner edge — a 7px invisible grab strip pinned to whichever side faces the workspace, so it moves with the rail; double-click resets to default. Live width previewed in local state and committed to the layout once on release, same as FloatingPanel, so localStorage isn't written per pointermove. The drag delta is NEGATED when the rail is on the right, since dragging left grows a right-hand rail but shrinks a left-hand one. Hidden while collapsed (fixed width there, and dragging it would be a way to get stuck unreadable); the dragged width is preserved across a collapse/expand cycle. layout.railWidth clamped to [140, 480] on load via clampRailWidth. **Deliberately did NOT bump LAYOUT_VERSION** — the field is purely additive with a sensible default, so a v1 layout is still fully meaningful and discarding it would throw away the user's arrangement for nothing; the version bump is for changes that alter MEANING, not for additions. Harness extended to 40 assertions, and a tsconfig.qa.json (+@types/node) now type-checks QA/tools before running it, since the app tsconfig covers src/ only and the harness imports app types — railWidth is exactly the kind of change that would otherwise have silently invalidated it. typecheck + build clean, 659.58 → 660.45 kB)*
+  - [x] 5.2.1f — Web UI: rail footer, shared Settings, Overview on entry *(six changes on request. (1) **Close tabs is now permanent and pinned to the bottom of the rail, in red** — always rendered rather than appearing only when something is open, since the user wanted a fixed position to rely on; DISABLED (dimmed, not hidden or recoloured) at zero open panels so it never silently does nothing. (2) **Settings moved to the very bottom**, below Close tabs, under its own top border — the requested separating line. It is last in the catalog too, via a new `railFooter` flag, so catalog order and visual order agree. (3) **Overview left the rail entirely** (new `railHidden` flag) and instead **auto-opens when you enter from the dashboard**: DashboardPage's four navigations into a campaign now carry router state `{openOverview:true}`, which a refresh or pasted URL does not, so that state IS the "came from the main menu" signal. The auto-open is keyed on campaign id in a ref so it fires once per campaign and never fights a saved layout or reopens a window the user just closed. NOTE `tabsForRole` still returns railHidden tabs — it stays the single source of truth for ACCESS, so a saved Overview window is still legal; the new railTabs/railFooterTabs helpers decide only what is DRAWN. (4) **Settings is now `audience: 'all'`** — players get it too. SettingsPanel gained a **Workspace** section shown to everyone (sidebar position + reset layout) and the entire campaign-administration half is wrapped in `isDm`, so a player opening Settings sees exactly one section. The isDm check is UI convenience as ever; campaigns_update_dm / campaigns_delete_owner remain the real gate. (5) **The rail-side switch moved out of the rail into Settings → Workspace** for both roles, and the ⇤/⇥ rail button is gone; the shell owns layout state, so SettingsPanel takes an explicit WorkspacePrefs prop rather than reaching into storage — one writer of the layout. Reset layout added alongside it (bigger hammer than Close tabs, not something you want mid-session in the rail). typecheck + build clean, 660.45 → 663.37 kB; qa:checks still 40/40)*
+  - [x] 5.2.1h — Web UI: Scheduling into Overview, Overview reachable *(two changes. (1) **Scheduling is no longer a tab** — SchedulePanel now renders as a section at the foot of OverviewPanel, and 'schedule' left the catalog (its TabBody branch and import went with it, which noUnusedLocals enforced). Rationale: it answers the same question as the roster — who is in this campaign and when are we playing — so it was competing for a rail slot it didn't need. No data or RLS change; SchedulePanel owns its own queries and heading either way. (2) **Overview is reachable again.** 5.2.1f made it railHidden + auto-open-from-dashboard, which left it unreachable once closed — you had to navigate back to the dashboard, and in a playspace campaign that is a real dead end. It is now a rail FOOTER entry (railHidden dropped) while KEEPING the dashboard auto-open, so it is reference material you can always get back to without taking a slot in the working section list. Rail footer order is now Overview → Close tabs (red) → Settings, with Settings still under its own divider; the footer-entry markup was extracted to a renderFooterTab helper so the two groups around Close tabs can't drift. typecheck + build clean, 663.37 → 663.43 kB; qa:checks 40/40)*
+  - [x] 5.2.1i — Web UI: Campaign overview in the header *(Overview left the rail entirely and became a **"Campaign overview" button in the app header, beside the home link** (AppHeader gained a `leading` slot); the tab was renamed to match, so its window title reads the same. Rationale: it is campaign-level reference material — the same altitude as the home link next to it — while the rail should list only the places you work. Mechanically this needed a way for a control OUTSIDE the shell to drive the shell's layout state, so `autoOpenTab` became `openRequest: {key, nonce}`: the effect fires on nonce change, opening the panel or RAISING it if already open (never duplicating, preserving one-window-per-section). A nonce rather than a boolean because the same request legitimately repeats — clicking the button twice must re-raise the window, which a flag cannot express. CampaignPage seeds the nonce to 1 when arriving from the dashboard, so entry-open and button-open are now one mechanism instead of two. Overview is railHidden again; the rail footer is back to Close tabs + Settings. typecheck + build clean, 663.43 → 663.94 kB; qa:checks 40/40)*
+  - [ ] 5.2.1g — Web UI: rail icons *(**deferred at the user's request — do not start without asking.** Give every rail entry an icon, and show the section name as a hover tooltip rather than inline text. That makes the collapsed rail genuinely usable (it currently shows a single letter, which is a placeholder at best) and lets the expanded rail be narrower. Open questions to settle first: icon source (inline SVG set vs a dependency — inline keeps the bundle and the CSP story simple), whether expanded still shows text beside the icon or icon-only, and accessibility (a tooltip is not an accessible name, so aria-label must carry the label regardless).)*
+  - [~] 5.2.2 — QA *(QA/5.2_tests/: README + automated-coverage (build only — no migration, so no advisors and, unusually for this project, NO server-side checklist, since 5.2 adds zero data access and the existing RLS matrix still governs). **5.2.1 run 2026-08-07: the user reported all steps good** across notetaker-regression.md (tab bar untouched, both roles — this is what confirmed the TabBody extraction was a clean refactor) and playspace-shell.md (rail/drawer/collapse/pop-out/drag/resize/focus/dock + never-in-two-places), and layout-persistence.md steps 1–4 + 7 (arrangement survived refresh/nav/campaign-switch/mode round trip; per-campaign; player gating). **NOT run: every console-snippet step** (corrupt JSON, off-screen clamp, hostile saved layout) — recorded as unverified, NOT passed, so loadLayout's defensive parsing still has no browser evidence. **Then 5.2.1b invalidated much of it:** notetaker-regression.md was deleted (it guarded the tab bar 5.2.1b deliberately removed, its result preserved in the new run log) and playspace-shell.md became workspace-shell.md, rewritten for one-chrome-every-mode + all-edge resize + full-bleed + billing-in-Settings; layout-persistence.md gained step 9 for the retired 'billing' key. **Then 5.2.1c superseded it AGAIN** (docked panel deleted, click-to-open, rail side, header title, no switcher), so workspace-shell.md was rewritten a second time and now has **no current browser evidence at all** — the 2026-08-07 PASS describes a shell that no longer exists and is retained only per the run-log convention. **Open: a full fresh run of BOTH files** — workspace-shell.md (28 steps) and the rewritten layout-persistence.md (6 steps, only the last needing a console and that one optional). The console-snippet deadlock was resolved in 5.2.1d by fixing/designing away the cases rather than testing around them.)*
 
-### Phase 6: Playspace mode (grid battlemap + dynamic vision & lighting)
-- [ ] 6.1 — Battlemap & tokens
-  - [ ] 6.1.1 — Backend
-  - [ ] 6.1.2 — Web UI
-  - [ ] 6.1.3 — QA
-- [ ] 6.2 — Vision toggle & obstructions (walls + freehand)
-  - [ ] 6.2.1 — Backend
-  - [ ] 6.2.2 — Web UI
-  - [ ] 6.2.3 — QA
-- [ ] 6.3 — Token-based line of sight & sight range
-  - [ ] 6.3.1 — Backend
-  - [ ] 6.3.2 — Web UI
-  - [ ] 6.3.3 — QA
-- [ ] 6.4 — Light levels & darkness
-  - [ ] 6.4.1 — Backend
-  - [ ] 6.4.2 — Web UI
-  - [ ] 6.4.3 — QA
+### Phase 6: Self-hosted backend migration (hosted Supabase → Railway)
+> **Sequencing:** first of the unbuilt phases. Renumbered 13 → 6 on 2026-08-14;
+> migrating the backend is cheaper the smaller the surface, so it runs before the
+> playspace and combat phases add tables to move — see the phase Goal.
+- [ ] 6.1 — Local stack pre-flight
+  - [ ] 6.1.1 — Infrastructure
+  - [ ] 6.1.2 — QA
+- [ ] 6.2 — Data migration
+  - [ ] 6.2.1 — Infrastructure
+  - [ ] 6.2.2 — QA
+- [ ] 6.3 — Railway deploy & gateway
+  - [ ] 6.3.1 — Infrastructure
+  - [ ] 6.3.2 — QA
+- [ ] 6.4 — Stripe re-wiring
+  - [ ] 6.4.1 — Infrastructure
+  - [ ] 6.4.2 — QA
+- [ ] 6.5 — Cutover, backups & decommission
+  - [ ] 6.5.1 — Infrastructure
+  - [ ] 6.5.2 — QA
 
-### Phase 7: Full RPG mode (round-based combat)
-- [ ] 7.1 — Side-based round combat engine
+### Phase 7: Accounts, roles & compliance
+- [ ] 7.1 — Account deletion, data rights & cascade
   - [ ] 7.1.1 — Backend
   - [ ] 7.1.2 — Web UI
   - [ ] 7.1.3 — QA
-- [ ] 7.2 — Combat ↔ playspace integration
+- [ ] 7.2 — Legal & policy pages (ToS, Privacy, refunds)
   - [ ] 7.2.1 — Backend
   - [ ] 7.2.2 — Web UI
   - [ ] 7.2.3 — QA
 
-### Phase 8: Accounts, roles & compliance
-- [ ] 8.1 — Account deletion, data rights & cascade
-  - [ ] 8.1.1 — Backend
-  - [ ] 8.1.2 — Web UI
-  - [ ] 8.1.3 — QA
-- [ ] 8.2 — Legal & policy pages (ToS, Privacy, refunds)
-  - [ ] 8.2.1 — Backend
-  - [ ] 8.2.2 — Web UI
-  - [ ] 8.2.3 — QA
+### Phase 8: Automated testing & CI
+- [ ] 8.1 — Test infrastructure + unit/component tests (Vitest + RTL)
+- [ ] 8.2 — RLS / database policy tests
+- [ ] 8.3 — End-to-end smoke tests (Playwright) + CI pipeline
 
-### Phase 9: Automated testing & CI
-- [ ] 9.1 — Test infrastructure + unit/component tests (Vitest + RTL)
-- [ ] 9.2 — RLS / database policy tests
-- [ ] 9.3 — End-to-end smoke tests (Playwright) + CI pipeline
+### Phase 9: Playspace mode (grid battlemap + dynamic vision & lighting)
+- [ ] 9.1 — Battlemap & tokens
+  - [ ] 9.1.1 — Backend
+  - [ ] 9.1.2 — Web UI
+  - [ ] 9.1.3 — QA
+- [ ] 9.2 — Vision toggle & obstructions (walls + freehand)
+  - [ ] 9.2.1 — Backend
+  - [ ] 9.2.2 — Web UI
+  - [ ] 9.2.3 — QA
+- [ ] 9.3 — Token-based line of sight & sight range
+  - [ ] 9.3.1 — Backend
+  - [ ] 9.3.2 — Web UI
+  - [ ] 9.3.3 — QA
+- [ ] 9.4 — Light levels & darkness
+  - [ ] 9.4.1 — Backend
+  - [ ] 9.4.2 — Web UI
+  - [ ] 9.4.3 — QA
 
-### Phase 10: Transactional email & notifications
-- [ ] 10.1 — Backend (email provider + send functions)
+### Phase 10: Full RPG mode (round-based combat)
+- [ ] 10.1 — Side-based round combat engine
   - [ ] 10.1.1 — Backend
-  - [ ] 10.1.2 — QA
-- [ ] 10.2 — In-app wiring (invite-by-email, notification prefs/opt-out)
-  - [ ] 10.2.1 — Web UI
-  - [ ] 10.2.2 — QA
+  - [ ] 10.1.2 — Web UI
+  - [ ] 10.1.3 — QA
+- [ ] 10.2 — Combat ↔ playspace integration
+  - [ ] 10.2.1 — Backend
+  - [ ] 10.2.2 — Web UI
+  - [ ] 10.2.3 — QA
 
-### Phase 11: Content moderation & safety
-- [ ] 11.1 — Moderation pipeline + report→review→takedown
+### Phase 11: Transactional email & notifications
+- [ ] 11.1 — Backend (email provider + send functions)
   - [ ] 11.1.1 — Backend
-  - [ ] 11.1.2 — Web UI
-  - [ ] 11.1.3 — QA
+  - [ ] 11.1.2 — QA
+- [ ] 11.2 — In-app wiring (invite-by-email, notification prefs/opt-out)
+  - [ ] 11.2.1 — Web UI
+  - [ ] 11.2.2 — QA
 
-### Phase 12: Launch hardening
-- [ ] 12.1 — Rate limiting & abuse prevention
+### Phase 12: Content moderation & safety
+- [ ] 12.1 — Moderation pipeline + report→review→takedown
   - [ ] 12.1.1 — Backend
-  - [ ] 12.1.2 — QA
-- [ ] 12.2 — Analytics & observability
-  - [ ] 12.2.1 — Backend
-  - [ ] 12.2.2 — Web UI
-  - [ ] 12.2.3 — QA
-- [ ] 12.3 — Deployment, backups & monitoring
-  - [ ] 12.3.1 — Backend
-  - [ ] 12.3.2 — QA
+  - [ ] 12.1.2 — Web UI
+  - [ ] 12.1.3 — QA
+
+### Phase 13: Launch hardening
+- [ ] 13.1 — Rate limiting & abuse prevention
+  - [ ] 13.1.1 — Backend
+  - [ ] 13.1.2 — QA
+- [ ] 13.2 — Analytics & observability
+  - [ ] 13.2.1 — Backend
+  - [ ] 13.2.2 — Web UI
+  - [ ] 13.2.3 — QA
+- [ ] 13.3 — Deployment, backups & monitoring
+  - [ ] 13.3.1 — Backend
+  - [ ] 13.3.2 — QA
+
+### Phase 14: Responsive/mobile, theming & accessibility
+> **Sequencing:** the **last phase before launch**. Promoted out of the
+> post-launch backlog (it was PL.1) on 2026-08-13 — players use the app at the
+> table on phones, so shipping a table tool that only works on a desktop is the
+> first thing they would complain about. Left at the end because it is a pass
+> over finished screens: doing it before Phases 9–10 would mean re-doing it.
+- [ ] 14.1 — Responsive/mobile, theming & accessibility
+  - [ ] 14.1.1 — Web UI
+  - [ ] 14.1.2 — QA
 
 ### Post-launch backlog (after public launch)
-- [ ] PL.1 — Responsive/mobile, theming & accessibility
-  - [ ] PL.1.1 — Web UI
-  - [ ] PL.1.2 — QA
+> PL.1 was promoted to Phase 14, so the numbering starts at PL.2 — the gap is
+> deliberate, not a missing item.
 - [ ] PL.2 — Onboarding, empty states & sample content
 - [ ] PL.3 — Shared dice roller (table-wide, realtime)
 - [ ] PL.4 — Performance & code-splitting
@@ -451,7 +503,7 @@ hardcoded assumptions).
 - Cleanup: a campaign read-only for 3 months is deleted by the cron; warning
   emails fire at 30/7/1 days; reactivating or exporting before the deadline
   prevents loss. (Use a test clock / shortened window for the test.)
-- A non-owner (player or another DM) cannot open Checkout or read the
+- A non-owner (i.e. any player) cannot open Checkout or read the
   subscription row.
 - All caps and the read-only lock are enforced even if the client tries to bypass
   the UI (direct insert/upload is rejected).
@@ -720,8 +772,8 @@ journal** at any time.
 **game mode** — `notetaker` (exactly what exists today), `playspace`, or `rpg` —
 that the DM can switch **at any time**. The app shell adapts to the selected mode;
 `notetaker` keeps its current tab bar untouched. This phase ships only the
-foundation and the mode-aware chrome; the playspace itself (Phase 6) and
-round-based combat (Phase 7) fill it in. The three modes are cumulative tiers:
+foundation and the mode-aware chrome; the playspace itself (Phase 9) and
+round-based combat (Phase 10) fill it in. The three modes are cumulative tiers:
 `playspace` = notetaker + a shared map; `rpg` = playspace + round-based combat.
 
 ### Subphase 5.1: Mode data model & switching
@@ -734,7 +786,7 @@ round-based combat (Phase 7) fill it in. The three modes are cumulative tiers:
   matches zero rows).
 - **Switch-down is non-destructive.** Because a DM can move freely between modes,
   moving to a *simpler* mode must never delete higher-mode data. Playspace rows
-  (maps/tokens/walls/lights — Phase 6) and combat rows (Phase 7) are simply not
+  (maps/tokens/walls/lights — Phase 9) and combat rows (Phase 10) are simply not
   read/rendered while the campaign is in a lower mode; switching back restores them
   intact. No cascade delete is wired to `game_mode`; document this invariant next
   to the column.
@@ -757,170 +809,156 @@ round-based combat (Phase 7) fill it in. The three modes are cumulative tiers:
 ### Subphase 5.2: Mode-aware app shell (sidebar + pop-out)
 
 #### 5.2.1 — Web UI
-- `CampaignPage` reads `game_mode` and branches its chrome:
-  - `notetaker` → the current top tab bar, unchanged.
-  - `playspace` / `rpg` → the tabs become a **collapsible left sidebar**, and the
-    main area is reserved for the playspace (an empty placeholder until Phase 6).
-  - Each sidebar panel can **pop out into a detached, draggable/resizable floating
-    window** (or a separate browser window via `window.open`) so a player can watch
-    the map while editing their sheet. Panel open/pop-out layout persists per user
-    (localStorage), like the per-campaign active-tab persistence already in place.
+*(As built. The original spec branched the chrome by mode and kept the top tab bar
+for `notetaker`; that was dropped in 5.2.1b — see the tracker entry.)*
+- **One chrome for every mode.** The top tab bar is gone. `CampaignPage` renders
+  `WorkspaceShell` full-bleed (100dvh): a **collapsible, side-switchable tab rail**
+  (right by default) and every open panel as a **draggable/resizable floating
+  window** beside it, so several panels can be open at once in every mode.
+- **Clicking a rail entry opens its panel directly** as a window; the entry then
+  toggles raise → close. There is no docked panel and no separate pop-out step.
+- `game_mode` decides only what fills the area behind the windows:
+  - `notetaker` → nothing (a hint when the board is empty).
+  - `playspace` / `rpg` → the playspace (an empty placeholder until Phase 9).
+- The campaign name sits in the app header's centre slot; there is no campaign
+  title bar and no in-workspace campaign switcher (switch via the dashboard).
+- **Campaign overview** is not in the rail at all — it is a button in the app
+  header beside the home link, and also opens automatically when you enter the
+  campaign from the dashboard. It holds the roster, invite codes and **session
+  scheduling** (which is therefore not a tab either).
+- The rail's footer is pinned to the bottom: **Close tabs** (red, always present,
+  disabled when nothing is open), then **Settings** below a divider.
+- **Settings is visible to players too** — everyone gets a Workspace section
+  (sidebar side, reset layout); campaign administration stays DM-only.
+- Floating windows are **in-page**, not `window.open` (the other option the spec
+  allowed): no popup blockers, no second document to style, nothing orphaned by a
+  refresh. They drag by the title bar and resize from any edge or corner.
+- Panel open/pop-out layout persists per user per campaign (localStorage), like
+  the per-campaign active-tab persistence already in place.
+- Plan & billing stopped being a tab and became a **Settings section**.
+- A **Close tabs** rail button closes every open panel at once, for either role.
+- The rail is **resizable** by dragging its workspace-facing edge (double-click to
+  reset), and its width persists with the rest of the layout.
 
 #### 5.2.2 — QA
-- `notetaker` renders exactly as today; `playspace`/`rpg` show the sidebar with
-  working collapse and pop-out/pop-in; role-based tab gating is unchanged across
-  all modes; layout persists across refresh.
+- Every mode shows the rail with working collapse, dock and pop-out/pop-in;
+  `playspace`/`rpg` reserve the middle for the map; the workspace fills the window;
+  floating windows resize from every edge; role-based tab gating is unchanged
+  across all modes and can't be bypassed by a saved layout; layout persists across
+  refresh.
 
 ---
 
-## Phase 6: Playspace mode (grid battlemap + dynamic vision & lighting)
-**Goal:** In `playspace` and `rpg` campaigns, a shared grid battlemap where the DM
-sets a map and each player drags **their own** character token in real time, with
-**optional** obstruction-aware dynamic vision: sight is computed from each
-character's token position (not a whole-map reveal), limited by a sight range and
-by lighting. Vision is computed **client-side** for the MVP — smooth and instant
-on token movement, appropriate for a friendly home game; a determined player could
-inspect client data to peek, so a **server-authoritative** version is tracked as a
-post-launch hardening item (PL.5). Builds directly on Phase 4.4 Realtime.
+## Phase 6: Self-hosted backend migration (hosted Supabase → Railway)
+**Goal:** Move the backend off hosted Supabase onto a self-hosted stack on the
+already-paid-for Railway plan, eliminating the $25+/mo bill **without discarding
+the 100 RLS policies** that are this app's real access-control layer. Full spec:
+[railway/README.md](railway/README.md); step-by-step runbook with gates:
+[docs/RAILWAY_MIGRATION.md](docs/RAILWAY_MIGRATION.md).
 
-### Subphase 6.1: Battlemap & tokens
+**Why now.** Renumbered to 6 on 2026-08-14 so the number matches the order.
+It should run **before Phase 9**: Phase 9 (playspace) leans hard on the Realtime
+service, and building it against hosted Supabase means QA'ing it twice. Phase 4.4
+Realtime is already built and passing (2026-07-29), which helps — its run log is a
+known-good baseline to regression-test the migrated Realtime service against. Also
+the hosted project is on the **free** plan now, which pauses after 7 days idle.
 
-#### 6.1.1 — Backend
-- Migration: `playspace_maps` (campaign_id, `background_asset_id` → media_assets
-  via the existing 1.6 pipeline, grid size in px, width/height, `active` flag,
-  `vision_enabled` boolean default false) and `playspace_tokens` (map_id,
-  owner_user_id and/or character_id, npc_id nullable, x, y, size, color, label).
-- RLS: members read maps/tokens; the DM manages maps and **all** tokens; a player
-  may insert/move/delete **only their own** token (predicate on
-  `owner_user_id = auth.uid()` within a campaign they belong to). Add both tables
-  to the `supabase_realtime` publication + `REPLICA IDENTITY FULL`.
+**Approach — "Option A" (keep PostgREST + GoTrue).** The rejected alternative was
+bare Postgres plus a hand-written API: that would have meant rewriting 45 query
+call sites and reimplementing 100 policies in TypeScript — 3–5 weeks and a
+security regression for a multi-tenant DM/player app. This path is ~1 week.
 
-#### 6.1.2 — Web UI
-- Grid canvas that renders the map image and a square-grid overlay; tokens are
-  drag-positioned with grid snapping. Token position changes sync live via
-  `useRealtimeSync` + `mergeById` (optimistic local move; realtime drives other
-  viewers). DM can add/place any token; a player can move only their own.
+**Scope note — the frontend does not change.** All 45 `.from()` sites, 9 auth
+calls, 8 `functions.invoke` calls, 2 realtime channels, 1 storage call, 27
+migrations, and all 7 Edge Functions carry over unmodified; only two `.env` values
+change. This holds because [src/lib/supabase.ts](src/lib/supabase.ts) builds one
+client and [src/lib/env.ts](src/lib/env.ts) centralises both vars. **The cost of
+this phase is infrastructure + re-verification, not code.**
 
-#### 6.1.3 — QA
-- A token drag persists and appears on other clients live (~1–2 s, per-row);
-  a player can move only their own token and is blocked from moving others
-  (verify RLS server-side); grid snapping works; the map loads for all members.
+### Subphase 6.1: Local stack pre-flight
+#### 6.1.1 — Infrastructure
+- Generate the three cryptographically-linked secrets (`JWT_SECRET` + the two
+  derived JWT keys) via `railway/scripts/gen-keys.mjs`; fill `railway/.env.stack`.
+- Bring up the 7-service stack locally (`railway/docker-compose.yml`); confirm
+  `railway/init/00_roles_and_auth_helpers.sql` ran before any app migration.
+- Replay all 27 migrations in order against the local Postgres.
+#### 6.1.2 — QA
+- All 27 migrations apply with zero errors (0008 is the one to watch — it needs
+  the `storage` schema for its `storage.objects` policy).
+- `auth.uid()` resolves from `request.jwt.claims` — the linchpin for all 100
+  policies. If it returns NULL, stop; nothing downstream is trustworthy.
+- Gateway routing returns no 404s on `/rest/v1`, `/auth/v1`, `/storage/v1`,
+  `/functions/v1` (catches `handle` vs `handle_path` prefix-strip mistakes).
+- `npm run build` clean with `VITE_SUPABASE_URL` pointed at the local gateway.
 
-### Subphase 6.2: Vision toggle & obstructions (walls + freehand)
+### Subphase 6.2: Data migration
+#### 6.2.1 — Infrastructure
+- Dump `public` + `storage` data only (`--no-owner --no-privileges`); schema comes
+  from replaying migrations so the migration files stay the source of truth.
+- Migrate `auth.users` column-by-column, **preserving UUIDs exactly** — GoTrue
+  owns that table and its schema varies by version, so no bulk copy.
+- Re-upload the 106 media objects **through the Storage API**, not onto the volume
+  directly, so `storage.objects` rows are written.
+#### 6.2.2 — QA
+- Per-table row counts match the source; 5 users present with original UUIDs.
+- Object count is 106 and `private.campaign_storage_used()` matches the
+  pre-migration value per campaign.
+- Existing bcrypt passwords still authenticate.
 
-#### 6.2.1 — Backend
-- Migration: `playspace_walls` (map_id, kind `'segment' | 'freehand'`, geometry as
-  an ordered point list / JSON). RLS: DM-write, member-read; realtime.
-- The `vision_enabled` toggle already lives on the map (6.1.1).
+### Subphase 6.3: Railway deploy & gateway
+#### 6.3.1 — Infrastructure
+- Create the 7 services with pinned image tags; secrets as **shared variables**.
+- **Public domain on `gateway` only**; all other services stay private.
+- Attach volumes to `postgres` and `storage` — **without these a redeploy wipes
+  the database.**
+- Set `MAILER_AUTOCONFIRM=false` + real SMTP (autoconfirm on in production lets
+  anyone register as any address).
+#### 6.3.2 — QA
+- Repeat the 6.1.2 gates against the Railway domain.
+- Healthchecks green on `gateway` and `functions`; a redeploy preserves data.
 
-#### 6.2.2 — Web UI
-- DM vision toggle: **off ⇒ no fog, the whole map is visible to everyone**;
-  on ⇒ the vision system (6.3/6.4) applies.
-- DM obstruction tools: a **wall tool** (click-drag straight segments / rectangles
-  to place walls & blockages) and a **freehand draw tool** for arbitrary shapes.
-  Walls render for the DM and block player sight (consumed by 6.3).
+### Subphase 6.4: Stripe re-wiring
+#### 6.4.1 — Infrastructure
+- Register the webhook at `https://<gateway>/functions/v1/stripe-webhook`; set the
+  **new** signing secret (the old one will not verify).
+- Confirm the raw body reaches the function unmodified — the Caddyfile adds no
+  body-rewriting directives for exactly this reason.
+#### 6.4.2 — QA
+- Test-mode: checkout → trial start → webhook received → `campaign_subscriptions`
+  row written. Then the reused-card path cancels without charging.
 
-#### 6.2.3 — QA
-- Vision off = full visibility for all; walls and freehand shapes both block sight;
-  only the DM can add/edit walls (verify server-side); walls persist and sync.
-
-### Subphase 6.3: Token-based line of sight & sight range
-
-#### 6.3.1 — Backend
-- Add per-token sight config to `playspace_tokens`: a normal **sight range** and a
-  separate **dark sight / darkvision range** (D&D-style "see N ft in the dark").
-
-#### 6.3.2 — Web UI
-- Each player's visible area is **ray-cast from their own token(s)** against the
-  walls (6.2) and clipped to their sight range; everything outside is fogged. The
-  DM always sees the whole map. Moving a token recomputes vision live. If a player
-  controls multiple tokens, they see the union of their tokens' visibility.
-
-#### 6.3.3 — QA
-- A player sees only what their token can — blocked by walls, limited by range;
-  moving the token updates the visible area in real time; the DM is unaffected;
-  a second player sees from *their* token, not the first's.
-
-### Subphase 6.4: Light levels & darkness
-
-#### 6.4.1 — Backend
-- Add an **ambient darkness level** to `playspace_maps` and a `playspace_lights`
-  table (or token-attached lights) with bright/dim radii and position. RLS DM-write
-  (players may carry a light on their own token), member-read; realtime.
-
-#### 6.4.2 — Web UI
-- Combine lighting with sight (6.3): in **bright** light a character sees to full
-  sight range; in **dim** light, reduced; in **darkness** they see only as far as
-  their darkvision (or not at all) — so the map gets darker the further from a
-  light source. Lights render their bright/dim radii; player vision = (what walls
-  allow) ∩ (sight range) ∩ (what light/darkvision reveals).
-
-#### 6.4.3 — QA
-- Darkness shortens effective sight; a light source illuminates its bright/dim
-  radii; darkvision lets a token see a set distance in the dark; changes persist
-  and sync live.
-
----
-
-## Phase 7: Full RPG mode (round-based combat)
-**Goal:** In `rpg` campaigns, combat is **round-based** and shared (players
-participate), distinct from the notetaker's private, turn-by-turn DM Combat tracker
-(Phase 3.5), which remains for `notetaker`/`playspace`. Rounds are **side-based and
-alternating**: one side acts (all of its combatants act within that round), then
-the other side acts the next round, and so on. The DM sets which side goes first
-(players-first or DM/NPCs-first) and can flip it. Players act on their own turn —
-moving their token and updating their own HP/conditions during their side's round.
-
-### Subphase 7.1: Side-based round combat engine
-
-#### 7.1.1 — Backend
-- Migration: a combat session per encounter/map with a **round counter**, an
-  **active side** (`'players' | 'npcs'`), and a configurable **side order** (which
-  goes first); combatants belong to a side, carry per-round state (acted flag,
-  HP/conditions), and link to a `playspace_token` where present.
-- RLS: DM manages the session, NPC combatants, and round advancement; a **player**
-  may update **only their own** combatant's acted flag / HP / conditions, and only
-  while it is their side's active round; all members read the shared combat state.
-  Add to Realtime + `REPLICA IDENTITY FULL`.
-
-#### 7.1.2 — Web UI
-- A round tracker showing the current round and active side, the roster of each
-  side with per-combatant acted/HP/condition state, "Advance round" (DM) which
-  flips to the other side and resets acted flags, and a side-order control (DM).
-- On their side's active round, a player marks their combatant acted and edits
-  their own HP/conditions; the DM drives NPC combatants and round flow.
-
-#### 7.1.3 — QA
-- Rounds alternate sides correctly; advancing resets the acted checklist and flips
-  the side; a player can act only for their own combatant and only during their
-  side's round (verify server-side); DM/NPCs-first vs players-first both work;
-  state persists and syncs live; combat UI appears only in `rpg` mode.
-
-### Subphase 7.2: Combat ↔ playspace integration
-
-#### 7.2.1 — Backend
-- Link combatants to their `playspace_tokens` so combat and map share position and
-  identity; movement during combat writes token position (7 reuses 6.1's token RLS).
-
-#### 7.2.2 — Web UI
-- Start combat from the map; the active side's combatants are highlighted on the
-  map; a player moves their token during their side's round; token HP/condition
-  chips reflect combat state.
-
-#### 7.2.3 — QA
-- Combat reflects on the map (active-combatant highlight, positions); movement
-  during a side's round syncs live; ending combat leaves tokens in place.
+### Subphase 6.5: Cutover, backups & decommission
+#### 6.5.1 — Infrastructure
+- **Set up `pg_dump` backups on a Railway cron before cutover** — self-hosting
+  loses Supabase's automatic daily backups.
+- Flip production `.env` to the gateway domain; deploy.
+- Only after QA is green: decommission the hosted project. (Also delete the unused
+  `Art-Randomizer` project — the second compute instance was the original source
+  of the >$25 overage.)
+#### 6.5.2 — QA
+- Full four-role matrix — DM / player / non-member / signed-out — re-verified
+  server-side. **Gates: exactly 100 policies and exactly 30 tables with
+  `rowsecurity = true`.**
+- A table restoring with RLS *disabled* is the highest-risk failure mode of this
+  phase: it fails **open** and nothing visibly breaks. Assert it explicitly.
+- `get_advisors` has no self-hosted equivalent; the `pg_policies` +
+  `rowsecurity` audit replaces it — record that substitution in the run log.
+- Confirm actual Railway usage after a few days. 7 containers cost more than a
+  bare Postgres; if it lands near $25 the cheaper answer was staying on hosted Pro
+  with `Art-Randomizer` deleted.
+- Rollback remains available (revert two `.env` values) until the hosted project
+  is deleted — **cancel nothing until this subphase passes.**
 
 ---
 
-## Phase 8: Accounts, roles & compliance
+## Phase 7: Accounts, roles & compliance
 **Goal:** The legal and account-lifecycle obligations that come with storing
 personal data and taking payments — user-initiated account deletion with correct
 data cascade, and the required policy pages.
 
-### Subphase 8.1: Account deletion, data rights & cascade
+### Subphase 7.1: Account deletion, data rights & cascade
 
-#### 8.1.1 — Backend
+#### 7.1.1 — Backend
 - "Delete my account" path (GDPR/CCPA right to erasure), distinct from campaign
   deletion. Define and implement the **cascade rules**:
   - Campaigns the user **DMs**: the campaign and its content are deleted (all
@@ -932,39 +970,39 @@ data cascade, and the required policy pages.
   deletion; remove Storage objects, not just rows.
 - Data-access/portability request handling reuses the export functions (4.2).
 
-#### 8.1.2 — Web UI
+#### 7.1.2 — Web UI
 - Account settings: delete account (with clear warnings about what's removed and
   a prompt to export first), and links to export tools.
 
-#### 8.1.3 — QA
+#### 7.1.3 — QA
 - Deleting an account removes the right data in every role and cancels its
   subscriptions; other users' campaigns are untouched; Storage objects are gone.
 
-### Subphase 8.2: Legal & policy pages (ToS, Privacy, refunds)
+### Subphase 7.2: Legal & policy pages (ToS, Privacy, refunds)
 
-#### 8.2.1 — Backend
+#### 7.2.1 — Backend
 - Store acceptance (versioned ToS/Privacy acceptance timestamp on the profile);
   re-prompt on material updates.
 
-#### 8.2.2 — Web UI
+#### 7.2.2 — Web UI
 - **Terms of Service**, **Privacy Policy** (what's stored, Stripe as processor,
   retention, deletion rights), and a **refund/cancellation policy** page; signup
   consent checkbox; footer links.
 
-#### 8.2.3 — QA
+#### 7.2.3 — QA
 - Signup records policy acceptance; pages are reachable; refund policy matches the
   actual billing behavior (read-only on lapse, 3-month deletion).
 
 ---
 
-## Phase 9: Automated testing & CI
+## Phase 8: Automated testing & CI
 **Goal:** Replace "manual QA + typecheck only" with a real regression safety net,
 so future changes can't silently break existing behavior — especially the RLS
 security model, which has repeatedly had subtle edge cases. Runs continuously in
 CI. (Existing per-phase manual checklists in `QA/` stay as the human-verification
 layer; this adds the automated layer beneath them.)
 
-### Subphase 9.1: Test infrastructure + unit/component tests
+### Subphase 8.1: Test infrastructure + unit/component tests
 - Stand up **Vitest + React Testing Library** (jsdom); wire `npm test` and a
   coverage report. Add unit tests for pure logic that's easy to regress:
   dice-notation parsing, HP damage/heal (temp-first, cap-at-max), death-save
@@ -973,7 +1011,7 @@ layer; this adds the automated layer beneath them.)
   high-traffic panels (autosave indicator, a sheet section editor).
 - QA: `npm test` runs green locally; coverage report generated.
 
-### Subphase 9.2: RLS / database policy tests
+### Subphase 8.2: RLS / database policy tests
 - A **pgTAP (or SQL) harness** that seeds a DM + player + non-member + anon and
   asserts every table's read/write matrix — the checks we've been running by hand
   each phase (owner-only writes, DM read scope, member-vs-non-member, journal
@@ -981,7 +1019,7 @@ layer; this adds the automated layer beneath them.)
   the security model a **regression test**, not a one-time manual pass.
 - QA: the suite fails loudly if any policy is loosened/removed.
 
-### Subphase 9.3: End-to-end smoke tests (Playwright) + CI pipeline
+### Subphase 8.3: End-to-end smoke tests (Playwright) + CI pipeline
 - A few **Playwright** flows against a test project: sign up → create campaign →
   start trial → invite/join → fill a sheet → DM views party → DM shares a handout
   → player sees it. Plus an export→import round-trip.
@@ -989,97 +1027,250 @@ layer; this adds the automated layer beneath them.)
   every push; block merge on failure.
 - QA: CI is green on main; a deliberately broken policy/logic change is caught.
 
-## Phase 10: Transactional email & notifications
+## Phase 9: Playspace mode (grid battlemap + dynamic vision & lighting)
+**Goal:** In `playspace` and `rpg` campaigns, a shared grid battlemap where the DM
+sets a map and each player drags **their own** character token in real time, with
+**optional** obstruction-aware dynamic vision: sight is computed from each
+character's token position (not a whole-map reveal), limited by a sight range and
+by lighting. Vision is computed **client-side** for the MVP — smooth and instant
+on token movement, appropriate for a friendly home game; a determined player could
+inspect client data to peek, so a **server-authoritative** version is tracked as a
+post-launch hardening item (PL.5). Builds directly on Phase 4.4 Realtime.
+
+### Subphase 9.1: Battlemap & tokens
+
+#### 9.1.1 — Backend
+- Migration: `playspace_maps` (campaign_id, `background_asset_id` → media_assets
+  via the existing 1.6 pipeline, grid size in px, width/height, `active` flag,
+  `vision_enabled` boolean default false) and `playspace_tokens` (map_id,
+  owner_user_id and/or character_id, npc_id nullable, x, y, size, color, label).
+- RLS: members read maps/tokens; the DM manages maps and **all** tokens; a player
+  may insert/move/delete **only their own** token (predicate on
+  `owner_user_id = auth.uid()` within a campaign they belong to). Add both tables
+  to the `supabase_realtime` publication + `REPLICA IDENTITY FULL`.
+
+#### 9.1.2 — Web UI
+- Grid canvas that renders the map image and a square-grid overlay; tokens are
+  drag-positioned with grid snapping. Token position changes sync live via
+  `useRealtimeSync` + `mergeById` (optimistic local move; realtime drives other
+  viewers). DM can add/place any token; a player can move only their own.
+
+#### 9.1.3 — QA
+- A token drag persists and appears on other clients live (~1–2 s, per-row);
+  a player can move only their own token and is blocked from moving others
+  (verify RLS server-side); grid snapping works; the map loads for all members.
+
+### Subphase 9.2: Vision toggle & obstructions (walls + freehand)
+
+#### 9.2.1 — Backend
+- Migration: `playspace_walls` (map_id, kind `'segment' | 'freehand'`, geometry as
+  an ordered point list / JSON). RLS: DM-write, member-read; realtime.
+- The `vision_enabled` toggle already lives on the map (9.1.1).
+
+#### 9.2.2 — Web UI
+- DM vision toggle: **off ⇒ no fog, the whole map is visible to everyone**;
+  on ⇒ the vision system (9.3/9.4) applies.
+- DM obstruction tools: a **wall tool** (click-drag straight segments / rectangles
+  to place walls & blockages) and a **freehand draw tool** for arbitrary shapes.
+  Walls render for the DM and block player sight (consumed by 9.3).
+
+#### 9.2.3 — QA
+- Vision off = full visibility for all; walls and freehand shapes both block sight;
+  only the DM can add/edit walls (verify server-side); walls persist and sync.
+
+### Subphase 9.3: Token-based line of sight & sight range
+
+#### 9.3.1 — Backend
+- Add per-token sight config to `playspace_tokens`: a normal **sight range** and a
+  separate **dark sight / darkvision range** (D&D-style "see N ft in the dark").
+
+#### 9.3.2 — Web UI
+- Each player's visible area is **ray-cast from their own token(s)** against the
+  walls (9.2) and clipped to their sight range; everything outside is fogged. The
+  DM always sees the whole map. Moving a token recomputes vision live. If a player
+  controls multiple tokens, they see the union of their tokens' visibility.
+
+#### 9.3.3 — QA
+- A player sees only what their token can — blocked by walls, limited by range;
+  moving the token updates the visible area in real time; the DM is unaffected;
+  a second player sees from *their* token, not the first's.
+
+### Subphase 9.4: Light levels & darkness
+
+#### 9.4.1 — Backend
+- Add an **ambient darkness level** to `playspace_maps` and a `playspace_lights`
+  table (or token-attached lights) with bright/dim radii and position. RLS DM-write
+  (players may carry a light on their own token), member-read; realtime.
+
+#### 9.4.2 — Web UI
+- Combine lighting with sight (9.3): in **bright** light a character sees to full
+  sight range; in **dim** light, reduced; in **darkness** they see only as far as
+  their darkvision (or not at all) — so the map gets darker the further from a
+  light source. Lights render their bright/dim radii; player vision = (what walls
+  allow) ∩ (sight range) ∩ (what light/darkvision reveals).
+
+#### 9.4.3 — QA
+- Darkness shortens effective sight; a light source illuminates its bright/dim
+  radii; darkvision lets a token see a set distance in the dark; changes persist
+  and sync live.
+
+---
+
+## Phase 10: Full RPG mode (round-based combat)
+**Goal:** In `rpg` campaigns, combat is **round-based** and shared (players
+participate), distinct from the notetaker's private, turn-by-turn DM Combat tracker
+(Phase 3.5), which remains for `notetaker`/`playspace`. Rounds are **side-based and
+alternating**: one side acts (all of its combatants act within that round), then
+the other side acts the next round, and so on. The DM sets which side goes first
+(players-first or DM/NPCs-first) and can flip it. Players act on their own turn —
+moving their token and updating their own HP/conditions during their side's round.
+
+### Subphase 10.1: Side-based round combat engine
+
+#### 10.1.1 — Backend
+- Migration: a combat session per encounter/map with a **round counter**, an
+  **active side** (`'players' | 'npcs'`), and a configurable **side order** (which
+  goes first); combatants belong to a side, carry per-round state (acted flag,
+  HP/conditions), and link to a `playspace_token` where present.
+- RLS: DM manages the session, NPC combatants, and round advancement; a **player**
+  may update **only their own** combatant's acted flag / HP / conditions, and only
+  while it is their side's active round; all members read the shared combat state.
+  Add to Realtime + `REPLICA IDENTITY FULL`.
+
+#### 10.1.2 — Web UI
+- A round tracker showing the current round and active side, the roster of each
+  side with per-combatant acted/HP/condition state, "Advance round" (DM) which
+  flips to the other side and resets acted flags, and a side-order control (DM).
+- On their side's active round, a player marks their combatant acted and edits
+  their own HP/conditions; the DM drives NPC combatants and round flow.
+
+#### 10.1.3 — QA
+- Rounds alternate sides correctly; advancing resets the acted checklist and flips
+  the side; a player can act only for their own combatant and only during their
+  side's round (verify server-side); DM/NPCs-first vs players-first both work;
+  state persists and syncs live; combat UI appears only in `rpg` mode.
+
+### Subphase 10.2: Combat ↔ playspace integration
+
+#### 10.2.1 — Backend
+- Link combatants to their `playspace_tokens` so combat and map share position and
+  identity; movement during combat writes token position (7 reuses 9.1's token RLS).
+
+#### 10.2.2 — Web UI
+- Start combat from the map; the active side's combatants are highlighted on the
+  map; a player moves their token during their side's round; token HP/condition
+  chips reflect combat state.
+
+#### 10.2.3 — QA
+- Combat reflects on the map (active-combatant highlight, positions); movement
+  during a side's round syncs live; ending combat leaves tokens in place.
+
+---
+
+## Phase 11: Transactional email & notifications
 **Goal:** Close the communication gaps — invites, session reminders, and billing
 notices — that the app currently has no channel for. Makes the Scheduling feature
 (4.3) actually useful with reminders.
 
-### Subphase 10.1: Backend
-#### 10.1.1 — Backend
+### Subphase 11.1: Backend
+#### 11.1.1 — Backend
 - Integrate an email provider (e.g. **Resend/Postmark**) via an Edge Function;
   templated, from a verified domain. Sends: **campaign invite** (email a join
   link/code), **session reminder** (scheduled via cron ahead of a
   `schedule_sessions.proposed_at`), and **billing notices** (trial ending,
   payment failed/dunning, subscription cancelled) driven off Stripe webhook
   events. Idempotent; respects a per-user opt-out.
-#### 10.1.2 — QA
+#### 11.1.2 — QA
 - Each email type fires on its trigger, renders correctly, and honors opt-out;
   reminders send once, at the right lead time.
 
-### Subphase 10.2: In-app wiring
-#### 10.2.1 — Web UI
+### Subphase 11.2: In-app wiring
+#### 11.2.1 — Web UI
 - Invite-by-email entry alongside invite codes; a **notification preferences**
   screen (reminder lead time, opt-out toggles); unsubscribe handling.
-#### 10.2.2 — QA
+#### 11.2.2 — QA
 - Sending an email invite enrolls correctly on click; preferences persist and
   take effect; unsubscribe link works.
 
-## Phase 11: Content moderation & safety
+## Phase 12: Content moderation & safety
 **Goal:** Make user-uploaded images that are visible to others (portraits,
 encounter images, **shared handouts**) safe to ship. Today the upload pipeline
 has only a **pass-through moderation seam** and `report_media` exists but isn't
 wired to any action — a legal/safety gap before public launch.
 
-### Subphase 11.1: Moderation pipeline + report→review→takedown
-#### 11.1.1 — Backend
+### Subphase 12.1: Moderation pipeline + report→review→takedown
+#### 12.1.1 — Backend
 - Replace the pass-through moderation hook in `upload-media` with a real check
   (an automated image-moderation provider, or at minimum a quarantine-on-report
   workflow). Wire `report_media` into a real **review + takedown** path
   (`set_media_status` → hidden/blocked propagates everywhere the asset renders,
   which already degrades to a placeholder). Optional admin/review surface.
-#### 11.1.2 — Web UI
+#### 12.1.2 — Web UI
 - A **Report** control on shared/other-authored images; clear "under review /
   removed" states; a reporter sees confirmation.
-#### 11.1.3 — QA
+#### 12.1.3 — QA
 - A reported image can be taken down and then renders as a placeholder for all
   viewers; blocked uploads never go live; a normal image is unaffected.
 
-## Phase 12: Launch hardening
+## Phase 13: Launch hardening
 **Goal:** The remaining production-readiness work: abuse-resistant, observable,
 deployed, and backed up.
 
-### Subphase 12.1: Rate limiting & abuse prevention
-#### 12.1.1 — Backend
+### Subphase 13.1: Rate limiting & abuse prevention
+#### 13.1.1 — Backend
 - Rate-limit sensitive endpoints (auth, invite redemption, uploads, checkout,
   export/import) to curb spam/scraping/cost-abuse; sensible per-user/IP ceilings.
 - Abuse guards: invite-code brute-force protection and upload flood limits (ties
-  to 1.6). (The report/takedown path now lives in Phase 11.)
-#### 12.1.2 — QA
+  to 1.6). (The report/takedown path now lives in Phase 12.)
+#### 13.1.2 — QA
 - Hammering a rate-limited endpoint is throttled with clear errors; normal use is
   unaffected.
 
-### Subphase 12.2: Analytics & observability
-#### 12.2.1 — Backend
+### Subphase 13.2: Analytics & observability
+#### 13.2.1 — Backend
 - Error monitoring (e.g. Sentry) on the frontend + Edge Functions; structured
   logs; alerts on webhook failures and the cleanup/cron job.
-#### 12.2.2 — Web UI
+#### 13.2.2 — Web UI
 - Privacy-respecting product analytics (key funnels: signup → campaign → trial →
   subscribe), disclosed in the Privacy Policy.
-#### 12.2.3 — QA
+#### 13.2.3 — QA
 - Errors surface in monitoring; a failed Stripe webhook raises an alert;
   analytics events fire on the core funnel.
 
-### Subphase 12.3: Deployment, backups & monitoring
-#### 12.3.1 — Backend
+### Subphase 13.3: Deployment, backups & monitoring
+#### 13.3.1 — Backend
 - Production Supabase config; automated DB backups; run the Supabase security &
   performance advisors and resolve findings.
-#### 12.3.2 — QA
+#### 13.3.2 — QA
 - Fresh prod deploy: sign up → create campaign → start trial → join → fill a
   sheet → DM views it → DM shares a handout. Smoke test passes end to end.
 
 ---
 
-## Post-launch backlog (after public launch)
-**Goal:** Valuable but not launch-blocking; sequenced after a public launch.
-Mobile is first — players use the app at the table on phones, so it's the highest
-post-launch priority.
+## Phase 14: Responsive/mobile, theming & accessibility
+**Goal:** The app works on the device players actually have at the table. This is
+the last phase before launch: a pass over finished screens, which is why it runs
+after Phases 9–10 rather than alongside them.
 
-### PL.1: Responsive/mobile, theming & accessibility
-#### PL.1.1 — Web UI
+### Subphase 14.1: Responsive/mobile, theming & accessibility
+
+#### 14.1.1 — Web UI
 - Mobile layouts (players will use phones at the table); light/dark theme;
   keyboard nav and an a11y pass.
-#### PL.1.2 — QA
+- **Note for whoever picks this up:** the Phase 5.2 workspace shell is the hard
+  part. It is a full-bleed desktop layout — a side rail plus draggable, resizable
+  floating windows — and none of those interactions survive a phone viewport as
+  built. Expect to design a genuinely different mobile presentation (one panel at
+  a time, or a sheet stack) rather than to make the windows smaller. The layout
+  is already persisted per browser, so a phone can hold its own arrangement.
+
+#### 14.1.2 — QA
 - Core flows work on a phone viewport; basic screen-reader/keyboard pass.
+
+---
+
+## Post-launch backlog (after public launch)
+**Goal:** Valuable but not launch-blocking; sequenced after a public launch.
 
 ### PL.2: Onboarding, empty states & sample content
 - First-run guidance so a new DM isn't staring at blank tabs: helpful empty
@@ -1097,7 +1288,7 @@ post-launch priority.
   no regressions.
 
 ### PL.5: Server-authoritative playspace vision (anti-peek)
-- Harden Phase 6 vision: move the ray-cast/lighting computation server-side so each
+- Harden Phase 9 vision: move the ray-cast/lighting computation server-side so each
   player's client receives **only** the map area, tokens, and lights they can
   actually see — closing the client-side-peek gap accepted for the MVP. Weigh
   against the added latency on every token move. QA: a player's client cannot
@@ -1193,7 +1384,7 @@ backup feature and the escape hatch before deletion.
   tax logic in our code. Revisit tax registration thresholds as revenue grows.
 - **Legal:** Terms of Service, Privacy Policy (discloses Stripe as payment
   processor, the email provider, analytics, retention, and deletion rights), and
-  a refund/cancellation policy. Versioned acceptance recorded at signup. (Phase 8.2.)
+  a refund/cancellation policy. Versioned acceptance recorded at signup. (Phase 7.2.)
 - **Data rights:** user-initiated account deletion with role-aware cascade (5.1);
   export/portability via the 4.2 functions.
 - **Content safety:** all user images flow through the 1.6 pipeline
@@ -1202,7 +1393,7 @@ backup feature and the escape hatch before deletion.
 - **Email:** one transactional provider for lifecycle/billing/legal mail; Supabase
   Auth covers verify/reset only.
 - **Observability & abuse:** error monitoring + alerts on webhooks and the cleanup
-  cron; rate limiting on sensitive endpoints (Phase 12).
+  cron; rate limiting on sensitive endpoints (Phase 13).
 
 ### Cost model (sanity check — needs real numbers)
 - Main variable costs: **Supabase Storage** (images) and **egress/bandwidth**,

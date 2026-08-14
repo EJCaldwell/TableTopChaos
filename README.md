@@ -1,4 +1,4 @@
-# D&D Campaign Manager
+# TableTopChaos
 
 A "glorified notepad" web app for running and storing tabletop RPG campaigns.
 DMs keep private organizing tabs and can view every player's sheet; each player

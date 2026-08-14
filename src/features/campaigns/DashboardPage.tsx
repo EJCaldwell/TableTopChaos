@@ -12,11 +12,13 @@ import { useAuth } from '../auth/AuthProvider'
 import { AppHeader } from '../../components/AppHeader'
 import { Button, FormError, TextField } from '../../components/ui'
 import { importCampaign } from '../exportImport/api'
+import { ModePicker } from './ModePicker'
 import {
   createCampaign,
   joinByCode,
   listMyCampaigns,
   type CampaignWithRole,
+  type GameMode,
 } from './api'
 
 export function DashboardPage() {
@@ -29,6 +31,10 @@ export function DashboardPage() {
 
   // Create-campaign form state.
   const [newName, setNewName] = useState('')
+  // Which game mode the new campaign starts in. Defaults to 'notetaker' so the
+  // create form matches the column default in migration 0028; the DM can switch
+  // at any time later from the Overview tab.
+  const [newMode, setNewMode] = useState<GameMode>('notetaker')
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
 
@@ -68,9 +74,10 @@ export function DashboardPage() {
     setCreateError(null)
     setCreating(true)
     try {
-      const campaign = await createCampaign(user.id, newName)
+      const campaign = await createCampaign(user.id, newName, newMode)
       setNewName('')
-      navigate(`/campaigns/${campaign.id}`)
+      setNewMode('notetaker')
+      navigate(`/campaigns/${campaign.id}`, { state: { openOverview: true } })
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Could not create campaign.')
     } finally {
@@ -86,7 +93,7 @@ export function DashboardPage() {
     try {
       const result = await importCampaign(importFile)
       setImportFile(null)
-      navigate(`/campaigns/${result.campaignId}`)
+      navigate(`/campaigns/${result.campaignId}`, { state: { openOverview: true } })
     } catch (err) {
       setImportError(err instanceof Error ? err.message : 'Could not import campaign.')
     } finally {
@@ -102,7 +109,7 @@ export function DashboardPage() {
     try {
       const campaignId = await joinByCode(code)
       setCode('')
-      navigate(`/campaigns/${campaignId}`)
+      navigate(`/campaigns/${campaignId}`, { state: { openOverview: true } })
     } catch (err) {
       setJoinError(err instanceof Error ? err.message : 'Could not join campaign.')
     } finally {
@@ -130,7 +137,7 @@ export function DashboardPage() {
             {campaigns.map(({ campaign, role }) => (
               <li key={campaign.id}>
                 <button
-                  onClick={() => navigate(`/campaigns/${campaign.id}`)}
+                  onClick={() => navigate(`/campaigns/${campaign.id}`, { state: { openOverview: true } })}
                   style={{
                     width: '100%',
                     textAlign: 'left',
@@ -192,6 +199,13 @@ export function DashboardPage() {
                 maxLength={120}
                 placeholder="e.g. Curse of Strahd"
                 onChange={(e) => setNewName(e.target.value)}
+              />
+              <ModePicker
+                value={newMode}
+                onChange={setNewMode}
+                disabled={creating}
+                name="new-campaign-mode"
+                label="How will this campaign play?"
               />
               <FormError message={createError} />
               <Button type="submit" busy={creating}>

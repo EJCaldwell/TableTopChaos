@@ -155,6 +155,7 @@ export type Database = {
       campaigns: {
         Row: {
           created_at: string
+          game_mode: Database["public"]["Enums"]["game_mode"]
           id: string
           name: string
           owner_id: string
@@ -162,6 +163,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          game_mode?: Database["public"]["Enums"]["game_mode"]
           id?: string
           name: string
           owner_id: string
@@ -169,6 +171,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          game_mode?: Database["public"]["Enums"]["game_mode"]
           id?: string
           name?: string
           owner_id?: string
@@ -1248,6 +1251,7 @@ export type Database = {
     }
     Enums: {
       campaign_role: "dm" | "player"
+      game_mode: "notetaker" | "playspace" | "rpg"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1376,6 +1380,7 @@ export const Constants = {
   public: {
     Enums: {
       campaign_role: ["dm", "player"],
+      game_mode: ["notetaker", "playspace", "rpg"],
     },
   },
 } as const

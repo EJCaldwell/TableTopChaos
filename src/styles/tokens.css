@@ -1,5 +1,5 @@
 /*
- * Design tokens + base reset for D&D Campaign Manager.
+ * Design tokens + base reset for TableTopChaos.
  *
  * Owns: the single source of truth for color, spacing, typography, and radius
  * variables, plus a light global reset. Components reference these CSS custom

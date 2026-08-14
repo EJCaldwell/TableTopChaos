@@ -24,11 +24,12 @@ create schema if not exists private;
 comment on schema private is
   'Internal helpers (RLS predicates, generators) intentionally NOT exposed via PostgREST.';
 
--- Role a member holds within a single campaign. Kept tiny on purpose; co-DM is
--- modelled simply as multiple members with role = ''dm'' (see Phase 5.2).
+-- Role a member holds within a single campaign. Exactly one member per campaign
+-- holds 'dm' — the owner, enrolled by the add_owner_as_dm trigger below. There is
+-- no supported way to add a second DM; invite codes only ever grant 'player'.
 create type public.campaign_role as enum ('dm', 'player');
 comment on type public.campaign_role is
-  'A member''s role within one campaign. Multiple ''dm'' members = co-DMs (5.2).';
+  'A member''s role within one campaign. Exactly one ''dm'' per campaign (the owner); everyone else is ''player''.';
 
 -- ---------------------------------------------------------------------------
 -- Helper: private.generate_invite_code()
@@ -196,7 +197,7 @@ end;
 $$;
 
 comment on function public.add_owner_as_dm() is
-  'AFTER INSERT on campaigns: enrolls the owner as a dm member so DM predicates and co-DM support share one model.';
+  'AFTER INSERT on campaigns: enrolls the owner as the campaign''s single dm member, so every DM predicate can just check campaign_members.';
 
 create trigger campaigns_add_owner_as_dm
   after insert on public.campaigns
@@ -318,7 +319,7 @@ create policy "campaigns_insert_own"
 comment on policy "campaigns_insert_own" on public.campaigns is
   'A user may create a campaign only with themselves as owner.';
 
--- Update: only a DM of the campaign (owner or co-DM).
+-- Update: only the campaign's DM (which is its owner).
 create policy "campaigns_update_dm"
   on public.campaigns
   for update
@@ -327,7 +328,7 @@ create policy "campaigns_update_dm"
   with check (private.is_campaign_dm(id));
 
 comment on policy "campaigns_update_dm" on public.campaigns is
-  'Only a DM may edit campaign-level fields.';
+  'Only the campaign''s DM (which is its owner) may update it.';
 
 -- Delete: only the owner (billing owner) may delete the whole campaign.
 create policy "campaigns_delete_owner"

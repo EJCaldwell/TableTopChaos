@@ -24,17 +24,25 @@ export type TabAudience = 'all' | 'dm' | 'player'
 
 /**
  * A single workspace tab.
- *  - key:      stable id used for routing/selection (never shown to the user).
- *  - label:    the tab's visible name.
- *  - audience: which role(s) see it (see TabAudience).
- *  - blurb:    one line describing what the tab will hold; shown in the
- *              placeholder until the real panel ships.
+ *  - key:       stable id used for routing/selection (never shown to the user).
+ *  - label:     the tab's visible name.
+ *  - audience:  which role(s) see it (see TabAudience).
+ *  - blurb:     one line describing what the tab will hold; shown in the
+ *               placeholder until the real panel ships.
+ *  - railHidden: the panel exists and is openable, but gets no entry in the tab
+ *               rail. Used for panels reached some other way — Overview is
+ *               opened automatically when you enter from the dashboard, and
+ *               doesn't earn a permanent rail slot for a thing you read once.
+ *  - railFooter: pinned to the bottom of the rail, below the divider, instead of
+ *               sitting in the main section list.
  */
 export interface WorkspaceTab {
   key: string
   label: string
   audience: TabAudience
   blurb: string
+  railHidden?: boolean
+  railFooter?: boolean
 }
 
 /**
@@ -44,26 +52,28 @@ export interface WorkspaceTab {
  */
 export const WORKSPACE_TABS: WorkspaceTab[] = [
   // Shared — visible to everyone in the campaign.
+  //
+  // Overview is reached from the APP HEADER, beside the home link — not from the
+  // rail at all (hence railHidden). It is campaign-level reference material
+  // ("who's here, when are we playing"), which is the same altitude as the home
+  // link next to it, and keeping it out of the rail leaves that list purely the
+  // places you work. It also opens by itself when you enter from the dashboard.
+  // Scheduling was folded into it in 5.2.1h: same question, no separate slot.
   {
     key: 'overview',
-    label: 'Overview',
+    label: 'Campaign overview',
     audience: 'all',
-    blurb: 'Campaign roster, invite codes, and campaign settings.',
+    blurb: 'Campaign roster, invite codes, and session scheduling.',
+    railHidden: true,
   },
-  {
-    key: 'schedule',
-    label: 'Scheduling',
-    audience: 'all',
-    blurb: 'Plan and confirm upcoming session dates with the party.',
-  },
-
   // DM-only tabs.
-  {
-    key: 'billing',
-    label: 'Plan & billing',
-    audience: 'dm',
-    blurb: 'Manage this campaign’s Pro trial and subscription.',
-  },
+  //
+  // NOTE: there is deliberately no 'billing' or 'schedule' tab. Billing moved
+  // into Settings (5.2.1b); Scheduling moved into Overview (5.2.1h). Do not
+  // re-add either here. Plan & billing was a tab of
+  // its own until Phase 5.2, when it moved into Settings alongside the rest of
+  // campaign administration — it is visited rarely and did not earn a permanent
+  // slot in the rail. Do not re-add it here; add to SettingsPanel instead.
   {
     key: 'party',
     label: 'Party',
@@ -162,10 +172,28 @@ export const WORKSPACE_TABS: WorkspaceTab[] = [
     audience: 'player',
     blurb: 'Handouts and lore the DM has revealed to you or the party.',
   },
+
+  // Settings — LAST in the catalog and pinned to the foot of the rail, below a
+  // divider. Visible to everyone since 5.2.1f: players get the workspace
+  // preferences (which side the rail sits on, reset layout), DMs additionally
+  // get campaign administration and the danger zone. Rarely visited by either.
+  {
+    key: 'settings',
+    label: 'Settings',
+    audience: 'all',
+    blurb: 'Workspace preferences, and — for the DM — campaign administration.',
+    railFooter: true,
+  },
 ]
 
 /**
  * Returns the tabs visible to a member given their role.
+ *
+ * This is the whole set they may OPEN — including `railHidden` ones, which is
+ * deliberate: it stays the single source of truth for access, so a saved layout
+ * restoring an Overview window is still legal. Use `railTabs`/`railFooterTabs`
+ * to decide what to actually draw.
+ *
  * @param isDm - Whether the caller is a DM of this campaign.
  * @returns The subset of WORKSPACE_TABS this role should see, in catalog order.
  */
@@ -174,4 +202,20 @@ export function tabsForRole(isDm: boolean): WorkspaceTab[] {
     if (tab.audience === 'all') return true
     return isDm ? tab.audience === 'dm' : tab.audience === 'player'
   })
+}
+
+/**
+ * The tabs drawn in the rail's main section list.
+ * @param tabs - Output of tabsForRole.
+ */
+export function railTabs(tabs: WorkspaceTab[]): WorkspaceTab[] {
+  return tabs.filter((t) => !t.railHidden && !t.railFooter)
+}
+
+/**
+ * The tabs pinned to the foot of the rail, below the divider.
+ * @param tabs - Output of tabsForRole.
+ */
+export function railFooterTabs(tabs: WorkspaceTab[]): WorkspaceTab[] {
+  return tabs.filter((t) => t.railFooter)
 }

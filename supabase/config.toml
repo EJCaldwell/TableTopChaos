@@ -4,7 +4,7 @@
 # applies everything in supabase/migrations/ in order. `project_id` is the local
 # stack identifier; the remote project is linked separately with
 # `supabase link --project-ref <ref>`.
-project_id = "dnd-campaign-manager"
+project_id = "tabletopchaos"
 
 [db]
 # Postgres major version for the local stack. Matches the remote project (17).

@@ -18,6 +18,54 @@ export type CampaignRole = Database['public']['Enums']['campaign_role']
 /** An invite-code row as stored. */
 export type InviteCode = Database['public']['Tables']['invite_codes']['Row']
 
+/**
+ * How a campaign plays (migration 0028). The three modes are cumulative tiers:
+ *   'notetaker' — notes, sheets and DM tools only (the original app).
+ *   'playspace' — notetaker + a shared grid battlemap (Phase 9).
+ *   'rpg'       — playspace + round-based combat (Phase 10).
+ * Every campaign defaults to 'notetaker', so existing campaigns are unaffected.
+ */
+export type GameMode = Database['public']['Enums']['game_mode']
+
+/**
+ * Ordered list of modes with copy for the pickers (create form + Overview).
+ * Kept here so the two surfaces can never drift in wording or ordering; the
+ * order is also the tier order (simplest → richest), which the switch-confirm
+ * copy uses to tell "switching up" from "switching down".
+ */
+export const GAME_MODES: ReadonlyArray<{
+  value: GameMode
+  label: string
+  description: string
+}> = [
+  {
+    value: 'notetaker',
+    label: 'Note taker',
+    description: 'Character sheets, journals and DM tools. No map or combat tracker.',
+  },
+  {
+    value: 'playspace',
+    label: 'Playspace',
+    description: 'Everything in Note taker, plus a shared battlemap with tokens.',
+  },
+  {
+    value: 'rpg',
+    label: 'Full RPG',
+    description: 'Everything in Playspace, plus round-based combat on the map.',
+  },
+]
+
+/**
+ * Tier rank of a mode (0 = simplest). Used only for UI copy — deciding whether
+ * a pending switch is "up" (unlocks features) or "down" (hides them).
+ * @param mode - The mode to rank.
+ * @returns Its index in GAME_MODES, or 0 for an unknown value.
+ */
+export function gameModeRank(mode: GameMode): number {
+  const i = GAME_MODES.findIndex((m) => m.value === mode)
+  return i === -1 ? 0 : i
+}
+
 /** A campaign paired with the caller's own role in it (dashboard list item). */
 export interface CampaignWithRole {
   campaign: Campaign
@@ -60,12 +108,19 @@ export async function listMyCampaigns(userId: string): Promise<CampaignWithRole[
  *  - Side effect: the add_owner_as_dm trigger enrolls the owner as a DM member.
  * @param ownerId - The creating user's id (must equal their auth uid).
  * @param name - Campaign name (1–120 chars; enforced by a DB check too).
+ * @param gameMode - Which mode the campaign starts in (defaults to
+ *        'notetaker', matching the column default in migration 0028). The DM can
+ *        change it later at any time via setGameMode.
  * @returns The created campaign row.
  */
-export async function createCampaign(ownerId: string, name: string): Promise<Campaign> {
+export async function createCampaign(
+  ownerId: string,
+  name: string,
+  gameMode: GameMode = 'notetaker',
+): Promise<Campaign> {
   const { data, error } = await supabase
     .from('campaigns')
-    .insert({ owner_id: ownerId, name: name.trim() })
+    .insert({ owner_id: ownerId, name: name.trim(), game_mode: gameMode })
     .select()
     .single()
   if (error) throw error
@@ -100,6 +155,31 @@ export async function renameCampaign(campaignId: string, name: string): Promise<
   const { data, error } = await supabase
     .from('campaigns')
     .update({ name })
+    .eq('id', campaignId)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+/**
+ * Switches a campaign's game mode (DM only).
+ *
+ * Supabase call: update `campaigns.game_mode` by id, returning the row.
+ *  - RLS: campaigns_update_dm (DM only) — a player's update matches zero rows,
+ *    which makes `.single()` throw, so the UI surfaces a failure rather than
+ *    silently pretending the switch worked.
+ *  - NON-DESTRUCTIVE: nothing is deleted when moving to a simpler mode. Higher-
+ *    mode rows (playspace/combat) are merely not read while the campaign sits in
+ *    a lower mode; switching back up restores them intact (see migration 0028).
+ * @param campaignId - The campaign to change.
+ * @param gameMode - The mode to switch to.
+ * @returns The updated campaign row.
+ */
+export async function setGameMode(campaignId: string, gameMode: GameMode): Promise<Campaign> {
+  const { data, error } = await supabase
+    .from('campaigns')
+    .update({ game_mode: gameMode })
     .eq('id', campaignId)
     .select()
     .single()
@@ -148,7 +228,7 @@ export async function getCampaign(campaignId: string): Promise<Campaign> {
  *   1. membership rows (RLS: campaign_members_select_members),
  *   2. the matching profiles (RLS: profiles_select_comembers lets co-members
  *      read each other's display name).
- * @returns Roster entries with role + display name, DMs first.
+ * @returns Roster entries with role + display name, the DM first.
  */
 export async function listMembers(campaignId: string): Promise<Member[]> {
   const { data: members, error: mErr } = await supabase
@@ -175,7 +255,7 @@ export async function listMembers(campaignId: string): Promise<Member[]> {
       role: m.role,
       displayName: names.get(m.user_id) ?? null,
     }))
-    // DMs first, then by name for a stable, readable roster.
+    // The DM first, then players by name, for a stable readable roster.
     .sort((a, b) => {
       if (a.role !== b.role) return a.role === 'dm' ? -1 : 1
       return (a.displayName ?? '').localeCompare(b.displayName ?? '')
@@ -197,23 +277,26 @@ export async function listInviteCodes(campaignId: string): Promise<InviteCode[]>
 }
 
 /**
- * Creates a new invite code for a campaign (DM only).
+ * Creates a new player invite code for a campaign (DM only).
  *
  * Supabase call: insert into `invite_codes`; `code` is auto-generated by the DB
- * default, so we only supply campaign_id, created_by, and role.
+ * default, so we only supply campaign_id and created_by.
  *  - RLS: invite_codes_insert_dm requires the caller be a DM of the campaign
  *    and created_by = auth.uid().
- * @param role - Role granted to whoever redeems this code (defaults to player).
+ *
+ * The granted role is hard-coded to 'player' and is deliberately NOT a
+ * parameter: a campaign has exactly one DM — the member the add_owner_as_dm
+ * trigger enrolls at creation — so there is no supported way to invite someone
+ * as a second DM.
  * @returns The created invite-code row (including the generated code).
  */
 export async function createInviteCode(
   campaignId: string,
   createdBy: string,
-  role: CampaignRole = 'player',
 ): Promise<InviteCode> {
   const { data, error } = await supabase
     .from('invite_codes')
-    .insert({ campaign_id: campaignId, created_by: createdBy, role })
+    .insert({ campaign_id: campaignId, created_by: createdBy, role: 'player' })
     .select()
     .single()
   if (error) throw error
