@@ -20,6 +20,7 @@
  * Run with: `npm run qa:checks`
  */
 import {
+  snapToEdges,
   clampRailWidth,
   clampRect,
   DEFAULT_LAYOUT,
@@ -91,17 +92,17 @@ const put = (raw: string) => store.set(KEY, raw)
 console.log('\nloadLayout — untrusted input')
 
 store.clear()
-check('absent layout returns the default', loadLayout(CID, DM_TABS).railSide === DEFAULT_LAYOUT.railSide)
+check('absent layout returns the default', loadLayout(CID, DM_TABS).railWidth === DEFAULT_LAYOUT.railWidth)
 
 put('{not json')
 check(
   'corrupt JSON degrades to the default instead of throwing',
   loadLayout(CID, DM_TABS).floating.length === 0 &&
-    loadLayout(CID, DM_TABS).railSide === DEFAULT_LAYOUT.railSide,
+    loadLayout(CID, DM_TABS).railWidth === DEFAULT_LAYOUT.railWidth,
 )
 
 put('null')
-check('literal null degrades to the default', loadLayout(CID, DM_TABS).railSide === DEFAULT_LAYOUT.railSide)
+check('literal null degrades to the default', loadLayout(CID, DM_TABS).railWidth === DEFAULT_LAYOUT.railWidth)
 
 put('"a string"')
 check('a non-object degrades to the default', loadLayout(CID, DM_TABS).floating.length === 0)
@@ -120,11 +121,20 @@ console.log('\nloadLayout — schema versioning')
 put(JSON.stringify({ sidebarCollapsed: true, drawerOpen: true, floating: [{ key: 'npcs', x: 10, y: 10, w: 400, h: 400 }] }))
 const unversioned = loadLayout(CID, DM_TABS)
 check('an unversioned (pre-5.2.1d) layout is discarded wholesale', unversioned.floating.length === 0, unversioned)
-check('...and the discard restores the default rail side', unversioned.railSide === 'right')
 check('...and the discard restores the default collapse state', unversioned.sidebarCollapsed === false)
 
 put(JSON.stringify({ v: LAYOUT_VERSION + 1, sidebarCollapsed: true, railSide: 'left', floating: [] }))
 check('a FUTURE version is also discarded, not partially trusted', loadLayout(CID, DM_TABS).sidebarCollapsed === false)
+
+// railSide moved to account preferences in 5.2.2b. A layout still carrying it is
+// kept, not discarded — the field is simply ignored, nothing else changes
+// meaning, and binning everyone's arrangement over a dead key would be pure loss.
+put(JSON.stringify({ v: LAYOUT_VERSION, sidebarCollapsed: true, railSide: 'left', railWidth: 240, floating: [] }))
+const withDeadField = loadLayout(CID, DM_TABS)
+check('a layout carrying the retired railSide field is kept, not discarded',
+  withDeadField.sidebarCollapsed === true && withDeadField.railWidth === 240, withDeadField)
+check('...and the retired field does not survive into the parsed layout',
+  !('railSide' in withDeadField), Object.keys(withDeadField))
 
 // The retired 'billing' key: covered by versioning, but also by tab filtering
 // for anything written at the current version.
@@ -139,7 +149,6 @@ console.log('\nloadLayout — role gating')
 
 const dmLayout: CampaignLayout = {
   sidebarCollapsed: false,
-  railSide: 'right',
   railWidth: DEFAULT_RAIL_W,
   floating: [
     { key: 'secretnotes', x: 10, y: 10, w: 400, h: 400 },
@@ -165,8 +174,14 @@ put(JSON.stringify({ v: LAYOUT_VERSION, sidebarCollapsed: false, railSide: 'righ
   { key: 'npcs', x: -9000, y: -9000, w: 10, h: 10 },
 ] }))
 const tiny = loadLayout(CID, DM_TABS).floating[0]
-check('negative coordinates are clamped to zero', tiny.x === 0 && tiny.y === 0, tiny)
+// loadLayout no longer clamps x itself: horizontal position is bounds-relative,
+// and the bounds are unknown until the area is measured. clampRect owns it.
+check('a negative y is clamped to zero at load', tiny.y === 0, tiny)
 check('sub-minimum sizes are raised to the minimum', tiny.w === MIN_FLOAT_W && tiny.h === MIN_FLOAT_H, tiny)
+check('...and a wildly off-screen x is recovered by clampRect', (() => {
+  const r = clampRect(tiny, { w: 800, h: 600 })
+  return r.x + r.w > 0 && r.x < 800
+})(), clampRect(tiny, { w: 800, h: 600 }))
 
 put(JSON.stringify({ v: LAYOUT_VERSION, sidebarCollapsed: false, railSide: 'right', floating: [
   { key: 'npcs', x: 1, y: 1, w: 400, h: 400 },
@@ -180,10 +195,10 @@ put(JSON.stringify({ v: LAYOUT_VERSION, sidebarCollapsed: false, railSide: 'righ
 ] }))
 check('non-finite coordinates are rejected entirely', loadLayout(CID, DM_TABS).floating.length === 0)
 
-put(JSON.stringify({ v: LAYOUT_VERSION, sidebarCollapsed: 'yes', railSide: 'sideways', floating: [] }))
+put(JSON.stringify({ v: LAYOUT_VERSION, sidebarCollapsed: 'yes', railWidth: 'wide', floating: [] }))
 const badTypes = loadLayout(CID, DM_TABS)
 check('a non-boolean collapse falls back to the default', badTypes.sidebarCollapsed === false)
-check('an unknown rail side falls back to the default', badTypes.railSide === 'right', badTypes.railSide)
+check('a non-numeric rail width falls back to the default', badTypes.railWidth === DEFAULT_RAIL_W, badTypes.railWidth)
 
 // ---------------------------------------------------------------------------
 // clampRailWidth — the draggable rail (5.2.1e)
@@ -204,7 +219,7 @@ check('a fractional width is rounded to whole px', Number.isInteger(clampRailWid
 // user should keep their arrangement rather than lose it over a missing field.
 put(JSON.stringify({ v: LAYOUT_VERSION, sidebarCollapsed: true, railSide: 'left', floating: [] }))
 const noWidth = loadLayout(CID, DM_TABS)
-check('a v1 layout with no railWidth is KEPT, not discarded', noWidth.sidebarCollapsed === true && noWidth.railSide === 'left', noWidth)
+check('a v1 layout with no railWidth is KEPT, not discarded', noWidth.sidebarCollapsed === true, noWidth)
 check('...and gets the default rail width', noWidth.railWidth === DEFAULT_RAIL_W)
 
 put(JSON.stringify({ v: LAYOUT_VERSION, sidebarCollapsed: false, railSide: 'right', railWidth: 5000, floating: [] }))
@@ -234,9 +249,21 @@ check('an oversized window is shrunk to fit the area', oversized.w <= AREA.w && 
 check('...but never below the minimum', oversized.w >= MIN_FLOAT_W && oversized.h >= MIN_FLOAT_H, oversized)
 check('...and is not shoved off the left edge doing so', oversized.x >= 0, oversized)
 
-// A tiny viewport must not produce negative positions via the keep-visible margin.
+// Horizontal hang-off is symmetric (5.2.1j): a window may sit partly off the
+// LEFT edge exactly as it may off the right, so long as some stays grabbable.
+// It used to hard-stop at x = 0, which read as "I can't drag it all the way
+// over" when the rail was on the left.
+const hangLeft = clampRect({ x: -200, y: 40, w: 460, h: 400 }, AREA)
+check('a window may hang off the left edge', hangLeft.x < 0, hangLeft)
+check('...but never so far that nothing is grabbable', hangLeft.x + hangLeft.w >= 80, hangLeft)
+check('the top edge is still a hard stop (title bar is the only handle)',
+  clampRect({ x: 10, y: -500, w: 460, h: 400 }, AREA).y === 0)
+
+// Degenerate: a viewport narrower than the minimum window width still leaves the
+// window overlapping the visible area rather than parked outside it.
 const tinyArea = clampRect({ x: 500, y: 500, w: 400, h: 300 }, { w: 40, h: 20 })
-check('a viewport smaller than the keep-visible margin still yields x,y >= 0', tinyArea.x >= 0 && tinyArea.y >= 0, tinyArea)
+check('a viewport smaller than the window keeps it overlapping the area',
+  tinyArea.x < 40 && tinyArea.x + tinyArea.w > 0 && tinyArea.y >= 0, tinyArea)
 
 check(
   'clamping is idempotent, so the correcting effect cannot loop',
@@ -249,6 +276,29 @@ check(
 )
 
 // ---------------------------------------------------------------------------
+// snapToEdges — "lock it to the border" (5.2.2b)
+// ---------------------------------------------------------------------------
+
+console.log('\nsnapToEdges — flush to the border')
+
+check('a window dropped near the left edge snaps flush',
+  snapToEdges({ x: 9, y: 200, w: 400, h: 300 }, AREA).x === 0)
+check('a window dropped near the right edge snaps flush',
+  snapToEdges({ x: 395, y: 200, w: 400, h: 300 }, AREA).x === AREA.w - 400)
+check('a window dropped near the top snaps flush',
+  snapToEdges({ x: 200, y: 6, w: 400, h: 300 }, AREA).y === 0)
+check('a window dropped near the bottom snaps flush',
+  snapToEdges({ x: 200, y: 295, w: 400, h: 300 }, AREA).y === AREA.h - 300)
+check('a corner drop snaps on BOTH axes',
+  (() => { const r = snapToEdges({ x: 5, y: 5, w: 400, h: 300 }, AREA); return r.x === 0 && r.y === 0 })())
+check('a window dropped well clear of an edge is left alone',
+  (() => { const r = snapToEdges({ x: 200, y: 200, w: 400, h: 300 }, AREA); return r.x === 200 && r.y === 200 })())
+check('a window wider than the area is not snapped horizontally',
+  snapToEdges({ x: 5, y: 200, w: 2000, h: 300 }, AREA).x === 5)
+check('an unmeasured area leaves the rect alone',
+  snapToEdges({ x: 5, y: 5, w: 400, h: 300 }, { w: 0, h: 0 }).x === 5)
+
+// ---------------------------------------------------------------------------
 // Round trip
 // ---------------------------------------------------------------------------
 
@@ -257,7 +307,6 @@ console.log('\nsaveLayout / loadLayout round trip')
 store.clear()
 const arranged: CampaignLayout = {
   sidebarCollapsed: true,
-  railSide: 'left',
   railWidth: 275,
   floating: [
     { key: 'overview', x: 12, y: 34, w: 500, h: 400 },

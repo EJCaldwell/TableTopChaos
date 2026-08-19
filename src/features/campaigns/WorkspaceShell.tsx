@@ -14,6 +14,19 @@
  * an entry that is already open focuses its window; clicking it while focused
  * closes it, so a rail entry is a plain toggle.
  *
+ * **Closing a panel does not unmount it** (5.2.2a). A panel that has been opened
+ * this session stays in the React tree, hidden with `display:none`, so closing
+ * and reopening it is instant and preserves everything: loaded rows, scroll
+ * position, a half-typed note, an expanded section. Unmounting meant every
+ * reopen refetched and flashed a loading state, which made the rail feel like it
+ * was reloading the app.
+ *
+ * The cost, stated plainly: a hidden panel's queries and realtime channels stay
+ * live (5 panels use realtime), and its memory is retained until you leave the
+ * campaign. That is the right trade here — a campaign has ~20 panels, not
+ * hundreds — but it is a real cost, not a free win. The mounted set resets when
+ * the campaign changes, so it cannot grow across a session.
+ *
  * Consequences worth knowing:
  *   - "Open" is simply presence in `layout.floating`. There is no other state a
  *     panel can be in, which is what makes the old "docked **or** floating,
@@ -38,6 +51,8 @@ import {
   clampRailWidth,
   clampRect,
   DEFAULT_FLOAT,
+  MIN_FLOAT_H,
+  MIN_FLOAT_W,
   DEFAULT_LAYOUT,
   DEFAULT_RAIL_W,
   loadLayout,
@@ -47,6 +62,7 @@ import {
   type FloatRect,
 } from './layout'
 import { railFooterTabs, railTabs, type WorkspaceTab } from './tabs'
+import { getRailSide } from '../profile/preferences'
 import type { Campaign, GameMode, Member } from './api'
 
 /** Rail width when collapsed. Expanded width is user-dragged; see layout.ts. */
@@ -81,7 +97,6 @@ export function WorkspaceShell({
   currentUserId,
   onRenamed,
   onModeChanged,
-  openRequest,
 }: {
   campaign: Campaign
   visibleTabs: WorkspaceTab[]
@@ -92,7 +107,6 @@ export function WorkspaceShell({
   currentUserId?: string
   onRenamed: (name: string) => void
   onModeChanged: (mode: GameMode) => void
-  openRequest?: { key: string; nonce: number }
 }) {
   /** Does this mode reserve the area for a map? */
   const hasPlayspace = campaign.game_mode !== 'notetaker'
@@ -146,29 +160,32 @@ export function WorkspaceShell({
     })
   }, [bounds])
 
-  // Honour open requests from outside the shell (the header's "Campaign
-  // overview" button; the initial open when arriving from the dashboard).
-  //
-  // Keyed on the nonce only, so it fires once per request and never re-opens a
-  // panel the user has since closed. Already open → raise it rather than
-  // duplicating, which keeps the one-window-per-section invariant.
-  const lastRequest = useRef<number | null>(null)
+  // Anything currently visible must be mounted; remember its rect as it moves so
+  // a later reopen lands where the user left it.
   useEffect(() => {
-    if (!openRequest) return
-    if (lastRequest.current === openRequest.nonce) return
-    lastRequest.current = openRequest.nonce
-    const { key } = openRequest
-    if (!visibleTabs.some((t) => t.key === key)) return
-    setLayout((l) => {
-      const existing = l.floating.find((p) => p.key === key)
-      if (existing) {
-        // Raise, don't duplicate.
-        return { ...l, floating: [...l.floating.filter((p) => p.key !== key), existing] }
-      }
-      return { ...l, floating: [...l.floating, { key, ...clampRect(DEFAULT_FLOAT, bounds) }] }
+    for (const panel of layout.floating) {
+      rememberedRects.current.set(panel.key, { x: panel.x, y: panel.y, w: panel.w, h: panel.h })
+    }
+    setMountedKeys((m) => {
+      const missing = layout.floating.map((p) => p.key).filter((k) => !m.includes(k))
+      return missing.length ? [...m, ...missing] : m
     })
+  }, [layout.floating])
+
+  // Leaving the campaign drops every mounted panel — this is what stops the
+  // mounted set (and its live subscriptions) growing without bound.
+  useEffect(() => {
+    rememberedRects.current.clear()
+    setMountedKeys(loadLayout(campaign.id, visibleTabs).floating.map((p) => p.key))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openRequest?.nonce])
+  }, [campaign.id])
+
+  // A panel this role may no longer see must be unmounted, not merely hidden —
+  // otherwise its queries keep running after a demotion.
+  useEffect(() => {
+    const allowed = new Set(visibleTabs.map((t) => t.key))
+    setMountedKeys((m) => (m.every((k) => allowed.has(k)) ? m : m.filter((k) => allowed.has(k))))
+  }, [visibleTabs])
 
   // Persist on every change. Cheap: FloatingPanel commits a rect once per drag,
   // not once per pointermove, so this fires on discrete user actions only.
@@ -188,9 +205,50 @@ export function WorkspaceShell({
     return () => ro.disconnect()
   }, [])
 
+  // Every panel opened since arriving at this campaign. These stay mounted even
+  // once closed (see the file header); `layout.floating` is still the source of
+  // truth for what is *visible*.
+  const [mountedKeys, setMountedKeys] = useState<string[]>(() =>
+    loadLayout(campaign.id, visibleTabs).floating.map((p) => p.key),
+  )
+  // Where each panel was when it was closed, so reopening restores it there
+  // rather than dumping it back at the default cascade position.
+  const rememberedRects = useRef(new Map<string, FloatRect>())
+
   const openKeys = new Set(layout.floating.map((p) => p.key))
   /** The frontmost window's key, or undefined when nothing is open. */
   const frontKey = layout.floating[layout.floating.length - 1]?.key
+
+  /**
+   * The rect a panel opens at. Settings gets most of the screen: it is a stack
+   * of dense administrative sections (name, mode, billing, backups, danger
+   * zone) that is miserable to read in a 460px window, and it is not something
+   * you arrange alongside other panels — you open it, do a thing, close it.
+   *
+   * @param key - Tab being opened.
+   * @param count - How many windows are already open, for the cascade offset.
+   */
+  function openRectFor(key: string, count: number): FloatRect {
+    if (key === 'settings' && bounds.w && bounds.h) {
+      const margin = Math.min(48, Math.round(bounds.w * 0.05))
+      return clampRect(
+        {
+          x: margin,
+          y: margin,
+          w: Math.max(MIN_FLOAT_W, bounds.w - margin * 2),
+          h: Math.max(MIN_FLOAT_H, bounds.h - margin * 2),
+        },
+        bounds,
+      )
+    }
+    const remembered = rememberedRects.current.get(key)
+    if (remembered) return clampRect(remembered, bounds)
+    const offset = (count % 6) * 28
+    return clampRect(
+      { ...DEFAULT_FLOAT, x: DEFAULT_FLOAT.x + offset, y: DEFAULT_FLOAT.y + offset },
+      bounds,
+    )
+  }
 
   /**
    * Opens a panel as a floating window, cascading it clear of the ones already
@@ -200,14 +258,7 @@ export function WorkspaceShell({
     onActiveTabChange(key)
     setLayout((l) => {
       if (l.floating.some((p) => p.key === key)) return l
-      const offset = (l.floating.length % 6) * 28
-      // Clamp the opening position too: on a small viewport the cascade offset
-      // alone could place a new window past the edge.
-      const rect = clampRect(
-        { ...DEFAULT_FLOAT, x: DEFAULT_FLOAT.x + offset, y: DEFAULT_FLOAT.y + offset },
-        bounds,
-      )
-      return { ...l, floating: [...l.floating, { key, ...rect }] }
+      return { ...l, floating: [...l.floating, { key, ...openRectFor(key, l.floating.length) }] }
     })
   }
 
@@ -220,10 +271,12 @@ export function WorkspaceShell({
   function handleRailClick(key: string) {
     if (!openKeys.has(key)) {
       open(key)
-    } else if (frontKey !== key) {
-      focusPanel(key)
-    } else {
+    } else if (key === 'settings' || frontKey === key) {
+      // Settings is always on top, so there is no "raise" step to pass through —
+      // clicking its entry while open can only mean close.
       closePanel(key)
+    } else {
+      focusPanel(key)
     }
   }
 
@@ -232,8 +285,15 @@ export function WorkspaceShell({
     setLayout((l) => ({ ...l, floating: l.floating.filter((p) => p.key !== key) }))
   }
 
-  /** Moves a panel to the end of the array, i.e. to the front of the stack. */
+  /**
+   * Moves a panel to the end of the array, i.e. to the front of the stack.
+   *
+   * Settings is exempt in both directions: it renders at a fixed high z-index,
+   * so reordering the array around it would change nothing visually while
+   * making the "already frontmost?" test in handleRailClick lie.
+   */
   function focusPanel(key: string) {
+    if (key === 'settings') return
     setLayout((l) => {
       const panel = l.floating.find((p) => p.key === key)
       if (!panel || l.floating[l.floating.length - 1]?.key === key) return l
@@ -277,7 +337,14 @@ export function WorkspaceShell({
   }
 
   const openCount = layout.floating.length
-  const onRight = layout.railSide === 'right'
+  // Read ONCE per mount, not per render: the rail side is an account preference
+  // (profile/preferences.ts) and deliberately applies when a campaign workspace
+  // opens rather than live. Flipping it under open, dragged windows re-ran the
+  // whole relayout mid-interaction, which is where the edge-case drag bugs came
+  // from. Changing it on the Profile page takes effect next time you open a
+  // campaign — stated plainly in the Profile UI.
+  const [railSide] = useState(getRailSide)
+  const onRight = railSide === 'right'
 
   // Width previewed while dragging the rail's edge; null when idle so the saved
   // width wins. Same pattern as FloatingPanel: commit once on release rather
@@ -409,7 +476,10 @@ export function WorkspaceShell({
             position: 'absolute',
             top: 0,
             bottom: 0,
-            [onRight ? 'left' : 'right']: -3,
+            // Sits fully INSIDE the rail. It used to protrude 3px into the
+            // workspace, which quietly stole the pixels next to a left-hand
+            // rail: grabbing a window there resized the rail instead.
+            [onRight ? 'left' : 'right']: 0,
             width: 7,
             cursor: 'ew-resize',
             touchAction: 'none',
@@ -541,20 +611,43 @@ export function WorkspaceShell({
         )}
       </div>
 
-      {layout.floating.map((panel, i) => {
-        const tab = visibleTabs.find((t) => t.key === panel.key)
+      {/* Scrim behind Settings. It is modal in feel — always on top, filling
+          most of the area — so dimming everything else makes that explicit
+          rather than leaving the workspace looking interactive but inert.
+          Click-through to dismiss is deliberately NOT wired: Settings holds
+          destructive controls, and a stray click near the edge closing it
+          mid-edit would be worse than an extra trip to the ✕. */}
+      {openKeys.has('settings') && (
+        <div
+          aria-hidden
+          style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 8999 }}
+        />
+      )}
+
+      {mountedKeys.map((key) => {
+        const tab = visibleTabs.find((t) => t.key === key)
         if (!tab) return null
+        const i = layout.floating.findIndex((p) => p.key === key)
+        const panel = i >= 0 ? layout.floating[i] : undefined
+        // A closed panel is still rendered — hidden — so it keeps its state. It
+        // needs a rect to render into; its remembered one holds its place.
+        const rect = panel ?? rememberedRects.current.get(key) ?? DEFAULT_FLOAT
         return (
           <FloatingPanel
-            key={panel.key}
+            key={key}
+            hidden={!panel}
+            fixed={key === 'settings'}
             title={tab.label}
-            rect={panel}
-            // Array order IS stacking order, so the index is the z-index.
-            zIndex={10 + i}
+            rect={rect}
+            // Array order IS stacking order, so the index is the z-index —
+            // except Settings, which is pinned above everything. It is a modal
+            // sort of thing: you would never want it buried under a sheet you
+            // opened to check something while changing a setting.
+            zIndex={key === 'settings' ? 9000 : 10 + Math.max(0, i)}
             bounds={bounds}
-            onRectChange={(rect) => setPanelRect(panel.key, rect)}
-            onFocus={() => focusPanel(panel.key)}
-            onClose={() => closePanel(panel.key)}
+            onRectChange={(r) => setPanelRect(key, r)}
+            onFocus={() => focusPanel(key)}
+            onClose={() => closePanel(key)}
           >
             <TabBody
               tab={tab}
@@ -565,11 +658,7 @@ export function WorkspaceShell({
               currentUserId={currentUserId}
               onRenamed={onRenamed}
               onModeChanged={onModeChanged}
-              workspace={{
-                railSide: layout.railSide,
-                onRailSideChange: (side) => setLayout((l) => ({ ...l, railSide: side })),
-                onResetLayout: resetLayout,
-              }}
+              workspace={{ onResetLayout: resetLayout }}
             />
           </FloatingPanel>
         )

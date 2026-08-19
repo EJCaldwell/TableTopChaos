@@ -88,6 +88,23 @@ steps.)
 
 ## Run log
 
+**2026-08-14 — PASS (steps 2–5); step 1 recorded N/A.** The user reported the
+persistence and recovery steps good, including the off-screen recovery
+regression test (step 2).
+
+- **Step 1 — N/A, superseded by automated coverage.** It required a browser
+  holding a *pre-versioning* layout, which no longer exists after days of use on
+  versioned builds. The behaviour itself is asserted directly by
+  `npm run qa:checks` ("an unversioned (pre-5.2.1d) layout is discarded
+  wholesale"), so it is covered — just not by a browser step. Recorded N/A rather
+  than PASS, since nobody observed it.
+
+> **Follow-up (5.2.1j, same day):** horizontal clamping became symmetric — a
+> window may now hang off the left edge as far as the right — after the user
+> found they could not drag windows fully to the side with the rail on the left.
+> Step 2's off-screen recovery still holds and still passes in the harness, but
+> **re-run step 2 in the browser** against the new clamp.
+
 **2026-08-07 — PARTIAL, against the superseded 5.2.1 build.** The user reported
 the plain-persistence steps good (arrangement survived refresh, navigation, a
 campaign switch and a mode round trip; per-campaign; player rail gating correct).

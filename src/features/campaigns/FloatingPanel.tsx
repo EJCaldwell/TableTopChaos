@@ -21,7 +21,7 @@
  * drag is pure waste. While interacting we render from local state instead.
  */
 import { useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { MIN_FLOAT_H, MIN_FLOAT_W, type FloatRect } from './layout'
+import { MIN_FLOAT_H, MIN_FLOAT_W, snapToEdges, type FloatRect } from './layout'
 
 /**
  * Which handle an interaction started from. `move` is the title bar; the rest
@@ -64,13 +64,16 @@ function applyDelta(
   const start = it.startRect
 
   if (it.handle === 'move') {
-    // Clamp so at least part of the title bar stays reachable: the window may
-    // hang off the right/bottom edge, but never so far there is nothing to grab.
-    const maxX = Math.max(0, (bounds.w || start.x + start.w) - 80)
+    // Clamp so part of the title bar always stays grabbable. Symmetric
+    // horizontally — a window may hang off the LEFT edge as far as it may hang
+    // off the right (see clampRect) — but the top is a hard stop, since the
+    // title bar is the only drag handle.
+    const minX = Math.min(0, 80 - start.w)
+    const maxX = Math.max(minX, (bounds.w || start.x + start.w) - 80)
     const maxY = Math.max(0, (bounds.h || start.y + start.h) - 40)
     return {
       ...start,
-      x: Math.min(Math.max(0, start.x + dx), maxX),
+      x: Math.min(Math.max(minX, start.x + dx), maxX),
       y: Math.min(Math.max(0, start.y + dy), maxY),
     }
   }
@@ -102,6 +105,13 @@ function applyDelta(
  *                  parent can bring it to the front.
  * @param onClose - Close the panel entirely. There is no "dock" action: since
  *                  5.2.1c a floating window is the only place a panel lives.
+ * @param fixed - Disable dragging and resizing. Used for Settings, which opens
+ *                near-full-screen and always on top: it is modal in feel, and a
+ *                window you cannot put behind anything gains nothing from being
+ *                movable — moving it could only ever make it worse placed.
+ * @param hidden - Render the window but keep it off screen with `display:none`.
+ *                 The shell uses this for "closed" panels so their React tree
+ *                 stays mounted — see WorkspaceShell for why that matters.
  * @param children - The panel body (a <TabBody>).
  */
 export function FloatingPanel({
@@ -112,6 +122,8 @@ export function FloatingPanel({
   onRectChange,
   onFocus,
   onClose,
+  fixed,
+  hidden,
   children,
 }: {
   title: string
@@ -121,6 +133,8 @@ export function FloatingPanel({
   onRectChange: (rect: FloatRect) => void
   onFocus: () => void
   onClose: () => void
+  fixed?: boolean
+  hidden?: boolean
   children: ReactNode
 }) {
   const interaction = useRef<Interaction | null>(null)
@@ -132,7 +146,7 @@ export function FloatingPanel({
   function begin(handle: Handle, e: React.PointerEvent) {
     // Ignore secondary buttons so a right-click doesn't strand the window in a
     // drag that never receives its pointerup.
-    if (e.button !== 0) return
+    if (fixed || e.button !== 0) return
     e.preventDefault()
     e.stopPropagation()
     interaction.current = { handle, startX: e.clientX, startY: e.clientY, startRect: current }
@@ -147,11 +161,15 @@ export function FloatingPanel({
     setLive(applyDelta(it, e.clientX - it.startX, e.clientY - it.startY, bounds))
   }
 
-  /** Commits the previewed rect to the parent and returns to idle. */
+  /**
+   * Commits the previewed rect to the parent and returns to idle, snapping
+   * flush to any edge the window was dropped near. Snapping happens here rather
+   * than during `move` so it never tugs against the pointer mid-drag.
+   */
   function end() {
     if (!interaction.current) return
     interaction.current = null
-    if (live) onRectChange(live)
+    if (live) onRectChange(snapToEdges(live, bounds))
     setLive(null)
   }
 
@@ -174,15 +192,19 @@ export function FloatingPanel({
   return (
     <section
       aria-label={`${title} (floating panel)`}
+      aria-hidden={hidden || undefined}
       onPointerDown={onFocus}
       style={{
+        // `display:none` rather than unmounting: the panel keeps its state and
+        // its loaded data, and is also removed from the accessibility tree and
+        // the tab order, so a hidden window is not reachable by keyboard.
+        display: hidden ? 'none' : 'flex',
         position: 'absolute',
         left: current.x,
         top: current.y,
         width: current.w,
         height: current.h,
         zIndex,
-        display: 'flex',
         flexDirection: 'column',
         background: 'var(--color-surface)',
         border: '1px solid var(--color-border)',
@@ -203,17 +225,21 @@ export function FloatingPanel({
           gap: 'var(--space-2)',
           padding: 'var(--space-2) var(--space-3)',
           borderBottom: '1px solid var(--color-border)',
-          cursor: interaction.current?.handle === 'move' ? 'grabbing' : 'grab',
+          cursor: fixed ? 'default' : interaction.current?.handle === 'move' ? 'grabbing' : 'grab',
           // Stops the drag from selecting the title text or scroll-panning touch.
           userSelect: 'none',
           touchAction: 'none',
           flexShrink: 0,
         }}
       >
+        {/* Spacer mirroring the button cluster's width, so the title lands in
+            the true centre of the bar rather than the centre of what's left. */}
+        <span aria-hidden style={{ width: 28, flexShrink: 0 }} />
         <strong
           style={{
             fontSize: '0.9rem',
             flex: 1,
+            textAlign: 'center',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -230,7 +256,10 @@ export function FloatingPanel({
           routinely taller than whatever the user sized the window to. */}
       <div style={{ flex: 1, overflow: 'auto', padding: 'var(--space-4)' }}>{children}</div>
 
-      {/* ---- Resize handles: four edges, then four corners on top ---- */}
+      {/* ---- Resize handles: four edges, then four corners on top ----
+          Omitted entirely when fixed, so there is no dead cursor hint. ---- */}
+      {fixed ? null : (
+        <>
       <div {...handleProps('n', { top: 0, left: T, right: T, height: T, cursor: 'ns-resize' })} />
       <div {...handleProps('s', { bottom: 0, left: T, right: T, height: T, cursor: 'ns-resize' })} />
       <div {...handleProps('w', { left: 0, top: T, bottom: T, width: T, cursor: 'ew-resize' })} />
@@ -251,6 +280,8 @@ export function FloatingPanel({
             'linear-gradient(135deg, transparent 50%, var(--color-border) 50%, var(--color-border) 100%)',
         })}
       />
+        </>
+      )}
     </section>
   )
 }

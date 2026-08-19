@@ -22,10 +22,11 @@
  * drives both the header badge and tab gating.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useLocation, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
 import { AppHeader } from '../../components/AppHeader'
 import { FormError } from '../../components/ui'
+import { OverviewPanel } from './OverviewPanel'
 import { WorkspaceShell } from './WorkspaceShell'
 import { tabsForRole } from './tabs'
 import {
@@ -43,6 +44,11 @@ function tabStorageKey(campaignId: string): string {
   return `campaign:${campaignId}:activeTab`
 }
 
+/** localStorage key holding which of the campaign's two views was last shown. */
+function viewStorageKey(campaignId: string): string {
+  return `campaign:${campaignId}:view`
+}
+
 export function CampaignPage() {
   const { id } = useParams<{ id: string }>()
   const { user } = useAuth()
@@ -51,13 +57,61 @@ export function CampaignPage() {
   // deliberately enter a campaign from the main menu, and stays out of the way
   // otherwise. It has no rail entry, so this is how it surfaces.
   const location = useLocation()
+  const navigate = useNavigate()
   const cameFromDashboard = !!(location.state as { openOverview?: boolean } | null)?.openOverview
 
-  // Outstanding request for the shell to open a panel. Seeded to 1 when we
-  // arrived from the dashboard (so Overview opens on entry) and bumped by the
-  // header button. A counter rather than a boolean because clicking the button
-  // again must re-raise the window, which a flag could not express.
-  const [overviewRequest, setOverviewRequest] = useState(cameFromDashboard ? 1 : 0)
+  // Which of the campaign's two views is showing. Overview is a full PAGE, not
+  // a panel: it is read at full width, and it is where you land when you open a
+  // campaign from the dashboard. Everything else lives in the workspace shell.
+  //
+  // Persisted per campaign so a REFRESH keeps you where you were. Arriving from
+  // the dashboard always wins and forces Overview; otherwise the stored value
+  // decides. Getting this wrong is bidirectional and both directions have been
+  // seen: reading only the router state bounced every refresh back to Overview
+  // (because history.state survives a reload), and then dropping it entirely
+  // threw you into the workspace when you refreshed *on* the overview page.
+  const [view, setView] = useState<'overview' | 'workspace'>(() => {
+    if (cameFromDashboard || !id) return 'overview'
+    try {
+      return localStorage.getItem(viewStorageKey(id)) === 'overview' ? 'overview' : 'workspace'
+    } catch {
+      return 'workspace'
+    }
+  })
+
+  // Persist the view per campaign. No loading guard needed: unlike activeTab,
+  // this value is not role-dependent, so there is nothing for a late-arriving
+  // role to invalidate.
+  useEffect(() => {
+    if (!id) return
+    try {
+      localStorage.setItem(viewStorageKey(id), view)
+    } catch {
+      /* ignore — view preference only */
+    }
+  }, [id, view])
+
+  // Switching campaigns restores THAT campaign's last view.
+  useEffect(() => {
+    if (!id || cameFromDashboard) return
+    try {
+      setView(localStorage.getItem(viewStorageKey(id)) === 'overview' ? 'overview' : 'workspace')
+    } catch {
+      setView('workspace')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
+
+  // Consume the dashboard's navigation state immediately.
+  //
+  // `history.state` SURVIVES A PAGE RELOAD, so without this the flag stayed set
+  // and every refresh bounced you back to Overview — which is exactly the bug
+  // reported after the first run. Replacing the entry with a null state means
+  // the flag is read once, on the navigation that actually carried it.
+  useEffect(() => {
+    if (cameFromDashboard) navigate(location.pathname, { replace: true, state: null })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameFromDashboard])
 
   // Every campaign the caller belongs to, with their role in each. Read purely
   // for THIS campaign's role — the in-workspace campaign switcher was removed in
@@ -167,22 +221,26 @@ export function CampaignPage() {
           campaign ? (
             <button
               type="button"
-              onClick={() => setOverviewRequest((n) => n + 1)}
-              title="Roster, invite codes and session scheduling"
+              onClick={() => setView((v) => (v === 'overview' ? 'workspace' : 'overview'))}
+              title={
+                view === 'overview'
+                  ? 'Back to the campaign workspace'
+                  : 'Roster, invite codes and session scheduling'
+              }
               style={{
                 font: 'inherit',
                 fontSize: '0.9rem',
                 cursor: 'pointer',
-                background: 'none',
-                border: '1px solid var(--color-border)',
+                background: view === 'overview' ? 'var(--color-bg)' : 'none',
+                border: `1px solid ${view === 'overview' ? 'var(--color-accent)' : 'var(--color-border)'}`,
                 borderRadius: 'var(--radius)',
-                color: 'var(--color-text-muted)',
+                color: view === 'overview' ? 'var(--color-text)' : 'var(--color-text-muted)',
                 padding: 'var(--space-2) var(--space-3)',
                 whiteSpace: 'nowrap',
                 flexShrink: 0,
               }}
             >
-              Campaign overview
+              {view === 'overview' ? '← Workspace' : 'Campaign overview'}
             </button>
           ) : undefined
         }
@@ -221,7 +279,23 @@ export function CampaignPage() {
           </div>
         ) : campaign ? (
           <>
-            {/* The one workspace chrome, for every game mode. */}
+            {/* Campaign overview — a full page, read at full width, not a
+                panel you arrange. This is the landing view when you open a
+                campaign from the dashboard. */}
+            {view === 'overview' ? (
+              <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+                <div style={{ maxWidth: 900, margin: '0 auto', padding: 'var(--space-8)' }}>
+                  <OverviewPanel
+                    campaign={campaign}
+                    members={members}
+                    isDm={isDm}
+                    currentUserId={user?.id}
+                    onEnterWorkspace={() => setView('workspace')}
+                  />
+                </div>
+              </div>
+            ) : (
+            /* The one workspace chrome, for every game mode. */
             <WorkspaceShell
               campaign={campaign}
               visibleTabs={visibleTabs}
@@ -232,10 +306,8 @@ export function CampaignPage() {
               currentUserId={user?.id}
               onRenamed={handleRenamed}
               onModeChanged={handleModeChanged}
-              openRequest={
-                overviewRequest > 0 ? { key: 'overview', nonce: overviewRequest } : undefined
-              }
             />
+            )}
           </>
         ) : null}
       </main>

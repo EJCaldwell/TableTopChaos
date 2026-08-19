@@ -89,7 +89,27 @@ and the `auth.uid()` claim wiring — fail identically here.
    needs the `storage` schema to exist (it does; `storage-api` migrates on boot —
    if 0008 fails, confirm the storage service came up first).
 
-4. **Verify `auth.uid()` actually resolves.** This is the linchpin for all 100
+4. **Grant table privileges, then reload the PostgREST schema cache.** Both are
+   easy to miss and both fail in ways that look like a broken app rather than a
+   missing step:
+   ```
+   psql "$DB" -v ON_ERROR_STOP=1 -f railway/scripts/90_grant_app_privileges.sql
+   psql "$DB" -c "notify pgrst, 'reload schema'"
+   ```
+   - **Grants:** none of the 27 migrations issues a table `GRANT` — hosted Supabase
+     supplies those as project defaults. Without them every query returns
+     `permission denied for table campaigns`, for signed-in users as well as anon,
+     because table privileges are checked *before* RLS is consulted.
+   - **Schema cache:** PostgREST builds its cache at boot. It came up before the
+     migrations ran, so it has zero relations and answers writes with a bare
+     `404` and an empty `{}` body — which reads like a routing bug, not a cache
+     one. The `notify` is instant.
+
+   **Gate:** the two verification queries at the bottom of
+   `90_grant_app_privileges.sql` both return **no rows**, and the PostgREST log
+   line reads `Schema cache loaded 34 Relations` (not `0 Relations`).
+
+5. **Verify `auth.uid()` actually resolves.** This is the linchpin for all 100
    policies. Confirm the claim plumbing directly, per the `qa-testing` skill:
    ```sql
    begin;
@@ -101,7 +121,7 @@ and the `auth.uid()` claim wiring — fail identically here.
    **Gate:** returns the UUID. If NULL, nothing downstream is trustworthy — stop and
    fix before continuing.
 
-5. **Verify gateway routing** (catches `handle` vs `handle_path` mistakes):
+6. **Verify gateway routing** (catches `handle` vs `handle_path` mistakes):
    ```
    curl -s -o /dev/null -w '%{http_code} rest\n'  "http://localhost:8000/rest/v1/?apikey=$ANON_KEY"
    curl -s -o /dev/null -w '%{http_code} auth\n'  http://localhost:8000/auth/v1/settings
@@ -110,9 +130,27 @@ and the `auth.uid()` claim wiring — fail identically here.
    ```
    **Gate:** no 404s. A 401 on storage/rest is fine — it means the service answered.
 
-6. **Point the frontend at it.** In `.env`: `VITE_SUPABASE_URL=http://localhost:8000`
-   and the new `VITE_SUPABASE_ANON_KEY`. Then `npm run build`.
-   **Gate:** build clean.
+7. **Point the frontend at it.** Rather than editing `.env` (which would disturb
+   the dev server on :5173), pass the two vars inline — Vite picks up prefixed
+   process env at build time:
+   ```
+   VITE_SUPABASE_URL=http://localhost:8000 VITE_SUPABASE_ANON_KEY="$ANON_KEY" npm run build
+   ```
+   **Gate:** build clean **and** the bundle actually contains the local origin —
+   `grep -c localhost:8000 dist/assets/*.js` returns non-zero with no
+   `*.supabase.co` left in it. Without that second half the gate passes on a
+   build that silently used the old hosted URL.
+
+8. **End-to-end through the gateway** — the gate that subsumes the rest, because
+   it exercises GoTrue → JWT → PostgREST → RLS as one path rather than three
+   parts in isolation. With `MAILER_AUTOCONFIRM=true`, sign up two users via
+   `/auth/v1/signup`, then with their bearer tokens: user A creates a campaign
+   (expect `201`), reads it back (expect one row), and user B plus a signed-out
+   caller read the same endpoint (expect `[]` from both), and user B's `PATCH`
+   affects zero rows.
+   **Gate:** every allowed path returns data and every denied path returns `[]`.
+   An empty array — not a `401` — is the correct denial: the privilege exists,
+   the policy filtered the rows.
 
 ---
 

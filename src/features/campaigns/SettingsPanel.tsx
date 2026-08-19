@@ -58,11 +58,7 @@ const sectionStyle: React.CSSProperties = {
  * here so there is exactly one writer of the layout.
  */
 export interface WorkspacePrefs {
-  /** Which edge the tab rail currently sits on. */
-  railSide: 'left' | 'right'
-  /** Move the rail to the other edge. */
-  onRailSideChange: (side: 'left' | 'right') => void
-  /** Close every window and restore the default rail size/side/position. */
+  /** Close every window and restore the default rail size and position. */
   onResetLayout: () => void
 }
 
@@ -194,35 +190,10 @@ export function SettingsPanel({
           only — it doesn't affect anyone else in the campaign.
         </p>
 
-        <div style={{ marginTop: 'var(--space-4)' }}>
-          <strong style={{ fontSize: '0.9rem' }}>Sidebar position</strong>
-          <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
-            {(['left', 'right'] as const).map((side) => {
-              const selected = workspace.railSide === side
-              return (
-                <button
-                  key={side}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => workspace.onRailSideChange(side)}
-                  style={{
-                    font: 'inherit',
-                    fontSize: '0.9rem',
-                    cursor: 'pointer',
-                    padding: 'var(--space-2) var(--space-4)',
-                    background: 'var(--color-bg)',
-                    color: selected ? 'var(--color-text)' : 'var(--color-text-muted)',
-                    border: `1px solid ${selected ? 'var(--color-accent)' : 'var(--color-border)'}`,
-                    borderRadius: 'var(--radius)',
-                    fontWeight: selected ? 600 : 400,
-                  }}
-                >
-                  {side === 'left' ? 'Left' : 'Right'}
-                </button>
-              )
-            })}
-          </div>
-        </div>
+        <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
+          Which side the sidebar sits on is an account setting — it follows you
+          into every campaign. Change it on your <strong>Profile</strong> page.
+        </p>
 
         <div style={{ marginTop: 'var(--space-5)' }}>
           <strong style={{ fontSize: '0.9rem' }}>Reset workspace layout</strong>

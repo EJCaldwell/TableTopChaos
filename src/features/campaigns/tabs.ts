@@ -53,19 +53,11 @@ export interface WorkspaceTab {
 export const WORKSPACE_TABS: WorkspaceTab[] = [
   // Shared — visible to everyone in the campaign.
   //
-  // Overview is reached from the APP HEADER, beside the home link — not from the
-  // rail at all (hence railHidden). It is campaign-level reference material
-  // ("who's here, when are we playing"), which is the same altitude as the home
-  // link next to it, and keeping it out of the rail leaves that list purely the
-  // places you work. It also opens by itself when you enter from the dashboard.
-  // Scheduling was folded into it in 5.2.1h: same question, no separate slot.
-  {
-    key: 'overview',
-    label: 'Campaign overview',
-    audience: 'all',
-    blurb: 'Campaign roster, invite codes, and session scheduling.',
-    railHidden: true,
-  },
+  // NOTE: there is deliberately no 'overview' tab. Campaign overview is a
+  // full PAGE, not a panel — it is where you land when you open a campaign from
+  // the dashboard, and it is read at full width rather than in a window you
+  // arrange. It lives in CampaignPage's view state; the header button switches
+  // to it. Do not re-add it here.
   // DM-only tabs.
   //
   // NOTE: there is deliberately no 'billing' or 'schedule' tab. Billing moved

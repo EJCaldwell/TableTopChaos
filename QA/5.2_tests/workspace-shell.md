@@ -96,6 +96,12 @@ campaign; differences are called out per step. **No console needed.**
 - [ ] 18b. **Reset layout.** Open some windows, drag the rail wider, move it left.
       Settings → Workspace → **Reset layout** → everything closes and the rail
       returns to its default width, expanded, on the right.
+- [ ] 18c. **Reopening a panel does not reload it.** Open **NPCs**, scroll down
+      and start typing into a field (don't save). Close it, open something else,
+      then reopen NPCs → it comes back **instantly, with no loading flash**, at
+      the **same position**, with your scroll and your unsaved text intact.
+- [ ] 18d. Same for a panel with live data — open **Party** or **HP &
+      conditions**, close it, reopen: no spinner, and it is still up to date.
 - [ ] 19. Console stays clean throughout, including during drags and resizes.
 
 ### Persistence
@@ -165,6 +171,143 @@ usable at once; the arrangement survives a refresh and is per campaign;
 Plan & billing lives only in Settings; nothing errors in the console.
 
 ## Run log
+
+**2026-08-22 (b) — PASS, no follow-ups.** The user ran the 5.2.2g checks and
+reported all pass: each past session collapses to a one-line summary, expands
+individually, editing inside an expanded card still saves with the time locked,
+history is ordered newest-first, and untitled sessions read "Untitled session".
+
+**This is the first round since 2026-08-07 to produce no follow-up changes, so
+the area is closed.** See the README for the phase status.
+
+**2026-08-22 — PASS (all 8 checks).** The user ran the 5.2.2f checks and reported
+all pass: keyboard entry into the composer's date field works without the field
+clearing mid-keystroke, past dates are rejected on submit, Now→Propose saves,
+title-only sessions still create as "Time TBD", and a past session's time is
+locked while its title, notes and RSVP stay editable.
+
+> **Follow-up (5.2.2g):** each past session became its own collapsed disclosure
+> — a one-line summary of title + date, expanding to the full card — so a
+> specific session can be found without scrolling a wall of cards. History is
+> now ordered **newest first**, the reverse of the upcoming list.
+>
+> *Re-verify: expanding an individual past session, and that editing inside an
+> expanded one still saves.*
+
+**2026-08-21 — PASS, with two follow-ups.** The user re-ran the spot checks and
+reported all good — view persistence in both directions, per-campaign view
+memory, dashboard entry still forcing Overview, and the past-date guard
+(including the Now→Propose case fixed the same day).
+
+> **Follow-ups applied (5.2.2f):**
+>
+> 1. **The composer's date field can be typed into again.** The `min={now}` added
+>    in 5.2.2e made it hostile to keyboard entry: typing a date digit by digit
+>    produces intermediate values below the minimum, which browsers mark invalid
+>    and can clear mid-keystroke. `min` is gone; the rule is enforced on submit in
+>    `handleAdd`, which was always the real enforcement — `min` only ever styled
+>    the picker.
+> 2. **A past session's time is locked**, with the input disabled and a tooltip
+>    saying why; its "Now" shortcut is hidden. Title, notes and RSVPs stay
+>    editable — notes especially, since that is how a DM records what actually
+>    happened. Rescheduling something that already occurred is always a mistake,
+>    and it would silently move the card out of the history list.
+>
+> *Re-verify: typing a date into the composer, and that a past session's notes
+> still save while its time is fixed.*
+
+**2026-08-20 — PASS, with two follow-ups.** The user ran the 14-check re-run
+covering 5.2.2c/5.2.2d and reported *"other than that all tests pass"* — so the
+entry button, past-session dropdown, fixed + dimmed Settings, edge snapping, the
+sidebar setting's move to Profile, and the left-rail drag fix are all confirmed.
+
+> **Follow-ups applied the same day (5.2.2e):**
+>
+> 1. **REGRESSION — refreshing on the overview page threw you into the
+>    workspace.** The 5.2.2c fix consumed the dashboard's router state so a
+>    refresh would stop bouncing you *to* Overview, but nothing then remembered
+>    which view you were on, so a reload always fell through to the workspace.
+>    Both directions of this bug have now been seen, which is the tell that the
+>    view needed its own persisted state rather than being inferred: it is now
+>    stored per campaign in localStorage, with arrival from the dashboard still
+>    forcing Overview.
+> 2. **A session can no longer be proposed in the past.** The composer's date
+>    input carries a `min` of now (so the browser's own picker refuses), plus a
+>    guard in `handleAdd` since `min` is a hint a user can type past. Editing an
+>    *existing* session to a past date is still allowed — that is how a DM
+>    corrects a date or records when a session actually happened. The "Today"
+>    shortcut was relabelled **"Now"**, which is what it always did.
+>
+> *Re-verify: the refresh behaviour on both views, and proposing a past-dated
+> session.*
+
+**2026-08-17 — PASS, with seven follow-up changes.** The user ran the 17-step
+targeted re-run (the new/changed subset after 5.2.1j) and reported *"besides
+those changes all tests are good"* — so the 5.2.1j work is confirmed: Overview as
+a page, the drag/edge fixes, big always-on-top Settings, centred titles, and
+panels keeping their state on reopen all behaved.
+
+> **Follow-ups applied the same day (5.2.2c) — each needs re-verifying:**
+>
+> 1. **DEFECT — a page refresh reopened Overview.** `history.state` survives a
+>    reload, so the dashboard's `openOverview` flag stayed set and every refresh
+>    bounced back. Now consumed once, on the navigation that carried it.
+> 2. **Entry button under the roster** on the Overview page ("Enter the
+>    playspace →" / "Open the campaign workspace →"). The header toggle alone was
+>    too quiet for a landing page's primary action.
+> 3. **Past sessions collapse into a dropdown**, closed by default with a count.
+>    Undated proposals stay in *upcoming* — they await a date, they are not
+>    history.
+> 4. **Settings is fixed** — no drag, and its resize handles removed rather than
+>    left as dead cursor hints.
+> 5. **Settings dims the workspace behind it.** Click-through-to-dismiss
+>    deliberately not wired: it holds the danger zone.
+> 6. **Sidebar side moved to Profile → Workspace**, account-wide, applied on
+>    workspace mount rather than live.
+> 7. **Edge snapping** (14px, on release) — the reported "not locked to the
+>    border".
+>
+> Plus **5.2.2d**: the Profile page was restructured into Account / Workspace /
+> Legal, naming each unbuilt control rather than hiding it.
+
+**2026-08-14 — PASS, with five follow-up changes.** Run by the user in the
+browser on :5173, DM + player profiles, against the 5.2.1i build. They reported
+**all steps pass** apart from the items below, which were requests/defects rather
+than step failures.
+
+> **Follow-ups applied the same day (5.2.1j) — this checklist now needs a
+> re-run of the affected areas, listed at the end of each item.**
+>
+> 1. **DEFECT — could not drag windows fully to the side with the rail on the
+>    left.** Two causes, both fixed. (a) The rail's resize grab strip was
+>    positioned `-3`, so it protruded into the workspace and quietly owned the
+>    pixels beside a left-hand rail — grabbing a window there resized the rail
+>    instead. It now sits fully inside the rail. (b) Horizontal clamping was
+>    asymmetric: a window could hang off the *right* edge but was hard-stopped at
+>    `x = 0`, so it could never be pushed left the way it could be pushed right.
+>    `clampRect` and the drag clamp are now symmetric, keeping 80px grabbable on
+>    either side. The top edge stays a hard stop — the title bar is the only drag
+>    handle. *Re-run: steps 10, 13–15, 22.*
+> 2. **Campaign overview is a full PAGE again, not a panel.** Opening a campaign
+>    from the dashboard lands on it at full width; the header button toggles
+>    between it and the workspace (`← Workspace` when you are on it). `overview`
+>    was removed from the tab catalog entirely. *Re-run: steps 1–5, 24, 29.*
+> 3. **Settings opens near-full-screen and cannot be covered.** It gets a
+>    bounds-derived rect (~90% of the area) instead of the default 460×420, and a
+>    fixed z-index above every other window — it is a modal sort of thing, and a
+>    dense stack of admin sections is miserable to read in a small window. Its
+>    rail entry is now a plain open/close toggle, since "raise" is meaningless for
+>    a panel that is always on top. *Re-run: steps 26, 28.*
+> 4. **Window titles are centred** in their title bars, with a spacer mirroring
+>    the button cluster so the title sits in the true centre rather than the
+>    centre of the leftover space. *Re-run: cosmetic, covered by any step that
+>    opens a window.*
+>
+> The automated harness **caught follow-up 1's behaviour change** — two
+> assertions encoding the old hard stop failed on the first run and were rewritten
+> to the new intent, plus three added for the symmetric hang-off and the top-edge
+> stop. `npm run qa:checks` 40 → **44 passing**. That is the harness doing exactly
+> what it was built for.
 
 **2026-08-07 — PASS (Phase 5.2.1 — SUPERSEDED, does not describe shipping
 behavior).** The user ran the original 5.2.1 build, in which `notetaker` kept the

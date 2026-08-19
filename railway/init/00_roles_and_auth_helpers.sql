@@ -133,6 +133,18 @@ grant execute on function auth.jwt(), auth.uid(), auth.role(), auth.email()
 create schema if not exists storage;
 grant usage on schema storage to anon, authenticated, service_role;
 
+-- --- Realtime's own schema ------------------------------------------------
+-- The realtime service keeps its internal tables (`tenants`, `extensions`,
+-- `schema_migrations`) wherever its search_path points. Left at the default it
+-- creates them in `public`, where PostgREST exposes them and where the
+-- post-migration grant pass would hand `anon` read access to `tenants` — which
+-- holds the per-tenant JWT secret. Those tables have no RLS and never will.
+--
+-- Creating the schema here, plus DB_AFTER_CONNECT_QUERY in docker-compose.yml,
+-- keeps `public` containing app tables only. Found during the 6.1 pre-flight
+-- (2026-08-18) by diffing `pg_class` against the app's own table list.
+create schema if not exists _realtime;
+
 -- --- Realtime publication -------------------------------------------------
 -- useRealtimeRefresh.ts subscribes to postgres_changes, which requires the
 -- tables to be in this publication. Created empty here; the app migrations (or

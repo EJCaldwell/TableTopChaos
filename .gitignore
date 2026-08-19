@@ -17,6 +17,15 @@ railway/.env.stack
 railway/.env.stack.*
 !railway/.env.stack.example
 
+# Phase 6.2 one-off migration credentials: the SOURCE (hosted) project's database
+# password and service-role key. Delete this file once the cutover is done.
+railway/.env.migrate
+railway/.env.migrate.*
+!railway/.env.migrate.example
+
+# Phase 6.2 working directory: dumps of live data and downloaded media.
+railway/migrate-out/
+
 # Supabase local stack & secrets
 supabase/.branches/
 supabase/.temp/

@@ -1,70 +1,50 @@
 # QA — Phase 6: Self-hosted backend migration (hosted Supabase → Railway)
 
-**Phase:** 13 (all subphases 6.1–6.5).
+Covers the move off hosted Supabase onto a self-hosted stack, per
+[PLANNING.md](../../PLANNING.md) Phase 6 and the runbook in
+[docs/RAILWAY_MIGRATION.md](../../docs/RAILWAY_MIGRATION.md).
 
-Unlike the feature phases, this folder covers the **whole phase in one directory**
-rather than one per subphase. The migration is a single sequenced operation with a
-rollback point — splitting its gates across five folders would obscure the ordering
-that makes it safe.
+**What makes this phase different from every earlier one:** no application code
+changes. The frontend, the 27 migrations and the 7 Edge Functions are carried
+over byte-identical. So there is nothing for `npm run build` to catch, and the
+usual first line of defence is absent. Every gate here is a runtime assertion
+against a running stack.
 
-**Spec:** [`../../railway/README.md`](../../railway/README.md) ·
-**Runbook:** [`../../docs/RAILWAY_MIGRATION.md`](../../docs/RAILWAY_MIGRATION.md) ·
-**Plan:** [`../../PLANNING.md`](../../PLANNING.md) (Phase 6)
+**`get_advisors` has no self-hosted equivalent.** The substitute is a direct
+`pg_policies` + `pg_class.relrowsecurity` audit. Record that substitution in
+every run log — it is the one place this phase's QA is weaker than the hosted
+project's, and it should stay visible rather than be quietly dropped.
 
----
+## Areas
 
-## What makes this phase's QA different
+| Area | File | Who runs it | Status |
+|------|------|-------------|--------|
+| 6.1 Local stack pre-flight | [local-preflight.md](local-preflight.md) | Claude, local Docker | **PASS** 2026-08-18 |
+| 6.2 Data migration | [data-migration.md](data-migration.md) | Claude, local Docker | **PASS** 2026-08-18 |
+| 6.3 Railway deploy & gateway | _not started_ | — | — |
+| 6.4 Stripe re-wiring | _not started_ | — | — |
+| 6.5 Cutover & decommission | _not started_ | — | — |
 
-Every other phase QA's *new behaviour*. This phase changes **what enforces access
-control** while behaviour stays identical — so the risk profile is inverted:
+## The failure mode this phase's QA exists to catch
 
-- **Nothing looks broken when it breaks.** A table that restores with RLS disabled
-  serves data happily. It fails **open**. The UI is not a detector here.
-- **The frontend is unchanged** (0 code changes; 2 `.env` values), so a green build
-  proves almost nothing about correctness. Don't let it substitute for the matrix.
-- **`get_advisors` is gone.** It's a hosted-Supabase feature with no self-hosted
-  equivalent. The `pg_policies` + `rowsecurity` audit in
-  [`access-control-matrix.md`](access-control-matrix.md) replaces it, and that
-  substitution must be recorded in the run log.
+A table that arrives with **RLS disabled** fails *open*: the app looks completely
+normal, and every DM-only note and private journal is readable by anyone signed
+in. Nothing visibly breaks, so only an explicit assertion finds it. Both the
+grant script and the 6.5.2 gate assert it directly; do not treat "the app works"
+as evidence.
 
-**Hard numbers to assert** (captured from live project `fnykpoattheldxtkrozd`
-on 2026-08-04 — re-capture just before cutover in case the schema moves):
+## Baseline numbers (measured 2026-08-18, local pre-flight)
 
-| Invariant | Expected |
-| --- | --- |
-| Policies across `public` + `storage` | **100** |
-| Tables with `rowsecurity = true` | **30** |
-| `auth.users` rows | **5** |
-| `storage.objects` rows | **106** |
-| Database size | ~14 MB |
+Use these as the expected values in later subphases. **PLANNING.md's 6.5.2 gate
+says "exactly 30 tables with `rowsecurity = true`"; the measured figure is 34.**
+The estimate predated a real stack — 29 in `public` plus 5 in `storage`
+(`objects`, `buckets`, `migrations`, `s3_multipart_uploads`,
+`s3_multipart_uploads_parts`, all created and policed by storage-api).
 
-## Manual areas
-
-| Area | Covers | Who runs it |
-| --- | --- | --- |
-| [`stack-preflight.md`](stack-preflight.md) | 6.1 — local stack, migration replay, `auth.uid()`, gateway routing | Mostly automatable (server-side) |
-| [`data-migration.md`](data-migration.md) | 6.2 — row counts, UUID preservation, media re-upload | Mostly automatable (server-side) |
-| [`access-control-matrix.md`](access-control-matrix.md) | 6.5 — **the headline**: four-role matrix, policy/RLS audit | Server-side + browser halves |
-| [`media-and-realtime.md`](media-and-realtime.md) | 6.3/6.5 — signed URLs, cross-campaign leak, two-session realtime | **Browser (user)** |
-| [`billing-stripe.md`](billing-stripe.md) | 6.4 — webhook signature, checkout, trial, reused-card | **Browser (user)** |
-
-## Automated coverage
-
-See [`automated-coverage.md`](automated-coverage.md). Per project convention there
-is no test runner; automated coverage is `tsc` + production build, plus the
-server-side SQL assertions run through the Supabase MCP / `psql`.
-
-## Order matters
-
-Run top to bottom. `stack-preflight` gates everything: if `auth.uid()` returns NULL,
-all 100 policies evaluate against a null identity and every later result is
-meaningless.
-
-**Do not decommission the hosted project or cancel anything until
-[`access-control-matrix.md`](access-control-matrix.md) and
-[`billing-stripe.md`](billing-stripe.md) both pass.** Rollback is two `.env` values,
-but only while the hosted project still exists.
-
-## Run log
-
-_No runs yet — phase not started._
+| Metric | Value |
+|---|---|
+| Policies (`public` + `storage`) | **100** (99 + 1) |
+| Tables in `public` | 29, **all** with RLS |
+| Tables with `rowsecurity = true` | 34 (29 public + 5 storage) |
+| Migrations replayed | 27/27 |
+| PostgREST schema cache after reload | 34 relations, 40 relationships, 29 functions |

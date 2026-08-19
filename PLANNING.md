@@ -173,7 +173,7 @@ These framed the whole plan and should not be quietly reversed:
   - [x] 5.1.2b — Web UI: DM Settings tab *(added on request after 5.1, since Overview had accumulated too many unrelated jobs. New DM-only 'settings' tab (tabs.ts, last in the DM group) rendering campaigns/SettingsPanel.tsx: Campaign name (rename), Game mode (the 5.1 picker + confirm), Backup & data (CampaignDataPanel), and the owner-only Danger zone. OverviewPanel trimmed to the people side — roster + DM invite codes + a read-only "plays as X, change it in Settings" line — and lost its isOwner/onRenamed/onModeChanged props; the shell now passes those to SettingsPanel instead. Pure relocation: no behavior change to rename/export/delete. Split rationale: Overview = "who's in this campaign and how do I add someone?", Settings = "how is this campaign configured?". typecheck + build clean)*
   - [x] 5.1.2c — Cleanup: removed the co-DM concept *(co-DM was already "considered and intentionally dropped from scope" (see Technical summary), but stale language implied it was coming. Now: migration 0029 rewrites the in-DB comments on campaign_role / add_owner_as_dm / campaigns_update_dm to state the real invariant — exactly ONE 'dm' member per campaign, its owner (0003's matching comments corrected in place so a fresh DB and an existing one describe themselves identically; comments only, zero behavior change). createInviteCode lost its `role` parameter and hard-codes 'player', closing the only client path that could ever have minted a DM code. Reworded roster-sort / CombatPanel / SettingsPanel comments and dropped the "non-owner DM" optional steps from QA 1.5 + 5.1. Verified in the DB: all 7 campaigns have exactly 1 dm member and it is always the owner; all invite codes are role=player, so no data cleanup was needed. SettingsPanel still gates the danger zone on isOwner — that mirrors campaigns_delete_owner (owner-based) vs the rest of the panel (DM-based), which is belt-and-braces now that DM == owner)*
   - [x] 5.1.3 — QA *(**COMPLETE/PASS 2026-08-07 — all three areas.** QA/5.1_tests/ rewritten from scratch 2026-07-31. **Automated + server-side: PASS** — build clean; advisors show no new lints from 0028/0029; mode-access.md re-ran the full four-role matrix live (DM update → 1 row; member player → 0; non-member → 0; anon read → 0; member read → 1), audited pg_policies on campaigns (4 policies, all {authenticated}, no anon policy, campaigns_update_dm is the only UPDATE and is is_campaign_dm in USING + WITH CHECK), confirmed the enum rejects an invalid value (22P02), that the only triggers on campaigns are add_owner_as_dm (AFTER INSERT) + set_updated_at (BEFORE UPDATE) with no cascade on the column, and that a DM's rpg→notetaker→playspace round trip leaves every child-row count identical. **Browser checklists: PASS 2026-08-07** — the user ran mode-selection.md (all 12 steps: create-picker default + reset, confirm-before-save, correct up/down copy, no confirm on a no-op re-pick, Cancel reverts unsaved, persistence across hard refresh + navigation, player sees a read-only line and no Settings tab, no chrome change or console errors on a notetaker campaign) and settings-tab.md (all 11: tab placement/gating, reduced Overview, rename + blank-name validation, export/import, journal export, owner-only delete confirm/cancel/delete, player-only invite codes). **One follow-up applied:** import was removed from Settings → Backup & data, which is now export-only — importing always creates a *brand-new* campaign, so it belongs to the dashboard flow that already owns it; offering it inside a campaign's settings implied it would overwrite that campaign. CampaignDataPanel lost its file input, pending-file confirm and post-import summary; importCampaign/ImportResult remain for DashboardPage; build clean after (652.99 → 650.63 kB). settings-tab.md step 8 now asserts the import controls are absent — re-verify that one step on the next browser pass. The maps/tokens/combat half of the non-destructive invariant stays deferred to Phase 9/10 QA)*
-- [ ] 5.2 — Mode-aware app shell (sidebar + pop-out)
+- [x] 5.2 — Mode-aware app shell (sidebar + pop-out)
   - [x] 5.2.1 — Web UI *(CampaignPage now branches its chrome on campaign.game_mode: 'notetaker' keeps the original top tab bar untouched, 'playspace'/'rpg' render the new campaigns/PlayspaceShell.tsx and widen the container 860→1600. Enabling refactor first: the shell's long inline `activeTabDef?.key === …` chain was extracted to campaigns/TabBody.tsx, so BOTH chromes render the same panels from the same role guards and cannot drift; both also take visibleTabs from the one tabsForRole(isDm) memo, so the rail has no tab list of its own. PlayspaceShell = collapsible left rail (« Collapse → single-letter strip) + a docked drawer showing the active tab (drawer open/closed is state SEPARATE from which tab is active, so closing it to see the map doesn't lose your place) + a floating layer over a Phase-6 battlemap placeholder. A panel is docked, floating, or closed — never two at once (a second mount would run duplicate queries + realtime subs); clicking a floating tab in the rail focuses it instead of docking a copy. campaigns/FloatingPanel.tsx: drag by title bar, resize from a corner grip, both via Pointer Events + setPointerCapture (a fast drag can't strand the window), rect committed to the parent once on release rather than per pointermove so persistence isn't written 60×/s; clamped so some title bar always stays reachable; array order IS z-order, focus moves a panel to the end. campaigns/layout.ts persists {sidebarCollapsed, drawerOpen, floating[]} to localStorage per campaign (`campaign:<id>:layout`) — a per-user VIEW PREFERENCE, deliberately never in Postgres and so with no RLS story. loadLayout is defensive about untrusted input: bad JSON, non-finite coords, duplicate keys, off-screen/sub-minimum rects and — importantly — floating entries for tabs the caller may no longer see are all pruned, with a matching effect for a role change mid-session. Chosen over window.open pop-outs (the other option PLANNING allowed) on the user's call: no popup blockers, no second document to copy styles into, no orphaned windows on refresh. NO backend, NO migration, NO new query — 5.2 adds zero data access. typecheck + build clean, 650.63 → 659.90 kB)*
   - [x] 5.2.1b — Web UI: shell revisions *(four changes on the user's request after running 5.2's QA. (1) **Plan & billing is no longer a tab** — it moved into SettingsPanel as a section between Game mode and Backup & data; 'billing' was deleted from the tabs.ts catalog with a comment telling future readers not to re-add it. Rarely visited, so it hadn't earned a permanent rail slot. Stale `activeTab:'billing'` falls back to Overview via the existing validity guard and a stale floating entry is pruned by loadLayout, so no migration of saved state was needed. (2) **Floating windows resize from all eight handles** (four edges + four corners), not just the bottom-right grip; north/west resizes derive the clamped dimension FIRST and move the origin by the difference, so the opposite edge stays pinned and the window doesn't slide sideways once it hits the minimum. The SE corner keeps its visible wedge as the affordance people look for; the other seven are invisible 8px hit zones. (3) **The workspace is full-bleed** — CampaignPage is now a 100dvh flex column (dvh not vh, so mobile browser chrome collapsing doesn't leave it short) with a compact full-width title bar; the centred 860px column is gone and the page itself no longer scrolls, panels scroll internally. (4) **Note taker uses the same shell** — the top tab bar is DELETED and PlayspaceShell became WorkspaceShell, used in every mode, so several panels can be open at once in a note-taking campaign too. Mode now only decides what sits in the middle: the docked panel fills it in notetaker (inside a 900px reading column so panels don't stretch), or becomes a fixed 460px column beside the battlemap placeholder in playspace/rpg. Structural fix that came with it: the floating layer is now positioned over the WHOLE content region rather than the space the docked panel left over, so windows can be dragged across the docked panel instead of being trapped beside it. (5) **Close tabs** — a rail button above the section list closing the docked panel and every floating window at once; shown to BOTH roles (layout is a personal view preference, nothing role-specific to gate) and only when openCount > 0, so it is never a dead control; deliberately leaves sidebarCollapsed alone (the rail is how you reopen anything, so clearing must not hide the way back) and leaves activeTab alone, so the next rail click lands where you left off. No confirm step — nothing is deleted and every panel is one click from returning. typecheck + build clean, 659.90 → 661.03 kB)*
   - [x] 5.2.1c — Web UI: click-to-open rail *(four more changes on request. (1) **The campaign title bar is gone** — that row cost a full row of vertical space in a full-bleed workspace for one line of text; the campaign name + role badge moved into a new optional `center` slot on AppHeader (flex:1 centred, so it stays centred regardless of how wide the side groups are, and degrades when the email is long). (2) **The in-workspace campaign switcher was removed** with it — switching now goes via the dashboard; listMyCampaigns is still read, but only to learn the caller's role for tab gating. (3) **The rail is side-switchable and starts on the RIGHT** (layout.railSide, persisted); the divider and the selected-entry accent marker both flip so they always face the workspace, and the collapse chevron points the sensible way per side. (4) **Clicking a rail entry opens that panel directly as a floating window** — the old "click the tab, then click ⧉" was two actions for one intent. This DELETED the docked panel concept entirely, taking the ⧉ pop-out and ⇤ dock buttons with it: a rail entry is now a three-way toggle (closed → open; open but buried → raise; already frontmost → close), where raising before closing matters or clicking a half-buried window's entry to see it would dismiss it. Consequence recorded honestly: no panel gets full width any more, which is why all-edge resize (5.2.1b) matters more than it did. layout.ts dropped `drawerOpen` and gained `railSide`; old saved layouts carrying drawerOpen are ignored rather than migrated, since it describes a UI mode that no longer exists. The build caught the dead wiring both removals left (`activeTab` prop, `useNavigate`). typecheck + build clean, 661.03 → 659.04 kB)*
@@ -183,18 +183,25 @@ These framed the whole plan and should not be quietly reversed:
   - [x] 5.2.1h — Web UI: Scheduling into Overview, Overview reachable *(two changes. (1) **Scheduling is no longer a tab** — SchedulePanel now renders as a section at the foot of OverviewPanel, and 'schedule' left the catalog (its TabBody branch and import went with it, which noUnusedLocals enforced). Rationale: it answers the same question as the roster — who is in this campaign and when are we playing — so it was competing for a rail slot it didn't need. No data or RLS change; SchedulePanel owns its own queries and heading either way. (2) **Overview is reachable again.** 5.2.1f made it railHidden + auto-open-from-dashboard, which left it unreachable once closed — you had to navigate back to the dashboard, and in a playspace campaign that is a real dead end. It is now a rail FOOTER entry (railHidden dropped) while KEEPING the dashboard auto-open, so it is reference material you can always get back to without taking a slot in the working section list. Rail footer order is now Overview → Close tabs (red) → Settings, with Settings still under its own divider; the footer-entry markup was extracted to a renderFooterTab helper so the two groups around Close tabs can't drift. typecheck + build clean, 663.37 → 663.43 kB; qa:checks 40/40)*
   - [x] 5.2.1i — Web UI: Campaign overview in the header *(Overview left the rail entirely and became a **"Campaign overview" button in the app header, beside the home link** (AppHeader gained a `leading` slot); the tab was renamed to match, so its window title reads the same. Rationale: it is campaign-level reference material — the same altitude as the home link next to it — while the rail should list only the places you work. Mechanically this needed a way for a control OUTSIDE the shell to drive the shell's layout state, so `autoOpenTab` became `openRequest: {key, nonce}`: the effect fires on nonce change, opening the panel or RAISING it if already open (never duplicating, preserving one-window-per-section). A nonce rather than a boolean because the same request legitimately repeats — clicking the button twice must re-raise the window, which a flag cannot express. CampaignPage seeds the nonce to 1 when arriving from the dashboard, so entry-open and button-open are now one mechanism instead of two. Overview is railHidden again; the rail footer is back to Close tabs + Settings. typecheck + build clean, 663.43 → 663.94 kB; qa:checks 40/40)*
   - [ ] 5.2.1g — Web UI: rail icons *(**deferred at the user's request — do not start without asking.** Give every rail entry an icon, and show the section name as a hover tooltip rather than inline text. That makes the collapsed rail genuinely usable (it currently shows a single letter, which is a placeholder at best) and lets the expanded rail be narrower. Open questions to settle first: icon source (inline SVG set vs a dependency — inline keeps the bundle and the CSP story simple), whether expanded still shows text beside the icon or icon-only, and accessibility (a tooltip is not an accessible name, so aria-label must carry the label regardless).)*
-  - [~] 5.2.2 — QA *(QA/5.2_tests/: README + automated-coverage (build only — no migration, so no advisors and, unusually for this project, NO server-side checklist, since 5.2 adds zero data access and the existing RLS matrix still governs). **5.2.1 run 2026-08-07: the user reported all steps good** across notetaker-regression.md (tab bar untouched, both roles — this is what confirmed the TabBody extraction was a clean refactor) and playspace-shell.md (rail/drawer/collapse/pop-out/drag/resize/focus/dock + never-in-two-places), and layout-persistence.md steps 1–4 + 7 (arrangement survived refresh/nav/campaign-switch/mode round trip; per-campaign; player gating). **NOT run: every console-snippet step** (corrupt JSON, off-screen clamp, hostile saved layout) — recorded as unverified, NOT passed, so loadLayout's defensive parsing still has no browser evidence. **Then 5.2.1b invalidated much of it:** notetaker-regression.md was deleted (it guarded the tab bar 5.2.1b deliberately removed, its result preserved in the new run log) and playspace-shell.md became workspace-shell.md, rewritten for one-chrome-every-mode + all-edge resize + full-bleed + billing-in-Settings; layout-persistence.md gained step 9 for the retired 'billing' key. **Then 5.2.1c superseded it AGAIN** (docked panel deleted, click-to-open, rail side, header title, no switcher), so workspace-shell.md was rewritten a second time and now has **no current browser evidence at all** — the 2026-08-07 PASS describes a shell that no longer exists and is retained only per the run-log convention. **Open: a full fresh run of BOTH files** — workspace-shell.md (28 steps) and the rewritten layout-persistence.md (6 steps, only the last needing a console and that one optional). The console-snippet deadlock was resolved in 5.2.1d by fixing/designing away the cases rather than testing around them.)*
+  - [x] 5.2.1j — Web UI: overview page, big Settings, drag fixes *(from the 5.2.2 QA run. (1) **DEFECT FIX — windows could not be dragged fully to the side with the rail on the left.** Two causes: the rail's resize grab strip was positioned -3 and protruded into the workspace, so it owned the pixels beside a left-hand rail and grabbing a window there resized the rail; and horizontal clamping was asymmetric — a window could hang off the RIGHT edge but was hard-stopped at x=0, so it could never be pushed left the way it could be pushed right. Strip is now fully inside the rail; clampRect + the drag clamp are symmetric, keeping 80px grabbable either side. Top stays a hard stop — the title bar is the only drag handle. (2) **Campaign overview is a full PAGE again**, not a panel: 'overview' left the tab catalog, CampaignPage holds a view state ('overview' | 'workspace'), dashboard entry lands on it at full width, and the header button toggles (shows '← Workspace' while on it). The openRequest/nonce plumbing added in 5.2.1i is gone with it. (3) **Settings opens near-full-screen and cannot be covered** — a bounds-derived rect (~90% of the area) instead of 460×420, plus a fixed z-index above every other window; it is modal-ish and a dense admin stack is unreadable small. Its rail entry became a plain open/close toggle since 'raise' is meaningless for an always-on-top panel, and focusPanel exempts it so the frontmost test can't lie. (4) **Window titles centred**, with a spacer mirroring the button cluster so it is the true centre. The harness CAUGHT (1): two assertions encoding the old hard stop failed and were rewritten to the new intent, +3 added for symmetric hang-off and the top-edge stop — qa:checks 40 → 44. typecheck + build clean, 663.93 → 664.18 kB)*
+  - [x] 5.2.2c — Web UI: profile sections, overview entry, schedule history, modal Settings *(seven items from the 5.2.2 re-run. (1) **BUG FIX — a page refresh reopened Overview.** `history.state` survives a reload, so the dashboard's `openOverview` flag stayed set and every refresh bounced back to the overview page; the flag is now consumed once via a replace-navigation on the entry that carried it. (2) **Entry button under the roster** on the Overview page — "Enter the playspace →" in playspace/rpg, "Open the campaign workspace →" in notetaker, with a line naming what is through it; the header toggle alone was too quiet for a landing page's primary action. (3) **Past sessions collapse into a `<details>`** with a count on the summary, closed by default — history stays available without pushing the next session (the only actionable one) off screen. Undated proposals count as UPCOMING: they await a date, they are not history. (4) **Settings is fixed** — no drag, and the eight resize handles are omitted entirely rather than left as dead cursor hints; a window that cannot be put behind anything gains nothing from being movable. (5) **Settings dims the workspace behind it** (scrim at z 8999, panel at 9000). Click-through-to-dismiss deliberately NOT wired: Settings holds the danger zone, and a stray edge-click closing it mid-edit is worse than a trip to the ✕. (6) **Rail side moved out of campaign Settings into Profile → Workspace** as an account-wide, browser-local preference (profile/preferences.ts), read ONCE per workspace mount. Two reasons, only one of which was the reported bug: it is a handedness preference that should follow the user across campaigns, and applying it on load stops it relayouting underneath windows the user has already dragged. `railSide` left CampaignLayout. (7) **Edge snapping** (layout.snapToEdges, 14px, applied on release only so it never fights the pointer) — the reported "not locked to the border". Note the honest split on (6)/(7): moving the setting SIDESTEPS a class of bug, snapping FIXES the complaint; neither alone was enough. **LAYOUT_VERSION deliberately NOT bumped** for railSide's removal — the field is simply ignored and nothing else changes meaning, so binning every user's arrangement over a dead key would be pure loss; the exception is documented next to the constant and pinned by an assertion. The harness caught the schema change twice: tsconfig.qa.json failed the typecheck the moment railSide left the type, and the old-clamp assertions failed before being rewritten. qa:checks 44 → **53**. typecheck + build clean, 664.93 → 667.23 kB)*
+  - [x] 5.2.2g — Web UI: per-session history disclosures *(each past session is now its own collapsed `<details>`, nested inside the existing "Past sessions (n)" one: a summary line of title + formatted date, expanding to the full card. A flat list of full cards became a wall to scroll once a campaign has a dozen sessions behind it, and the thing you are looking for is a specific DATE — so that is what the summary leads with. Also reversed the history order to **newest first**, deliberately opposite to `upcoming` (soonest first): for things still to come you want the next one at the top, for history you want the most recent, and nobody scrolls to the bottom looking for last week. Untitled sessions fall back to "Untitled session" in the summary rather than rendering a blank clickable line. typecheck + build clean, 668.80 → 669.6 kB)*
+  - [x] 5.2.2f — Web UI: typable date field, locked past times *(two follow-ups from the 2026-08-21 run. (1) **Removed `min` from the composer's datetime input** — added one subphase earlier to make the picker refuse past dates, it turned out to make the field hostile to TYPING: entering a date digit by digit yields intermediate values below the minimum, which browsers mark invalid and can clear mid-keystroke. The submit-time guard in handleAdd was always the real enforcement; `min` only styled the picker, so dropping it costs nothing and restores keyboard entry. Worth remembering as a pattern: an HTML validation attribute that constrains a *partial* value fights incremental input. (2) **A past session's time is locked** — input disabled with a tooltip explaining why, its quick-fill button hidden; title, notes and RSVPs stay editable, notes especially since that is how a DM records what actually happened. Rescheduling something that already occurred is always a mistake and would silently move the card out of the history list. Note this narrows 5.2.2e's deliberate allowance — editing an existing session to a past date is still how you get a card INTO history, but once it is there its time is fixed. typecheck + build clean, 668.60 → 668.7 kB)*
+  - [x] 5.2.2e — Web UI: view persistence + no past-dated proposals *(two follow-ups from the 2026-08-20 QA run. (1) **REGRESSION FIX — refreshing on the overview page landed you in the workspace.** 5.2.2c stopped `history.state` bouncing every refresh *to* Overview by consuming the router state, but nothing then remembered which view you were on, so a reload fell through to the workspace default. Having now seen this bug in BOTH directions, the view gets its own persisted state instead of being inferred: stored per campaign in localStorage (`campaign:<id>:view`), with arrival from the dashboard still forcing Overview, and a campaign switch restoring that campaign's last view. Lesson worth keeping: a value the user can change AND that an entry path can force needs storing, not deriving. (2) **Sessions can no longer be proposed in the past** — `min={now}` on the composer's datetime input so the browser's own picker refuses, plus a guard in handleAdd because `min` is a hint a user can type past. Editing an EXISTING session to a past date stays allowed: that is how a DM corrects a date or records when a session actually happened. Relabelled the "Today" shortcut to "Now", which is what it always did. **Caught immediately after, in the same session:** the guard compared against the exact moment while the input (and the Now button) truncate to the minute, so clicking Now then Propose rejected the app's own shortcut — the cutoff is now the START OF THE CURRENT MINUTE, matching the input's precision. typecheck + build clean, 668.11 → 668.60 kB; qa:checks 53/53)*
+  - [x] 5.2.2d — Web UI: profile restructured into three sections *(Account / Workspace / Legal, per the user. Structure only — none of the missing features were built, and each gap is NAMED on the page rather than hidden: changing email, changing password from here, and account deletion under Account; the theme setting under Workspace; ToS/Privacy and acceptance date under Legal. Also corrected a stale claim — the page said avatar upload "arrives with the media pipeline (phase 1.6)", which shipped long ago; `profiles.avatar_url` exists and the avatar already renders, only the upload path is missing. Everything named here is tracked: new subphase **7.3 — Profile & account management** for the account items, Phase 7.2 for legal, Phase 14 for theme)*
+  - [x] 5.2.2a — Web UI: panels keep their state *(**closing a panel no longer unmounts it.** Every panel opened since arriving at the campaign stays in the React tree, hidden with display:none; layout.floating remains the source of truth for what is VISIBLE. Reopening is therefore instant and lossless — loaded rows, scroll position, half-typed notes, expanded sections all survive — where before every reopen refetched and flashed a loading state, which made the rail feel like it reloaded the app. Reopen also restores the panel's LAST position (a rememberedRects ref) instead of dumping it at the default cascade. **The cost, stated rather than hidden:** a hidden panel's queries and realtime channels stay live (5 panels use realtime, 18 fetch on mount) and its memory is retained for as long as you stay in the campaign. Right trade at ~20 panels, not free. Two guards keep it bounded: the mounted set resets on campaign change, and a panel whose tab the role can no longer see is UNMOUNTED rather than hidden, so a demotion actually stops its queries. display:none also removes hidden panels from the a11y tree and tab order, so they aren't keyboard-reachable. typecheck + build clean, 664.18 → 664.93 kB; qa:checks 44/44)*
+  - [x] 5.2.2 — QA *(**COMPLETE/PASS 2026-08-22.** Six browser rounds between 2026-08-07 and 2026-08-22, each of which CHANGED the feature rather than merely certifying it — the shell was redesigned three times across them (branch-by-mode → one shell → click-to-open with no docked panel), so most rounds ended in follow-up subphases rather than a tick. The final round produced no follow-ups, which is what closed it. Automated half: `npm run build` clean and `npm run qa:checks` **53/53** (grown from 30 as the harness absorbed each behavioural change — it caught the symmetric-clamp change and the railSide type removal before a human could). Browser half: workspace-shell.md PASS, layout-persistence.md PASS with step 1 recorded **N/A** (it needed a pre-versioning saved layout that no longer exists; the behaviour is asserted in qa:checks instead — recorded N/A rather than PASS since nobody observed it). Unusually for this project there was NO server-side checklist: 5.2 added zero data access, so the existing RLS matrix still governs. Every round's result is preserved in the run logs, with superseded ones labelled rather than deleted.)*
 
 ### Phase 6: Self-hosted backend migration (hosted Supabase → Railway)
 > **Sequencing:** first of the unbuilt phases. Renumbered 13 → 6 on 2026-08-14;
 > migrating the backend is cheaper the smaller the surface, so it runs before the
 > playspace and combat phases add tables to move — see the phase Goal.
-- [ ] 6.1 — Local stack pre-flight
-  - [ ] 6.1.1 — Infrastructure
-  - [ ] 6.1.2 — QA
-- [ ] 6.2 — Data migration
-  - [ ] 6.2.1 — Infrastructure
-  - [ ] 6.2.2 — QA
+- [x] 6.1 — Local stack pre-flight
+  - [x] 6.1.1 — Infrastructure
+  - [x] 6.1.2 — QA — PASS 2026-08-18, [QA/6_tests/local-preflight.md](QA/6_tests/local-preflight.md)
+- [x] 6.2 — Data migration
+  - [x] 6.2.1 — Infrastructure
+  - [x] 6.2.2 — QA — PASS 2026-08-18, [QA/6_tests/data-migration.md](QA/6_tests/data-migration.md)
 - [ ] 6.3 — Railway deploy & gateway
   - [ ] 6.3.1 — Infrastructure
   - [ ] 6.3.2 — QA
@@ -214,6 +221,13 @@ These framed the whole plan and should not be quietly reversed:
   - [ ] 7.2.1 — Backend
   - [ ] 7.2.2 — Web UI
   - [ ] 7.2.3 — QA
+- [ ] 7.3 — Profile & account management
+  - [ ] 7.3.1 — Web UI
+  - [ ] 7.3.2 — QA
+- [ ] 7.4 — Usernames (unique, required)
+  - [ ] 7.4.1 — Backend
+  - [ ] 7.4.2 — Web UI
+  - [ ] 7.4.3 — QA
 
 ### Phase 8: Automated testing & CI
 - [ ] 8.1 — Test infrastructure + unit/component tests (Vitest + RTL)
@@ -882,6 +896,8 @@ this phase is infrastructure + re-verification, not code.**
 - Bring up the 7-service stack locally (`railway/docker-compose.yml`); confirm
   `railway/init/00_roles_and_auth_helpers.sql` ran before any app migration.
 - Replay all 27 migrations in order against the local Postgres.
+- Grant table privileges (`railway/scripts/90_grant_app_privileges.sql`) and
+  reload the PostgREST schema cache. **Neither is optional** — see 6.1.2.
 #### 6.1.2 — QA
 - All 27 migrations apply with zero errors (0008 is the one to watch — it needs
   the `storage` schema for its `storage.objects` policy).
@@ -889,7 +905,28 @@ this phase is infrastructure + re-verification, not code.**
   policies. If it returns NULL, stop; nothing downstream is trustworthy.
 - Gateway routing returns no 404s on `/rest/v1`, `/auth/v1`, `/storage/v1`,
   `/functions/v1` (catches `handle` vs `handle_path` prefix-strip mistakes).
-- `npm run build` clean with `VITE_SUPABASE_URL` pointed at the local gateway.
+- `npm run build` clean with `VITE_SUPABASE_URL` pointed at the local gateway —
+  and grep the bundle to confirm it really used that URL.
+- End-to-end through the gateway: GoTrue signup → JWT → PostgREST → RLS, with
+  both the allowed and the denied path asserted.
+
+**Done 2026-08-18 — PASS, all gates.** Full log:
+[QA/6_tests/local-preflight.md](QA/6_tests/local-preflight.md). The scaffolding
+had never been run and five defects surfaced; two matter beyond this subphase:
+
+- **No table GRANTs.** None of the 27 migrations grants table privileges —
+  hosted Supabase supplies them as project defaults. Self-hosted, the stack
+  boots green with all 100 policies in place and then fails *every* query with
+  `permission denied`, signed-in users included, because privileges are checked
+  before RLS. Fixed by `railway/scripts/90_grant_app_privileges.sql` plus
+  `alter default privileges` in `railway/init/01_stack_login_roles.sh`.
+- **`supabase/postgres:15.8.1.060` has no `postgres` role** (its superuser is
+  `supabase_admin`) and leaves `authenticator` password-less, so four services
+  crashlooped. Fixed in `railway/init/01_stack_login_roles.sh`.
+
+Also corrected here: realtime was creating its un-policied internal tables in
+`public`, where the new grants would have exposed `tenants` (which holds a
+tenant JWT secret) to `anon`; it is now confined to a `_realtime` schema.
 
 ### Subphase 6.2: Data migration
 #### 6.2.1 — Infrastructure
@@ -904,6 +941,28 @@ this phase is infrastructure + re-verification, not code.**
 - Object count is 106 and `private.campaign_storage_used()` matches the
   pre-migration value per campaign.
 - Existing bcrypt passwords still authenticate.
+
+**Done 2026-08-18 — PASS.** Log:
+[QA/6_tests/data-migration.md](QA/6_tests/data-migration.md). 262 rows across 29
+tables, 5 users with UUIDs and bcrypt hashes identical, 106 objects matching
+byte-for-byte (3,044,130 bytes). Actual sign-in with a real password is the one
+gate left manual; deferred to 6.3.
+
+**The finding that justifies the whole subphase: the hosted database had
+drifted from the migration files.** `0023_initiative_hp_npc` was applied to the
+project on 2026-07-20 but its .sql was never committed, so the repo jumps 0022 →
+0024 and a build from the files alone lacks `initiative_entries.hp` / `.max_hp`
+/ `.npc_id` — columns `CombatPanel.tsx` uses at eight sites. A Railway deploy
+would have shipped without the per-combatant HP tracker. Recovered from the live
+schema as `supabase/migrations/0023_initiative_hp_npc.sql`; schemas now match at
+231 columns. **Nothing before this phase could have caught it** — no environment
+had ever been built from the migration files alone.
+
+Also fixed: `storage` schema had no role grants (uploads failed with a
+misleading "violates row-level security policy" that was really 42501 on
+`storage.buckets`); `auth.users.confirmed_at` is generated and cannot be
+COPY'd; `handle_new_user` collided with restored `profiles` rows; and newer
+`sb_secret_…` keys are rejected in `Authorization: Bearer`, requiring `apikey`.
 
 ### Subphase 6.3: Railway deploy & gateway
 #### 6.3.1 — Infrastructure
@@ -937,8 +996,11 @@ this phase is infrastructure + re-verification, not code.**
   of the >$25 overage.)
 #### 6.5.2 — QA
 - Full four-role matrix — DM / player / non-member / signed-out — re-verified
-  server-side. **Gates: exactly 100 policies and exactly 30 tables with
-  `rowsecurity = true`.**
+  server-side. **Gates: exactly 100 policies, and zero tables in `public` with
+  RLS disabled.** (The "30 tables with `rowsecurity = true`" written here
+  originally was an estimate; measured against a real stack on 2026-08-18 it is
+  **34** — 29 in `public` plus 5 storage-api tables. The zero-disabled check is
+  the one that actually matters.)
 - A table restoring with RLS *disabled* is the highest-risk failure mode of this
   phase: it fails **open** and nothing visibly breaks. Assert it explicitly.
 - `get_advisors` has no self-hosted equivalent; the `pg_policies` +
@@ -985,6 +1047,8 @@ data cascade, and the required policy pages.
   re-prompt on material updates.
 
 #### 7.2.2 — Web UI
+- The **Legal** section of the Profile page is the home for policy links and the
+  recorded acceptance date; it exists and says the documents are missing.
 - **Terms of Service**, **Privacy Policy** (what's stored, Stripe as processor,
   retention, deletion rights), and a **refund/cancellation policy** page; signup
   consent checkbox; footer links.
@@ -992,6 +1056,129 @@ data cascade, and the required policy pages.
 #### 7.2.3 — QA
 - Signup records policy acceptance; pages are reachable; refund policy matches the
   actual billing behavior (read-only on lapse, 3-month deletion).
+
+---
+
+### Subphase 7.3: Profile & account management
+
+**Why this exists:** the profile screen was restructured into **Account /
+Workspace / Legal** in 5.2.2c, and that surfaced how much of "Account" is not
+actually built. These are small, individually cheap items that are easy to keep
+postponing and awkward to be missing at launch. The page currently *states* each
+gap rather than hiding it, so the UI and this list agree.
+
+#### 7.3.1 — Web UI
+- **Change password from Profile.** The flows already exist
+  (`RequestPasswordResetPage`, `UpdatePasswordPage`) — nothing links to them from
+  the profile, which is the first place anyone looks.
+- **Change email.** Currently read-only. `auth.updateUser({ email })` with its
+  confirmation round-trip; otherwise "my email is wrong" becomes a support ticket
+  nobody can resolve.
+- **Avatar upload.** Unblocked since the 1.6 media pipeline shipped —
+  `profiles.avatar_url` exists and the page already renders an avatar if one is
+  set; only the upload path is missing. Reuse `upload-media` (validation, EXIF
+  strip, re-encode) rather than adding a second image path.
+- **Global "reset all workspace layouts."** Per-campaign reset already exists in
+  campaign Settings; this is the escape hatch for when something is wrong across
+  every campaign at once.
+- Keep the three-section structure. In particular, **notification preferences
+  belong in Workspace when Phase 11 lands** — per-campaign email settings would
+  be wrong, since nobody wants different notification rules per campaign.
+
+#### 7.3.2 — QA
+- Password change reachable from Profile and actually changes the password;
+  email change requires confirmation and does not lock the user out; avatar
+  upload goes through the same validation as campaign media; reset-all-layouts
+  clears every campaign's arrangement and nothing else.
+
+---
+
+### Subphase 7.4: Usernames (unique, required)
+
+**Decision (owner, 2026-08-17):** replace the optional, free-form
+`profiles.display_name` with a **required, globally unique `username`**.
+
+Recorded honestly, because the trade-off is real and should not be rediscovered
+later as a surprise. The case *against* is that a username is not an identifier
+anywhere in this app today — you join by invite code, there is no user search, no
+@mentions, no cross-campaign directory — so global uniqueness charges every user
+signup friction to solve a problem that only exists inside a campaign of ~5
+people. The case *for*, which is the owner's call: a stable unique handle is
+worth having before there are real users, it makes any future
+search/mention/transfer feature possible without a migration, and it removes the
+ambiguity of two identical names in one roster.
+
+**The win to keep sight of:** today `display_name` is nullable and often NULL, so
+[OverviewPanel](../src/features/campaigns/OverviewPanel.tsx) renders *every*
+nameless member as "Unnamed adventurer". That — not two Alexes — is the collision
+users will actually hit, and requiring a username removes it outright.
+
+**Do this before launch.** Retrofitting a unique-and-required column onto real
+accounts means forcing a rename on strangers. Cheap now, rude later.
+
+#### 7.4.1 — Backend
+- Migration: rename `profiles.display_name` → `username`; add a
+  **case-insensitive** unique index (`unique (lower(username))`, or `citext`) —
+  a plain unique index would let `alex` and `Alex` coexist and achieve nothing.
+- Add a `CHECK` for length and charset before writing the UI, so the rule lives
+  in one place. Decide: allowed characters, min/max length, reserved names
+  (`admin`, `support`, …).
+- **Backfill first, constrain second.** `NOT NULL` and `UNIQUE` cannot be applied
+  while existing rows are NULL or duplicated. Generate provisional usernames
+  (email local-part + numeric suffix on collision), then constrain, then prompt
+  affected users to choose a real one at next sign-in.
+- Update the `handle_new_user` trigger (0002), which currently seeds
+  `display_name` from signup metadata and leaves it NULL when absent.
+- **Availability checking must NOT be a select.** `profiles` is readable only by
+  yourself and co-members (`profiles_select_own` 0002, `profiles_select_comembers`
+  0004), so a client genuinely cannot see whether a username exists — which is a
+  privacy property worth keeping. Check by attempting the write and handling the
+  unique violation (SQLSTATE **23505**) as a friendly field error. Do **not** add
+  a `SECURITY DEFINER` `username_available()` RPC: it would work, but it creates
+  exactly the account-enumeration surface the current policies avoid.
+
+#### 7.4.2 — Web UI
+- Signup requires a username, with the 23505 path surfaced as "that username is
+  taken" on the field rather than a thrown error.
+- Profile → **Account** renames the field and allows changing it, same conflict
+  handling. (Changing a username is a rename, so decide whether history/mentions
+  need to follow it — trivial today, less so once anything references handles.)
+- Update every render site: the roster in `OverviewPanel`, `PartyPanel`, RSVP
+  lists in `SchedulePanel`, and the two name maps in `campaigns/api.ts` and
+  `schedule/api.ts`. The "Unnamed adventurer" fallback can then be deleted.
+- **The campaign overview roster shows BOTH: username and character name** —
+  "alexc (Thorin)". Confirmed by the owner 2026-08-17, not a maybe. It reads
+  better than either alone at the table, where people are known by both, and it
+  is the one place where the whole party is listed together.
+- **This needs an access-control decision first, so do not treat it as a UI
+  task.** `private.can_read_character` is *owner OR campaign DM*
+  ([0010_characters_sheet.sql](../supabase/migrations/0010_characters_sheet.sql)),
+  so today a player cannot read any part of another player's character row —
+  including the name. Options, cheapest first:
+  1. Show the pairing only where it is already permitted: the DM sees it for
+     everyone, each player sees it on their own row. No RLS change, but the
+     roster reads inconsistently for players, which is probably not what was
+     asked for.
+  2. Widen reads to **`characters.name` only**, for campaign members — a
+     member-readable view (or an RPC returning `user_id, name`) rather than
+     loosening `can_read_character` itself. Keeps sheets, inventory, journals and
+     lore exactly as private as they are now.
+  3. Widen `can_read_character` to any campaign member. **Do not do this**
+     casually: that predicate gates the sheet fields, inventory and lore
+     policies too (0010/0012), so it would expose far more than a name.
+  Option 2 is the intended path; whichever is chosen, the QA must assert that a
+  player still cannot read another player's sheet, inventory, journal or lore.
+
+#### 7.4.3 — QA
+- Uniqueness is enforced **server-side** and **case-insensitively**: an insert or
+  update colliding on a different case fails (verify via the MCP, not the UI).
+- A duplicate produces a friendly field error, never an unhandled throw.
+- Backfilled accounts are prompted to choose a username and cannot skip
+  indefinitely.
+- Roster, Party and RSVP lists all show usernames; no "Unnamed adventurer"
+  remains anywhere.
+- **No new enumeration surface**: confirm there is still no endpoint that reveals
+  whether an arbitrary username exists to a non-co-member.
 
 ---
 
@@ -1257,6 +1444,11 @@ after Phases 9–10 rather than alongside them.
 #### 14.1.1 — Web UI
 - Mobile layouts (players will use phones at the table); light/dark theme;
   keyboard nav and an a11y pass.
+- **The theme control belongs in Profile → Workspace**, beside the sidebar
+  setting — same "applies to every campaign, saved in this browser" model. Unlike
+  the sidebar side, theme can safely apply live rather than on next load.
+  `tokens.css` currently only follows `prefers-color-scheme`, so there is no
+  manual override at all today; the Profile page names that gap.
 - **Note for whoever picks this up:** the Phase 5.2 workspace shell is the hard
   part. It is a full-bleed desktop layout — a side rail plus draggable, resizable
   floating windows — and none of those interactions survive a phone viewport as

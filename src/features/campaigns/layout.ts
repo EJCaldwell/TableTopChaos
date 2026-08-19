@@ -49,13 +49,14 @@ export interface FloatingPanelState extends FloatRect {
  * Discarding costs the user one re-arrangement; carrying migrations for a view
  * preference costs us forever.
  *
- * History: 1 — first versioned schema (5.2.1c): {sidebarCollapsed, railSide,
- * floating[]}.
+ * History: 1 — first versioned schema (5.2.1c). `railWidth` was added (5.2.1e)
+ * and `railSide` removed (5.2.2b, moved to account preferences) WITHOUT bumping:
+ * an addition with a default, and a removal whose field is simply ignored,
+ * leave every remaining field meaning exactly what it did. The bump is for
+ * changes that would make stale data *misread*, not for any edit to the shape —
+ * discarding everyone's arrangement over a dead key would be pure loss.
  */
 export const LAYOUT_VERSION = 1
-
-/** Which edge the tab rail is docked to. */
-export type RailSide = 'left' | 'right'
 
 /**
  * Rail width bounds, in px. The minimum still fits the shortest section labels;
@@ -69,10 +70,9 @@ export const DEFAULT_RAIL_W = 190
 /**
  * The whole arrangement for one campaign.
  *  - sidebarCollapsed: the nav rail is narrowed to just its toggle.
- *  - railSide:         which edge the rail sits on. Defaults to 'right' — the
- *                      panels a player is reading are what should sit under
- *                      their cursor's resting side, and it keeps the rail clear
- *                      of the app header's home link.
+ *  (Which EDGE the rail sits on is deliberately NOT here — it moved to
+ *  account-level preferences in 5.2.2b, since it is a handedness preference
+ *  that should follow the user across campaigns. See profile/preferences.ts.)
  *  - railWidth:        expanded width in px, dragged by the user. Ignored while
  *                      collapsed, and preserved across a collapse/expand cycle
  *                      so expanding returns the rail to the size you chose.
@@ -86,7 +86,6 @@ export const DEFAULT_RAIL_W = 190
  */
 export interface CampaignLayout {
   sidebarCollapsed: boolean
-  railSide: RailSide
   railWidth: number
   floating: FloatingPanelState[]
 }
@@ -99,7 +98,6 @@ interface StoredLayout extends CampaignLayout {
 /** The arrangement a campaign gets before the user has touched anything. */
 export const DEFAULT_LAYOUT: CampaignLayout = {
   sidebarCollapsed: false,
-  railSide: 'right',
   railWidth: DEFAULT_RAIL_W,
   floating: [],
 }
@@ -137,6 +135,14 @@ const KEEP_VISIBLE_Y = 40
 /**
  * Pulls a window back inside the workspace area.
  *
+ * Horizontal movement is deliberately **symmetric**: a window may hang off the
+ * left edge exactly as far as it may hang off the right, provided
+ * KEEP_VISIBLE_X of it stays on screen. It used to be hard-stopped at x = 0,
+ * which meant you could shove a window off the right but not the left — and
+ * with the rail on the left that read as "I can't drag it all the way over".
+ * Vertically the top IS a hard stop, because the title bar is the only drag
+ * handle and pushing it above the top edge would strand the window.
+ *
  * Needed because a saved position outlives the viewport that produced it: a
  * window parked near the right edge of a wide monitor, reopened in a narrow
  * window, would otherwise restore at coordinates outside the area — and since
@@ -158,9 +164,43 @@ export function clampRect(rect: FloatRect, bounds: { w: number; h: number }): Fl
   if (!bounds.w || !bounds.h) return rect
   const w = Math.max(MIN_FLOAT_W, Math.min(rect.w, bounds.w))
   const h = Math.max(MIN_FLOAT_H, Math.min(rect.h, bounds.h))
-  const x = Math.min(Math.max(0, rect.x), Math.max(0, bounds.w - KEEP_VISIBLE_X))
+  const minX = Math.min(0, KEEP_VISIBLE_X - w)
+  const x = Math.min(Math.max(minX, rect.x), Math.max(minX, bounds.w - KEEP_VISIBLE_X))
   const y = Math.min(Math.max(0, rect.y), Math.max(0, bounds.h - KEEP_VISIBLE_Y))
   return { x, y, w, h }
+}
+
+/** How close to an edge a window must be dropped before it snaps flush. */
+export const SNAP_PX = 14
+
+/**
+ * Snaps a window flush to any workspace edge it was dropped near.
+ *
+ * Without this, "put it against the side" is a pixel-hunt: the drag clamp lets a
+ * window hang off an edge, so it is easy to end up a few pixels short of, or
+ * past, the border and never quite flush. Snapping is applied once, on release,
+ * so it never fights the pointer mid-drag.
+ *
+ * Each axis is independent — a window dropped in the top-right corner snaps to
+ * both — and a window larger than the area is left alone on that axis, since
+ * there is no meaningful edge to choose.
+ *
+ * @param rect - The rect at the moment of release.
+ * @param bounds - Measured workspace area; a zero dimension means unmeasured.
+ * @returns The rect to commit, unchanged when nothing was near an edge.
+ */
+export function snapToEdges(rect: FloatRect, bounds: { w: number; h: number }): FloatRect {
+  if (!bounds.w || !bounds.h) return rect
+  let { x, y } = rect
+  if (rect.w <= bounds.w) {
+    if (Math.abs(x) <= SNAP_PX) x = 0
+    else if (Math.abs(x + rect.w - bounds.w) <= SNAP_PX) x = bounds.w - rect.w
+  }
+  if (rect.h <= bounds.h) {
+    if (Math.abs(y) <= SNAP_PX) y = 0
+    else if (Math.abs(y + rect.h - bounds.h) <= SNAP_PX) y = bounds.h - rect.h
+  }
+  return { ...rect, x, y }
 }
 
 /** True when two rects are identical — used to skip no-op state updates. */
@@ -219,7 +259,9 @@ export function loadLayout(campaignId: string, visibleTabs: WorkspaceTab[]): Cam
         // wide monitor must not restore off-screen on a laptop.
         .map((p) => ({
           key: p.key,
-          x: Math.max(0, p.x),
+          // No lower clamp here — clampRect applies the real bounds once the
+          // area is measured, and it permits a negative x by design.
+          x: p.x,
           y: Math.max(0, p.y),
           w: Math.max(MIN_FLOAT_W, p.w),
           h: Math.max(MIN_FLOAT_H, p.h),
@@ -234,8 +276,6 @@ export function loadLayout(campaignId: string, visibleTabs: WorkspaceTab[]): Cam
       typeof obj.sidebarCollapsed === 'boolean'
         ? obj.sidebarCollapsed
         : DEFAULT_LAYOUT.sidebarCollapsed,
-    railSide:
-      obj.railSide === 'left' || obj.railSide === 'right' ? obj.railSide : DEFAULT_LAYOUT.railSide,
     railWidth: clampRailWidth(obj.railWidth),
     floating,
   }

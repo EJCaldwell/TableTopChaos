@@ -60,11 +60,14 @@ export function OverviewPanel({
   members,
   isDm,
   currentUserId,
+  onEnterWorkspace,
 }: {
   campaign: Campaign
   members: Member[]
   isDm: boolean
   currentUserId: string | undefined
+  /** Leave the overview page for the campaign workspace / playspace. */
+  onEnterWorkspace?: () => void
 }) {
   const [codes, setCodes] = useState<InviteCode[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -163,6 +166,32 @@ export function OverviewPanel({
             </li>
           ))}
         </ul>
+
+        {/* The way in. Sits directly under the roster because Overview is the
+            landing page and this is the one thing you came here to do next —
+            the header toggle alone was too quiet for a primary action. Wording
+            follows the campaign's mode so it names where you are actually
+            going. */}
+        {onEnterWorkspace && (
+          <div style={{ marginTop: 'var(--space-5)' }}>
+            <Button style={{ width: 'auto' }} onClick={onEnterWorkspace}>
+              {campaign.game_mode === 'notetaker'
+                ? 'Open the campaign workspace →'
+                : 'Enter the playspace →'}
+            </Button>
+            <p
+              style={{
+                color: 'var(--color-text-muted)',
+                fontSize: '0.85rem',
+                margin: 'var(--space-2) 0 0',
+              }}
+            >
+              {campaign.game_mode === 'notetaker'
+                ? 'Your sheets, notes and DM tools.'
+                : 'The shared battlemap, plus your sheets, notes and DM tools.'}
+            </p>
+          </div>
+        )}
       </section>
 
       {/* Invite codes — DM only. */}

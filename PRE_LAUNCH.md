@@ -166,6 +166,9 @@ it out before real users arrive.
   code anywhere in `src/` or `supabase/`:
   - **User-initiated account deletion** with a role-aware cascade (what happens
     to a campaign when its *owner* deletes their account is the hard part).
+  - **Unique required usernames** (7.4). Not a legal item, but it belongs on the
+    same side of launch: adding a unique-and-required column later means forcing
+    a rename on real strangers' accounts.
   - **Terms of service and privacy policy pages.** Neither exists.
   These are legal requirements in several jurisdictions, not features. Phase 7 is
   numbered after 6 and 7, which makes it look optional for v1. It is not — if you

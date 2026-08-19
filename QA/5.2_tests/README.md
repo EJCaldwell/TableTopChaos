@@ -81,8 +81,15 @@ still changes is what fills that area behind the windows — nothing in
 
 | Area | File | Who runs it | Status |
 |------|------|-------------|--------|
-| Workspace shell — rail, click-to-open, windows | [workspace-shell.md](workspace-shell.md) | User, in browser | **OPEN** — the 2026-08-07 PASS was against 5.2.1 and is superseded; needs a full fresh run |
-| Saved layouts: recovery & staleness | [layout-persistence.md](layout-persistence.md) | User, in browser | **OPEN** — rewritten console-free 2026-08-10; includes a regression test for a real off-screen bug |
+| Workspace shell — rail, click-to-open, windows | [workspace-shell.md](workspace-shell.md) | User, in browser | **PASS** 2026-08-22 |
+| Saved layouts: recovery & staleness | [layout-persistence.md](layout-persistence.md) | User, in browser | **PASS** 2026-08-20 (step 1 **N/A** — see its run log) |
+
+**Phase 5.2 QA is complete.** It took six browser rounds between 2026-08-07 and
+2026-08-22, each of which changed the feature rather than merely certifying it —
+the shell was redesigned three times over that span. The final round produced no
+follow-ups, which is what closed it. Every round's result is preserved in the run
+logs; the earlier ones describe shells that no longer exist and are labelled as
+superseded rather than deleted.
 
 Both are browser areas. Unusually for this project there is **no server-side
 checklist**, because 5.2 touches no data layer — see the note above. Claude's
