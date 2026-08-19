@@ -21,7 +21,7 @@ project's, and it should stay visible rather than be quietly dropped.
 |------|------|-------------|--------|
 | 6.1 Local stack pre-flight | [local-preflight.md](local-preflight.md) | Claude, local Docker | **PASS** 2026-08-18 |
 | 6.2 Data migration | [data-migration.md](data-migration.md) | Claude, local Docker | **PASS** 2026-08-18 |
-| 6.3 Railway deploy & gateway | _not started_ | — | — |
+| 6.3 Railway deploy & gateway | [railway-deploy.md](railway-deploy.md) | Claude + user (Railway dashboard) | **PASS** 2026-08-19 |
 | 6.4 Stripe re-wiring | _not started_ | — | — |
 | 6.5 Cutover & decommission | _not started_ | — | — |
 

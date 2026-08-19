@@ -35,7 +35,19 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-psql() { command psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" "$@"; }
+# Two ways in, because this file has two callers:
+#   - Docker: run automatically by the postgres entrypoint, which supplies
+#     POSTGRES_USER/POSTGRES_DB and a local socket.
+#   - Railway: run by hand from a laptop, where there is no socket and the only
+#     route is the TCP proxy. Set PSQL_DSN to that connection string.
+# Railway does not execute docker-entrypoint-initdb.d at all, so without this
+# the roles would simply never be created there — and every other service would
+# crashloop on password authentication with nothing explaining why.
+if [ -n "${PSQL_DSN:-}" ]; then
+  psql() { command psql -v ON_ERROR_STOP=1 "$PSQL_DSN" "$@"; }
+else
+  psql() { command psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" "$@"; }
+fi
 
 # NOTE: the SQL goes in on stdin, not via `-c`. psql only substitutes `:'var'`
 # when it parses the script itself; with `-c` the string is sent to the server

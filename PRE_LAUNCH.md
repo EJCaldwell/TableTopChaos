@@ -104,9 +104,36 @@ cannot reach from inside the repo.
       variables are exposed and they are public by design (RLS is the protection,
       not key secrecy) — but verify the service-role key and Stripe secret exist
       *only* in Edge Function secrets.
-- [ ] **Decide on a custom SMTP sender.** Supabase's default auth emails are
-      rate-limited and send from a Supabase domain, which looks like phishing to
-      most users. Needed before real signups.
+- [ ] **Verify a sending domain in Resend.** *(Supersedes the old "decide on a
+      custom SMTP sender" item — decided 2026-08-19: Resend, wired into the
+      Railway `auth` service and verified working end to end.)*
+
+      **This is a hard blocker on real users, not a polish item.** With no
+      verified domain, Resend sends from the shared `onboarding@resend.dev` and
+      **delivers only to the address that owns the Resend account**
+      (`ejcaldwell06@gmail.com`). Every other signup gets a confirmation email
+      that is silently never delivered — and because `MAILER_AUTOCONFIRM` is
+      correctly `false`, those accounts can never be activated. The failure is
+      invisible from the app's side: the signup returns success.
+
+      Register a domain, add it at resend.com/domains, complete the DNS records,
+      then change `GOTRUE_SMTP_ADMIN_EMAIL` on the `auth` service from
+      `onboarding@resend.dev` to an address on that domain.
+
+- [ ] **Repoint `GOTRUE_SITE_URL` at the real frontend origin.** It is currently
+      `http://localhost:5173` on the Railway `auth` service, because the frontend
+      has no deployed home yet. It is what confirmation and password-reset links
+      are built from, so every such link presently points at localhost and is
+      useless to anyone but the developer. `API_EXTERNAL_URL` is already correct
+      (the gateway domain); `GOTRUE_URI_ALLOW_LIST` needs the same treatment.
+
+- [ ] **Rotate the hosted project's service-role key** once the cutover is done,
+      and **delete `railway/.env.migrate`**. That file holds the old project's
+      database URL and secret key; it exists only for the one-off migration.
+
+- [ ] **Keep the Railway SMTP port at 2587.** Railway blocks outbound 587 and
+      465, so a well-meaning "fix" back to the standard port silently breaks all
+      auth email with a 10-second timeout and no useful error.
 
 ---
 

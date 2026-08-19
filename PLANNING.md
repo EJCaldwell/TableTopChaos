@@ -202,9 +202,9 @@ These framed the whole plan and should not be quietly reversed:
 - [x] 6.2 — Data migration
   - [x] 6.2.1 — Infrastructure
   - [x] 6.2.2 — QA — PASS 2026-08-18, [QA/6_tests/data-migration.md](QA/6_tests/data-migration.md)
-- [ ] 6.3 — Railway deploy & gateway
-  - [ ] 6.3.1 — Infrastructure
-  - [ ] 6.3.2 — QA
+- [x] 6.3 — Railway deploy & gateway
+  - [x] 6.3.1 — Infrastructure
+  - [x] 6.3.2 — QA — PASS 2026-08-19, [QA/6_tests/railway-deploy.md](QA/6_tests/railway-deploy.md)
 - [ ] 6.4 — Stripe re-wiring
   - [ ] 6.4.1 — Infrastructure
   - [ ] 6.4.2 — QA

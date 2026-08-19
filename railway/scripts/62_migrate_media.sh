@@ -28,8 +28,12 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 
+# STACK_ENV_FILE selects which destination stack to upload into: the local
+# compose stack by default, or railway/.env.stack.production for the deployed
+# one. LOCAL_GATEWAY is the destination Storage API origin (misnamed now that it
+# can be a public Railway domain, kept for compatibility with the local runs).
 set -a; . railway/.env.migrate; set +a
-set -a; . railway/.env.stack;   set +a
+set -a; . "${STACK_ENV_FILE:-railway/.env.stack}"; set +a
 : "${SOURCE_SERVICE_ROLE_KEY:?empty in railway/.env.migrate}"
 : "${SOURCE_PROJECT_REF:?empty in railway/.env.migrate}"
 : "${SERVICE_ROLE_KEY:?empty in railway/.env.stack}"
@@ -99,7 +103,7 @@ echo "uploaded ok:      $ok"
 echo "failed:           $failed"
 
 # --- Gate: object count and per-campaign usage ----------------------------
-DB="postgres://postgres:${POSTGRES_PASSWORD}@localhost:54322/postgres"
+DB="${TARGET_DB:-postgres://postgres:${POSTGRES_PASSWORD}@localhost:54322/postgres}"
 echo
 echo "==> destination storage.objects: $(psql "$DB" -tAc 'select count(*) from storage.objects')"
 echo "==> per-campaign storage used (must match the pre-migration baseline):"

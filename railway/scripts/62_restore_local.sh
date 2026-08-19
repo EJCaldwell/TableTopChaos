@@ -23,8 +23,13 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 
-set -a; . railway/.env.stack; set +a
-DB="postgres://postgres:${POSTGRES_PASSWORD}@localhost:54322/postgres"
+# Which stack to load into. Defaults to the local compose stack; point
+# STACK_ENV_FILE at railway/.env.stack.production and TARGET_DB at the Railway
+# TCP proxy to load the deployed one. Same script either way, deliberately —
+# a restore path that is only ever exercised against a different target than
+# the real one is not a rehearsal.
+set -a; . "${STACK_ENV_FILE:-railway/.env.stack}"; set +a
+DB="${TARGET_DB:-postgres://postgres:${POSTGRES_PASSWORD}@localhost:54322/postgres}"
 OUT=railway/migrate-out
 
 for f in "$OUT/public_data.sql" "$OUT/auth_users.csv" "$OUT/auth_columns.txt" "$OUT/source_counts.csv"; do
@@ -79,11 +84,23 @@ SQL
 # adds preamble GUCs, so the filter below will need revisiting until that
 # happens — which is precisely the argument for closing the gap instead.
 echo "==> restoring public data"
-UNSUPPORTED='^SET (transaction_timeout)'
-STRIPPED=$(grep -Ec "$UNSUPPORTED" "$OUT/public_data.sql" || true)
-[ "$STRIPPED" -gt 0 ] && echo "    (stripped $STRIPPED preamble GUC(s) unknown to this server)"
-grep -Ev "$UNSUPPORTED" "$OUT/public_data.sql" \
-  | psql "$DB" -v ON_ERROR_STOP=1 > /dev/null
+# Ask the server what it actually supports rather than stripping blindly. With
+# postgres repinned to 17.6.1.165 (matching the source) this filter now finds
+# nothing to do — but it stays as a safety net for the case where the two ends
+# drift apart again, and asking pg_settings means the message below is only
+# printed when something was genuinely removed.
+UNSUPPORTED=''
+if [ "$(psql "$DB" -tAc "select count(*) from pg_settings where name='transaction_timeout'")" = "0" ]; then
+  UNSUPPORTED='^SET (transaction_timeout)'
+fi
+
+if [ -n "$UNSUPPORTED" ]; then
+  STRIPPED=$(grep -Ec "$UNSUPPORTED" "$OUT/public_data.sql" || true)
+  [ "$STRIPPED" -gt 0 ] && echo "    (stripped $STRIPPED preamble GUC(s) this server does not know)"
+  grep -Ev "$UNSUPPORTED" "$OUT/public_data.sql" | psql "$DB" -v ON_ERROR_STOP=1 > /dev/null
+else
+  psql "$DB" -v ON_ERROR_STOP=1 -f "$OUT/public_data.sql" > /dev/null
+fi
 
 # --- 3. PostgREST schema cache -------------------------------------------
 # Not strictly needed after a data-only load, but free, and a stale cache is the

@@ -3,7 +3,8 @@
 # routing and the auth.uid() wiring are the two things most likely to be wrong,
 # and both fail identically locally, where the loop is seconds instead of a deploy.
 #
-# Binds the gateway to :8000. Nothing here touches :5173 (the user's dev server).
+# Binds the gateway to :8000 (override with GATEWAY_PORT). Nothing here touches
+# :5173 (the user's dev server).
 #
 # Run:  docker compose -f railway/docker-compose.yml --env-file railway/.env.stack up
 # Then: VITE_SUPABASE_URL=http://localhost:8000 in your frontend .env
@@ -21,7 +22,12 @@ services:
   # supabase/postgres, NOT stock postgres: ships the roles, auth/storage schemas
   # and extensions the 27 migrations assume. See railway/README.md.
   postgres:
-    image: supabase/postgres:15.8.1.060
+    # Pinned to 17.x to MATCH THE HOSTED PROJECT, which runs PostgreSQL 17.6.
+    # Was 15.8.1.060, which put the stack two majors behind production: the 6.2
+    # restore then failed on `SET transaction_timeout`, a GUC PG17's pg_dump
+    # emits and PG15 rejects. Every new major adds more of those, so the gap was
+    # a recurring tax, not a one-off. Repinned during 6.3 (2026-08-19).
+    image: supabase/postgres:17.6.1.165
     restart: unless-stopped
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
@@ -191,7 +197,10 @@ services:
       PORT: '8000'
       GATEWAY_DOMAIN: ''
     ports:
-      - '8000:8000'
+      # Host port only — the container always listens on 8000. Overridable via
+      # GATEWAY_PORT in .env.stack when another local project already holds 8000
+      # (this binds 0.0.0.0, so it collides with a 127.0.0.1 dev server too).
+      - '${GATEWAY_PORT:-8000}:8000'
 
 volumes:
   pgdata:

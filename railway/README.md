@@ -35,7 +35,7 @@ Create these as separate Railway services in one project, on a shared private ne
 
 | Railway service | Image | Notes |
 | --- | --- | --- |
-| `postgres` | `supabase/postgres:15.8.1.060` | **Not** Railway's stock Postgres — this image ships the `anon` / `authenticated` / `service_role` roles, the `auth` and `storage` schemas, and the extensions the migrations assume (`pgcrypto`, `uuid-ossp`, `pg_graphql`). Attach a volume at `/var/lib/postgresql/data`. |
+| `postgres` | `supabase/postgres:17.6.1.165` | Matches the hosted project's **PostgreSQL 17.6** — keep these majors in step (see below). **Not** Railway's stock Postgres — this image ships the `anon` / `authenticated` / `service_role` roles, the `auth` and `storage` schemas, and the extensions the migrations assume (`pgcrypto`, `uuid-ossp`, `pg_graphql`). Attach a volume at `/var/lib/postgresql/data`. |
 | `gateway` | build from [gateway/](gateway/) | **The only service with a public domain.** Everything else stays private. |
 | `rest` | `postgrest/postgrest:v12.2.3` | Serves all 45 `supabase.from()` call sites. Enforces RLS. |
 | `auth` | `supabase/gotrue:v2.170.0` | Issues the JWTs that make `auth.uid()` resolve. |
@@ -45,6 +45,21 @@ Create these as separate Railway services in one project, on a shared private ne
 
 Pin these tags. Floating `latest` on a self-hosted stack means an unannounced
 breaking change lands during a deploy you did not intend as an upgrade.
+
+### Keep Postgres on the same major as the source
+
+This originally specified `15.8.1.060` while the hosted project ran **17.6**.
+The gap surfaced immediately in the 6.2 restore: PostgreSQL 17's `pg_dump`
+writes `SET transaction_timeout = 0` into every dump's preamble, and 15 rejects
+it as an unrecognised parameter, aborting the restore on line 13. That
+particular one is easy to strip, but each new major adds more preamble GUCs and
+more type/catalog differences, so the workaround is a recurring tax with a
+growing failure surface — and a restore is the *worst* place to discover an
+incompatibility, because it is the step you reach for when something has already
+gone wrong.
+
+Repinned to `17.6.1.165` on 2026-08-19 to match. If the hosted project is ever
+upgraded before cutover, move this tag with it.
 
 ### Why not plain S3/R2 for media
 
