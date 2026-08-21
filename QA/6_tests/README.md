@@ -22,8 +22,29 @@ project's, and it should stay visible rather than be quietly dropped.
 | 6.1 Local stack pre-flight | [local-preflight.md](local-preflight.md) | Claude, local Docker | **PASS** 2026-08-18 |
 | 6.2 Data migration | [data-migration.md](data-migration.md) | Claude, local Docker | **PASS** 2026-08-18 |
 | 6.3 Railway deploy & gateway | [railway-deploy.md](railway-deploy.md) | Claude + user (Railway dashboard) | **PASS** 2026-08-19 |
-| 6.4 Stripe re-wiring | _not started_ | — | — |
-| 6.5 Cutover & decommission | _not started_ | — | — |
+| 6.4 Stripe re-wiring | [stripe-rewiring.md](stripe-rewiring.md) | Claude + user (browser checkout) | **PASS** 2026-08-19 |
+| 6.5 Cutover & decommission | [cutover.md](cutover.md) | Claude + user (browser) | **PASS** 2026-08-21 (A–E); decommission deferred |
+
+## The failure mode this phase's QA actually caught
+
+The `pg_policies` substitution above was the *anticipated* weak point. It was not
+where the real risk lived. **Every outage in this phase was browser-only** —
+three of them, all found in Area E of 6.5 within minutes of the user clicking
+something, and all invisible to server-side verification because `curl` enforces
+neither CORS nor preflight:
+
+| Bug | Presented as | Real cause |
+|---|---|---|
+| Auth CORS preflight | "wrong password" | GoTrue returns no CORS on `OPTIONS` |
+| Realtime tenant | "realtime is laggy" | tenant read from the Host header's first label |
+| Storage response CORS | "image never uploaded" | storage-api sets no CORS on real responses |
+
+One shape underlies all three: **hosted Supabase's Kong was quietly doing work
+the Caddy gateway had to be taught.** When something works via `curl` but not in
+the browser on this stack, that is the first thing to check.
+
+The 29-table anon/keyless access-control audit was entirely green while the app
+was unusable. Automated coverage cannot substitute for someone opening the app.
 
 ## The failure mode this phase's QA exists to catch
 

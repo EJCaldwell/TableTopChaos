@@ -127,13 +127,58 @@ cannot reach from inside the repo.
       useless to anyone but the developer. `API_EXTERNAL_URL` is already correct
       (the gateway domain); `GOTRUE_URI_ALLOW_LIST` needs the same treatment.
 
+- [ ] **Get the nightly dumps off Railway.** The `backup` cron service writes
+      gzipped `pg_dump` output to a Railway volume every night at 08:00 UTC,
+      keeping 14. That protects against a bad migration or a dropped table — but
+      **not** against losing the Railway account, a billing lapse, or a region
+      failure, because the backup sits on the same provider as the database.
+      Copy them somewhere else (R2, S3, or a scheduled local pull) before there
+      is real user data to lose.
+
+- [ ] **Test a restore, not just a backup.** A dump that has never been restored
+      is a guess. Restore one into the local compose stack and check the row
+      counts against `QA/6_tests/data-migration.md`.
+
 - [ ] **Rotate the hosted project's service-role key** once the cutover is done,
       and **delete `railway/.env.migrate`**. That file holds the old project's
       database URL and secret key; it exists only for the one-off migration.
 
+- [ ] **Decide whether the gateway should require an `apikey` header.** Verified
+      2026-08-20: a request to the Railway gateway with **no API key at all**
+      returns `200`, not `401` — Caddy forwards it and PostgREST runs it as the
+      `anon` role. Hosted Supabase's Kong rejected these outright, so this is a
+      behaviour change introduced by self-hosting.
+
+      **It is not currently a data leak.** All 11 sensitive tables were probed
+      keyless and every one returned `[]`; keyless `INSERT`s were refused by RLS
+      (`42501`), and storage still demands an `authorization` header. RLS is
+      doing its job. But it is now the *only* thing doing it — the outer fence
+      that used to reject anonymous traffic before it reached the database is
+      gone, so any future table that ships with RLS disabled or an overly broad
+      `anon` policy is exposed to the open internet rather than merely to
+      key-holders. Either add an `apikey`-required matcher to the Caddyfile, or
+      accept it deliberately and keep the "zero public tables with RLS disabled"
+      gate as a permanent, non-negotiable check.
+
 - [ ] **Keep the Railway SMTP port at 2587.** Railway blocks outbound 587 and
       465, so a well-meaning "fix" back to the standard port silently breaks all
       auth email with a 10-second timeout and no useful error.
+
+- [ ] **Repoint the LIVE-mode Stripe webhook at the gateway, with a new signing
+      secret.** Test mode was re-wired in 6.4; **live mode still points at the
+      hosted Supabase project**. The signing secret is per-endpoint, so the
+      existing one will not verify against the new URL — a copied secret fails
+      every event.
+
+      **This fails silently and expensively.** Checkout keeps working and
+      customers are still charged, but no `campaign_subscriptions` row is ever
+      written, so paying users get no access. Repoint it *at* cutover, not
+      before (the old endpoint must keep working until traffic moves) and not
+      after.
+
+      Note both endpoints can be registered at once — Stripe delivers to all
+      enabled endpoints — which is a deliberate belt-and-braces option during
+      the switch. Remove the hosted one when the project is decommissioned.
 
 ---
 

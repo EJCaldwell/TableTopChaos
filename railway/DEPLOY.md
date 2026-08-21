@@ -35,22 +35,9 @@ Run `node railway/scripts/gen-keys.mjs` again and keep the output.
 | | |
 |---|---|
 | Image | `supabase/postgres:17.6.1.165` — same major as the hosted project |
-| Volume | **`/var/lib/postgresql/data` — without this a redeploy wipes the database** |
+| Volume | **`/var/lib/postgresql` — without this a redeploy wipes the database** |
 | Domain | none (private) |
-| Variables | `POSTGRES_PASSWORD`, `POSTGRES_DB=postgres`, **`PGDATA=/var/lib/postgresql/data/pgdata`** |
-
-**`PGDATA` must point at a SUBDIRECTORY of the mount, not the mount itself.**
-Railway volumes are formatted filesystems and arrive containing a `lost+found`
-directory, so `initdb` refuses to use the mount point:
-
-```
-initdb: error: directory "/var/lib/postgresql/data" exists but is not empty
-initdb: detail: It contains a lost+found directory, perhaps due to it being a mount point.
-```
-
-The service then crashloops. Setting `PGDATA` one level deeper gives initdb an
-empty directory to own while the data still lives on the volume. (Hit on the
-first deploy, 2026-08-19.)
+| Variables | `POSTGRES_PASSWORD`, `POSTGRES_DB=postgres` (**no `PGDATA`** — see below) |
 
 **Set secrets with `railway variable --set-from-stdin KEY`, not `--set`
 or `railway add --variables`.** Those echo the value back to the terminal, which
@@ -249,6 +236,37 @@ RUN_JANITOR=true
 which holds a tenant JWT secret) out of `public`, where PostgREST would serve
 them and the grant pass would expose them to `anon`.
 
+### The gateway must rewrite `Host` for realtime (found 2026-08-21)
+
+Realtime v2 is **multi-tenant**: it takes the **first label of the Host header**
+as a tenant id and looks it up in `_realtime.tenants`. Caddy preserves the
+client's Host, so it asked for `gateway-production-85a0` and rejected every
+connection with `TenantNotFound`. The tenant that exists is created by
+`SEED_SELF_HOST=true` and named from `SELF_HOST_TENANT_NAME`, **default
+`realtime-dev`** (see `priv/repo/seeds.exs` in the image).
+
+Fixed in the Caddyfile with `header_up Host realtime-dev.internal` on the
+realtime upstream — **not** by setting `SELF_HOST_TENANT_NAME` to the Railway
+subdomain, so that adding a custom domain later cannot break realtime again.
+Only the first label is parsed; the suffix is never resolved.
+
+**The symptom is a lag, not an outage.** Database writes succeed and a page
+refresh shows the change, so it reads as "realtime is slow" rather than "realtime
+is entirely dead." A healthcheck cannot catch it either — the tenant is resolved
+per connection, not at boot.
+
+Test the handshake with **`--http1.1`**. HTTP/2 forbids the `Connection` header,
+so curl drops it and realtime answers `400 'connection' header must contain
+'upgrade'`, which looks like a gateway fault but is an artefact of the test:
+
+```sh
+curl -s --http1.1 -o /dev/null -D - \
+  "https://$GW/realtime/v1/websocket?apikey=$ANON_KEY&vsn=1.0.0" \
+  -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+  -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ=='
+# expect: 101 Switching Protocols, and `project=realtime-dev` in the service log
+```
+
 ## 6. `functions`
 
 | | |
@@ -272,11 +290,11 @@ SUPABASE_ANON_KEY=${ANON_KEY}
 SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
 APP_URL=${SITE_URL}
 STRIPE_SECRET_KEY=…            # 6.4
-STRIPE_WEBHOOK_SECRET=…        # 6.4 — NEW secret; the old one will not verify
+STRIPE_WEBHOOK_SIGNING_SECRET=…        # 6.4 — NEW secret; the old one will not verify
 STRIPE_PRICE_MONTHLY=…
 STRIPE_PRICE_SEMIANNUAL=…
 STRIPE_PRICE_ANNUAL=…
-TRIAL_PERIOD_DAYS=14
+TRIAL_PERIOD_DAYS=30
 ```
 
 ## 7. `gateway`
@@ -305,6 +323,49 @@ unnecessary attack surface, and a public `postgres` is a disaster.
 `PORT`, so it listens on 8080 here while the local compose stack has it on 5000.
 Pointing the gateway at 5000 gives a 502 on every `/storage/v1/*` request, which
 looks like a broken storage service rather than a wrong port.
+
+### The gateway must answer CORS preflights (added 2026-08-20)
+
+Hosted Supabase did this centrally in Kong. Caddy does not, and the backends
+disagree about whose job it is: **PostgREST answers `OPTIONS` itself, but GoTrue
+returns a bare `204` with no CORS headers, storage-api `404`s and edge-runtime
+`400`s.** Since supabase-js sends a custom `apikey` header, every request is
+non-simple and forces a preflight — so with no gateway handler, **sign-in is
+impossible while data reads keep working.**
+
+The symptom in the app is `Failed to fetch`, which is indistinguishable from a
+wrong password to the user but is a network-layer failure: the request never
+leaves the browser. A genuinely wrong password returns
+`400 invalid_credentials`. **If auth breaks but `select` works, it is preflight.**
+
+**Storage additionally needs CORS on its REAL responses** (found 2026-08-21).
+storage-api sets none; PostgREST and the Deno functions set their own. The
+Caddyfile therefore adds `Access-Control-Allow-Origin` +
+`Access-Control-Expose-Headers` inside the **`/storage/v1/*` block only**.
+
+Without it the browser blocks the *body* of `createSignedUrl`, supabase-js
+returns `data: null`, and stored images render as though they were never
+set — while **uploading still appears to work**, because `upload-media` returns
+pre-signed URLs and sets its own CORS. The bug only shows after a reload.
+
+Two rules when touching the `@cors_preflight` block in the Caddyfile:
+
+1. **Keep it first.** `handle` and `handle_path` form one mutually-exclusive
+   group evaluated in source order; below the routing blocks it never runs.
+2. **Preflight only — never add CORS headers to real responses here.** The
+   upstreams set their own, and a duplicate `Access-Control-Allow-Origin` is
+   rejected by browsers. That would break `/rest/v1/*`, which already worked.
+
+**`curl` does not preflight**, so this whole class of bug is invisible to
+server-side verification. Test it explicitly:
+
+```sh
+curl -i -X OPTIONS "$GW/auth/v1/token?grant_type=password" \
+  -H 'Origin: http://localhost:5173' \
+  -H 'Access-Control-Request-Method: POST' \
+  -H 'Access-Control-Request-Headers: apikey,authorization,content-type'
+# expect 204 with exactly ONE access-control-allow-origin
+```
 
 ---
 
@@ -348,6 +409,42 @@ attached and `READY`, and `railway service delete` silently did nothing. When
 the two disagree, the GraphQL API has been right every time.
 
 ---
+
+## 8. `backup` (cron)
+
+| | |
+|---|---|
+| Build | `/railway/backup`, `Dockerfile` |
+| Volume | `/backups` |
+| Cron | `0 8 * * *` (02:00 MDT) |
+| Restart policy | `NEVER` — a cron job that restarts on exit runs forever |
+| Variables | `BACKUP_DB_URL` (internal DSN), `BACKUP_KEEP=14` |
+
+Self-hosting gives up Supabase's automatic daily backups, and nothing else in
+the stack notices their absence until a restore is needed. `backup.sh` dumps the
+**whole** database — `auth.users` and `storage.objects` included, since a backup
+that restores campaigns but not the users who own them is useless — gzips it to
+the volume, and prunes to the newest 14.
+
+**Do not set a `startCommand` on this service.** The image's `CMD` already runs
+`backup.sh`. Once a `startCommand` has been applied, subsequent
+`serviceInstanceUpdate` calls setting it to `null`, `""`, or a different path
+**do not take effect** — the cron deployments keep using the first snapshot. The
+only reliable fix found was deleting and recreating the service without ever
+setting one (2026-08-20).
+
+`postgres:17-alpine` cannot be used directly: its `ENTRYPOINT` is
+`docker-entrypoint.sh`, which tries to initialise a cluster and exits with
+*"Database is uninitialized and superuser password is not specified"* before any
+command runs. Hence `ENTRYPOINT []` in the Dockerfile.
+
+**Cron services do not run on deploy** — they wait for the schedule. To verify
+one, temporarily set `*/5 * * * *`, watch the logs, then set the real schedule
+back. An unverified backup is not a backup.
+
+**Durability caveat:** the volume lives on the same provider as the database it
+protects. That covers a bad migration or a dropped table, not the loss of the
+Railway account or a region. Copying dumps off-platform is a PRE_LAUNCH item.
 
 ## Order of operations
 

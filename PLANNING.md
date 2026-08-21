@@ -205,12 +205,12 @@ These framed the whole plan and should not be quietly reversed:
 - [x] 6.3 — Railway deploy & gateway
   - [x] 6.3.1 — Infrastructure
   - [x] 6.3.2 — QA — PASS 2026-08-19, [QA/6_tests/railway-deploy.md](QA/6_tests/railway-deploy.md)
-- [ ] 6.4 — Stripe re-wiring
-  - [ ] 6.4.1 — Infrastructure
-  - [ ] 6.4.2 — QA
-- [ ] 6.5 — Cutover, backups & decommission
-  - [ ] 6.5.1 — Infrastructure
-  - [ ] 6.5.2 — QA
+- [x] 6.4 — Stripe re-wiring
+  - [x] 6.4.1 — Infrastructure
+  - [x] 6.4.2 — QA — PASS 2026-08-19, [QA/6_tests/stripe-rewiring.md](QA/6_tests/stripe-rewiring.md)
+- [~] 6.5 — Cutover, backups & decommission *(app fully live on Railway 2026-08-21; only decommissioning hosted remains)*
+  - [~] 6.5.1 — Infrastructure *(backups + `.env` flip done; decommission deferred)*
+  - [x] 6.5.2 — QA *(PASS, Areas A–E)*
 
 ### Phase 7: Accounts, roles & compliance
 - [ ] 7.1 — Account deletion, data rights & cascade
@@ -988,12 +988,34 @@ COPY'd; `handle_new_user` collided with restored `profiles` rows; and newer
 
 ### Subphase 6.5: Cutover, backups & decommission
 #### 6.5.1 — Infrastructure
-- **Set up `pg_dump` backups on a Railway cron before cutover** — self-hosting
-  loses Supabase's automatic daily backups.
-- Flip production `.env` to the gateway domain; deploy.
-- Only after QA is green: decommission the hosted project. (Also delete the unused
+- [x] **Set up `pg_dump` backups on a Railway cron before cutover** — self-hosting
+  loses Supabase's automatic daily backups. *(2026-08-20: `backup` cron service,
+  `0 8 * * *`, own volume at `/backups`, keeps 14, dumps the whole database
+  including `auth` and `storage`. Verified by a forced short-schedule run —
+  50,540 bytes written and pruning confirmed. Three Railway gotchas in
+  [railway/DEPLOY.md](railway/DEPLOY.md) §8: `postgres:17-alpine` needs
+  `ENTRYPOINT []`, cron services don't run on deploy, and `startCommand` can
+  never be unset once set.)*
+- [x] Flip production `.env` to the gateway domain; deploy. *(2026-08-20. Both
+  values must move together — each stack signs JWTs with its own secret. Railway
+  reuses the local stack's `JWT_SECRET`, so `railway/.env.stack.production`'s
+  `ANON_KEY` is the production value; there is no separate Railway key. Old
+  hosted pair kept as commented rollback.)*
+- [x] **A fresh data refresh turned out to be unnecessary** — assumed, then
+  measured. Railway already holds all 8 real campaigns with identical UUIDs, all
+  5 profiles, 6 characters and 106 storage objects. The only post-migration
+  writes on hosted were to billing tables, and the sole hosted-only campaign is
+  the 6.4 `Stripe Test` fixture, already on the PRE_LAUNCH §4 wipe list.
+  Importing it would carry test data onto the new stack for no gain. One field
+  differs — `trial_blocked_reused_card` on `ef7a2a34…` — and **Railway holds the
+  correct value**: the reused-card check reads `trial_redemptions` in its own
+  database, and Railway's anti-abuse correctly blocked a reuse that hosted did
+  not record.
+- [ ] Only after QA is green: decommission the hosted project. (Also delete the unused
   `Art-Randomizer` project — the second compute instance was the original source
-  of the >$25 overage.)
+  of the >$25 overage.) **Blocked on QA Area E** (the browser pass) and on
+  repointing the live-mode Stripe webhook, which must happen *at* decommission —
+  the old endpoint has to keep working until then.
 #### 6.5.2 — QA
 - Full four-role matrix — DM / player / non-member / signed-out — re-verified
   server-side. **Gates: exactly 100 policies, and zero tables in `public` with
@@ -1005,6 +1027,51 @@ COPY'd; `handle_new_user` collided with restored `profiles` rows; and newer
   phase: it fails **open** and nothing visibly breaks. Assert it explicitly.
 - `get_advisors` has no self-hosted equivalent; the `pg_policies` +
   `rowsecurity` audit replaces it — record that substitution in the run log.
+
+**Status 2026-08-20 — server-side half PASS**, see
+[QA/6_tests/cutover.md](QA/6_tests/cutover.md). The signed-out role was verified
+more directly than planned: rather than inspecting `pg_policies`, all **29
+exposed tables** were counted three ways — as `service_role`, as `anon`, and
+with **no API key at all**. Every table returned rows to `service_role` and
+**zero** to both anon and keyless callers; keyless writes were refused by RLS
+(`42501`). The service-role column is what makes this meaningful, since an
+all-zeroes result would otherwise be indistinguishable from a broken probe.
+This measures what an attacker can actually read, which is stronger evidence
+than the presence of policies.
+
+The `pg_policies` count itself needs a direct connection, and the `postgres` TCP
+proxy is deliberately absent at rest (it exposes Postgres to the internet), so
+**the 100-policy / 34-table figures remain verified only as of the 6.2 local
+baseline** — re-assert directly if a future migration touches RLS.
+
+**New finding — the gateway does not require an `apikey` header.** A keyless
+request returns `200`, not `401`: hosted's Kong rejected these, Caddy forwards
+them and PostgREST runs them as `anon`. Not a leak (every table was probed
+keyless and returned nothing) but RLS is now the *only* barrier rather than the
+second one, so a future table shipped with RLS disabled would face the open
+internet rather than just key-holders. Logged as a decision in PRE_LAUNCH §3.
+
+The DM / player / non-member roles need a browser and are the user's to run:
+[QA/6_tests/cutover-manual.md](QA/6_tests/cutover-manual.md).
+
+**Browser pass PASS 2026-08-21** — including the two checks server-side testing
+could not substitute for: a signed-in **player** sees none of the eight DM tabs
+(the fail-open case did not occur), and a two-window HP change propagates with no
+refresh (proving realtime subscriptions deliver rows, not just that the socket
+connects).
+
+**It found three browser-only outages, all invisible to `curl`** — which enforces
+neither CORS nor preflight — while the 29-table audit above was entirely green:
+
+1. **Auth CORS preflight** — sign-in impossible, presented as a wrong password.
+2. **Realtime tenant** — every WebSocket rejected; presented as lag, because
+   writes succeeded and a refresh showed them.
+3. **Storage response CORS** — stored images rendered as "never uploaded", while
+   uploading still appeared to work.
+
+All three were the same shape: **Kong was quietly doing work the gateway had to
+be taught.** All three are now fixed in `railway/gateway/Caddyfile` and
+documented in `railway/DEPLOY.md`.
 - Confirm actual Railway usage after a few days. 7 containers cost more than a
   bare Postgres; if it lands near $25 the cheaper answer was staying on hosted Pro
   with `Art-Randomizer` deleted.
@@ -1463,6 +1530,46 @@ after Phases 9–10 rather than alongside them.
 
 ## Post-launch backlog (after public launch)
 **Goal:** Valuable but not launch-blocking; sequenced after a public launch.
+
+### PL.1b: Comped campaigns (owner-granted free access)
+
+**Goal:** let the owner grant specific campaigns free access — friends, testers,
+early supporters — without involving Stripe at all.
+
+**Decided 2026-08-19: do this in Postgres, not with a $0 Stripe price.** A comp
+is an access decision, and access decisions in this app live in the database with
+the other 100. Routing it through Stripe would mean the user still goes through
+checkout, Stripe still creates a subscription object and fires webhooks, and a
+$0 recurring subscription sits in the revenue figures indefinitely. A DB comp
+needs no card, no checkout and no webhook lifecycle, is revocable instantly, and
+**cannot be self-granted**, because only `service_role` can write it.
+
+**Shape:** a `campaign_comps` table — `campaign_id`, `granted_by`, `reason`,
+`expires_at` — consulted by the billing helpers before they look at
+`campaign_subscriptions`. `reason` and `expires_at` are not decoration: comps
+granted without a note become permanent mysteries, and a lapsed comp nobody can
+explain is worse than no comp.
+
+**The part that is easy to get wrong:** there are **three** helpers in
+[0005_billing.sql](supabase/migrations/0005_billing.sql), not one —
+`private.is_campaign_active`, the player cap, and the storage cap. A comp that
+satisfies only the first grants access with **trial-sized limits** (6 players),
+which reads to the user as a broken account rather than a gift. All three must
+treat a comp as equivalent to paid.
+
+**QA:** a comped campaign behaves exactly like a paid one across all three
+limits; a non-comped campaign is unaffected; a player cannot grant themselves a
+comp (assert server-side, not just that the UI hides it); an expired comp falls
+back to the subscription state rather than failing open.
+
+**Sequencing:** deliberately *after* the Phase 6 cutover. 6.4/6.5 verify the
+billing path as it stands, and changing entitlement logic mid-verification means
+the thing being tested is not the thing that ships.
+
+**Related cleanup:** an active **$0.00/month price on the "Pro" product**
+(`price_1ToRGEBSKnRfOSGBSiqkjDqz`, test mode) was found during 6.4. Nothing
+references it, but an active free price on a paid product is a footgun — archive
+it, and check whether the same exists in **live** mode.
 
 ### PL.2: Onboarding, empty states & sample content
 - First-run guidance so a new DM isn't staring at blank tabs: helpful empty

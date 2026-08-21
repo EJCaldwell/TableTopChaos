@@ -17,6 +17,51 @@
 		format console
 	}
 
+	# --- CORS preflight ----------------------------------------------------
+	# MUST come before every handle_path below: `handle`/`handle_path` form one
+	# mutually-exclusive group evaluated in source order, so this block claims
+	# OPTIONS before routing can send it upstream.
+	#
+	# WHY THIS EXISTS: hosted Supabase answered preflights centrally in Kong. Its
+	# replacement is Caddy, which does not, and the backends disagree about whose
+	# job it is — PostgREST answers OPTIONS itself, but GoTrue returns a bare 204
+	# with no CORS headers, storage-api 404s, and edge-runtime 400s. The browser
+	# then blocks the real request before it is ever sent, which surfaces in the
+	# app as the maximally unhelpful "Failed to fetch" — including on sign-in,
+	# where it looks exactly like a wrong password. Data reads worked (PostgREST)
+	# while auth could never work: the asymmetry is the tell.
+	#
+	# Preflight ONLY. Actual responses keep whatever CORS headers the upstream
+	# sets (GoTrue, PostgREST and the Deno functions via _shared/cors.ts all set
+	# their own). Adding them here too would emit a duplicate
+	# Access-Control-Allow-Origin, which browsers reject outright — a strictly
+	# worse failure, because it would break the paths that currently work.
+	@cors_preflight {
+		method OPTIONS
+		header Origin *
+	}
+	handle @cors_preflight {
+		header {
+			Access-Control-Allow-Origin "*"
+			Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS"
+			# Echoed rather than enumerated. The union across services is wide and
+			# easy to under-specify — PostgREST wants `prefer`, `accept-profile`,
+			# `content-profile` and `range`; storage wants `x-upsert`; supabase-js
+			# adds `x-client-info` and `apikey` to everything. A single omission
+			# breaks one feature subtly rather than loudly. Reflecting the browser's
+			# own request list cannot under-specify, and leaks nothing: the origin
+			# is already `*`, and the client authenticates with a bearer token
+			# rather than cookies, so there is no ambient-credential surface.
+			Access-Control-Allow-Headers "{http.request.header.Access-Control-Request-Headers}"
+			# 24h, so the browser stops re-probing on every call.
+			Access-Control-Max-Age "86400"
+			# `defer` is required: without it the headers are written before
+			# `respond` produces the response and are lost.
+			defer
+		}
+		respond 204
+	}
+
 	# --- Auth (GoTrue) -----------------------------------------------------
 	# supabase.auth.* → /auth/v1/token, /auth/v1/user, /auth/v1/signup, …
 	# GoTrue serves these at its root, so the prefix is stripped.
@@ -36,6 +81,31 @@
 	# /bucket/* at its root, so the prefix is stripped.
 	handle_path /storage/v1/* {
 		reverse_proxy {$STORAGE_HOST:storage:5000}
+
+		# storage-api does NOT set CORS headers on its real responses — hosted
+		# Supabase's Kong added them. PostgREST and the Deno functions both set
+		# their own, so storage is the ONLY route that needs this, and adding it
+		# only here is what keeps us from emitting a duplicate
+		# Access-Control-Allow-Origin (which browsers reject outright).
+		#
+		# WHY IT MATTERS: without this the browser blocks the response BODY of
+		# `createSignedUrl`. supabase-js then yields `data: null`, and
+		# resolvePortraitUrl (CharacterPanel.tsx) deliberately maps null to "no
+		# image" — so a stored portrait renders as an empty upload prompt, as if
+		# one had never been set. Uploading appears to work because upload-media
+		# returns freshly signed URLs itself and sets its own CORS; the failure
+		# only shows on reload, when the URL has to be re-signed.
+		#
+		# Invisible to curl, which does not enforce CORS. Test with an Origin
+		# header and assert the header is present on the REAL response, not just
+		# the preflight.
+		header {
+			Access-Control-Allow-Origin "*"
+			# ETag/Content-Range are needed by resumable uploads and range reads;
+			# a browser cannot read them otherwise.
+			Access-Control-Expose-Headers "Content-Range, Content-Length, Content-Type, ETag, Last-Modified"
+			defer
+		}
 	}
 
 	# --- Realtime (WebSocket) ---------------------------------------------
@@ -44,7 +114,28 @@
 	# plain strip. Caddy upgrades WebSockets automatically; no extra config.
 	handle_path /realtime/v1/* {
 		rewrite * /socket{uri}
-		reverse_proxy {$REALTIME_HOST:realtime:4000}
+		reverse_proxy {$REALTIME_HOST:realtime:4000} {
+			# Realtime v2 is MULTI-TENANT: it derives a tenant id from the FIRST
+			# LABEL OF THE HOST HEADER and looks it up in `_realtime.tenants`.
+			# Caddy preserves the client's Host by default, so it was asking for
+			# the public domain's first label (`gateway-production-85a0`) and
+			# logging `TenantNotFound` on every connection — realtime totally
+			# dead, while everything else worked.
+			#
+			# The tenant that DOES exist is created by the image's own seed when
+			# SEED_SELF_HOST=true, named from SELF_HOST_TENANT_NAME with a default
+			# of `realtime-dev` (see priv/repo/seeds.exs in supabase/realtime).
+			#
+			# Rewriting Host here — rather than setting SELF_HOST_TENANT_NAME to
+			# the Railway subdomain — is deliberate: it keeps the tenant name
+			# independent of the public domain, so putting a custom domain in
+			# front later cannot silently break realtime again. This is also what
+			# hosted Supabase's Kong does (it proxies to a `realtime-dev.*` host).
+			#
+			# The suffix after the first label is arbitrary and never resolved;
+			# only the first label is parsed.
+			header_up Host realtime-dev.internal
+		}
 	}
 
 	# --- Edge Functions ----------------------------------------------------
