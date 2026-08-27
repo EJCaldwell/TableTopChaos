@@ -58,4 +58,33 @@ if [ "$COUNT" -gt "$KEEP" ]; then
   done
 fi
 
+# --- Erasure record, OUTSIDE the dump --------------------------------------
+# WHY SEPARATE: the tombstone table (migration 0032) is what lets the migrate job
+# re-delete accounts that a restore resurrected — but it lives IN the database,
+# so a backup taken BEFORE a deletion does not contain it. Restoring that backup
+# reverts the tombstones too, the sweep matches nothing, and the erasure is
+# silently undone. The list must therefore survive outside the thing being
+# restored.
+#
+# Written to a STABLE filename, overwritten every run, and deliberately NOT
+# pruned with the dumps: it is a cumulative list, not a point-in-time snapshot,
+# so the newest copy always supersedes the last. Losing it to retention would
+# defeat the point.
+#
+# Failure here does not fail the backup — the database dump is the more important
+# artefact and must not be lost because this step broke. It is loud instead.
+TOMB="$DIR/deleted-accounts-latest.sql"
+if psql "$BACKUP_DB_URL" -tAX -f /scripts/92_export_tombstones.sql > "$TOMB.tmp" 2>/dev/null; then
+  mv "$TOMB.tmp" "$TOMB"
+  # `grep -c` already prints 0 when nothing matches, but exits 1 doing so — which
+  # `set -e` would treat as fatal. `|| true` keeps the count and the exit status
+  # separate; an earlier `|| echo 0` appended a SECOND zero and mangled the line.
+  TOMB_COUNT=$(grep -c 'insert into' "$TOMB" 2>/dev/null || true)
+  echo "backup: erasure record exported — ${TOMB_COUNT:-0} tombstone(s)"
+else
+  rm -f "$TOMB.tmp"
+  echo "backup: WARNING — could not export the erasure record. A restore would" >&2
+  echo "backup: silently un-delete accounts. Investigate before relying on it." >&2
+fi
+
 echo "backup: done — $(ls -1 "$DIR"/*.sql.gz | wc -l) dumps retained"

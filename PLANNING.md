@@ -213,14 +213,14 @@ These framed the whole plan and should not be quietly reversed:
   - [x] 6.5.2 — QA *(PASS, Areas A–E)*
 
 ### Phase 7: Accounts, roles & compliance
-- [ ] 7.1 — Account deletion, data rights & cascade
-  - [ ] 7.1.1 — Backend
-  - [ ] 7.1.2 — Web UI
-  - [ ] 7.1.3 — QA
-- [ ] 7.2 — Legal & policy pages (ToS, Privacy, refunds)
-  - [ ] 7.2.1 — Backend
-  - [ ] 7.2.2 — Web UI
-  - [ ] 7.2.3 — QA
+- [x] 7.1 — Account deletion, data rights & cascade *(COMPLETE/PASS 2026-08-21)*
+  - [x] 7.1.1 — Backend *(migrations 0030 + 0031, `delete-account` Edge Function)*
+  - [x] 7.1.2 — Web UI *(Profile → danger zone, with a real blast-radius preview)*
+  - [x] 7.1.3 — QA *(PASS — full cascade verified against a seeded fixture account; found a pre-existing security bug from 0009)*
+- [~] 7.2 — Legal & policy pages (ToS, Privacy, refunds) *(drafted 2026-08-24; BLOCKED on the 3-month cleanup job, the LLC, and a contact address)*
+  - [x] 7.2.1 — Backend *(migration 0035: versioned acceptance + server-stamped RPC)*
+  - [x] 7.2.2 — Web UI *(3 policy pages, signup consent, re-prompt banner, profile Legal section)*
+  - [~] 7.2.3 — QA *(automated PASS; content accuracy reviewed; browser pass deferred until unblocked)*
 - [ ] 7.3 — Profile & account management
   - [ ] 7.3.1 — Web UI
   - [ ] 7.3.2 — QA
@@ -1107,6 +1107,103 @@ data cascade, and the required policy pages.
 - Deleting an account removes the right data in every role and cancels its
   subscriptions; other users' campaigns are untouched; Storage objects are gone.
 
+**Status 2026-08-21 — built, automated QA PASS.** See
+[QA/7.1_tests/account-deletion.md](QA/7.1_tests/account-deletion.md).
+
+Two findings worth carrying forward:
+
+1. **The cascade was already implemented.** `campaigns.owner_id` and
+   `characters.owner_id` are both `ON DELETE CASCADE` to `auth.users`, so the
+   rules specified above were already enforced by foreign keys from 0001–0003.
+   The real work was the three things cascade cannot do: cancelling Stripe
+   subscriptions, deleting Storage objects, and erasing the user's own uploads
+   **before** `uploaded_by` goes null.
+2. **A security bug, pre-existing since 0009.** `campaign_entitlements(uuid)` and
+   the newly-added `account_deletion_targets(uuid)` were callable by any
+   signed-in user — a player could read another user's Storage paths, or any
+   campaign's storage usage. **`revoke … from public` does not lock a function
+   down**: a new function is executable by PUBLIC by default, *and* this stack's
+   default privileges grant execute to `authenticated` by name, which the revoke
+   leaves untouched. Fixed in 0031 by dropping the RPC outright and revoking by
+   name; the grant sweep now re-applies it and `migrate` fails the deploy if it
+   regresses. `get_advisors` never flagged this and no RLS audit would — it is
+   not a table.
+
+**Browser pass PASS 2026-08-21**, run against a disposable fixture account
+created via the GoTrue admin API with `email_confirm: true` — no real account was
+risked, and none could have been: deletion is irreversible and a deleted account
+cannot be re-created while Resend has no verified domain (PRE_LAUNCH §3).
+
+The fixture was seeded to hit every branch at once — a campaign it DMed (with the
+user as a member), a character in the user's campaign, and an upload **in the
+user's campaign** attached as that character's portrait. All 15 assertions
+passed. The three that carry the weight:
+
+- **storage objects 120 → 116** — the files are genuinely gone, not merely
+  unreferenced. Rows cascading proves nothing about the bucket.
+- **`media_assets` with a NULL uploader = 0** — the `ON DELETE SET NULL` path was
+  never reached, confirming the user's own upload in *someone else's* campaign was
+  deleted before the user row rather than orphaned there. This is the case that
+  would have failed silently.
+- **The user's own totals unchanged** — a member deleting their account did not
+  touch the campaign they played in.
+
+One step went untested in the browser (wrong-confirmation UI handling); the
+server-side refusal is verified, so what remains unchecked is only the disabled
+button and case-insensitivity in front of a working server check.
+
+**Feeds 7.2:** `trial_redemptions` deliberately survives erasure so the
+one-trial-per-card control is not reset by deleting an account — meaning a **card
+fingerprint is retained after deletion**, which the privacy policy must disclose
+as a fraud-prevention legitimate interest.
+
+### FIXED — deleting a campaign now cancels its Stripe subscription
+
+Found and fixed 2026-08-24 while hardening the restore path. It was a **live
+billing defect, not a restore artefact.**
+
+`deleteCampaign` was a plain `delete from campaigns`. The FK cascade tidied the
+database, but **nothing told Stripe**, so the card kept being charged
+indefinitely for a campaign that no longer existed — with no in-app trace at all,
+since `campaign_subscriptions` cascaded away too. Not even support could see it.
+The cascade also stranded the campaign's Storage FILES: it removes `media_assets`
+ROWS, not objects. Every one of the 46 orphans found in Phase 6 arrived this way.
+
+**Fix — the bad path is now impossible, not merely unused:**
+
+- **`delete-campaign` Edge Function** (`supabase/functions/delete-campaign/`).
+  Owner-only, re-derived from the JWT. Cancels Stripe **first and aborts the
+  whole operation if that fails** (502, nothing deleted) — a campaign deleted
+  with a live subscription is exactly the bug, and strictly worse than a
+  retryable failure. Then removes Storage files, then the row.
+- **Migration 0034 drops the `campaigns_delete_owner` RLS policy.** Routing the
+  UI through a function while leaving the policy in place would have fixed the
+  app and left the bug reachable by anyone calling PostgREST directly.
+  Authorization did not weaken — it moved to the one path that can also reach
+  Stripe.
+- Unaffected: `delete-account` (already cancelled Stripe) and
+  `import-campaign`'s rollback — both use the service role, which bypasses RLS.
+
+**Verified against the live stack:**
+
+| Check | Result |
+|---|---|
+| Direct PostgREST `DELETE` as the owning DM | `204` but **deletes nothing** — campaign survives |
+| Non-owner calling the function | **403** "Only the campaign owner can delete it" |
+| Non-existent campaign | **404** |
+| Owner deleting a campaign with 1 uploaded image | **200**, `mediaFiles: 2`, storage 72 → **70** |
+| Campaign row afterwards | gone |
+
+Note the direct-delete response is `204` even though nothing happens — PostgREST
+reports success for a delete matching zero rows. Harmless (the client no longer
+uses that path) but worth knowing before reading it as a working delete.
+
+**Still outstanding:** subscriptions orphaned *before* this fix. They are not
+retroactively cancelled — check `public.orphaned_subscriptions` and the Stripe
+dashboard (PRE_LAUNCH §1).
+
+---
+
 ### Subphase 7.2: Legal & policy pages (ToS, Privacy, refunds)
 
 #### 7.2.1 — Backend
@@ -1123,6 +1220,69 @@ data cascade, and the required policy pages.
 #### 7.2.3 — QA
 - Signup records policy acceptance; pages are reachable; refund policy matches the
   actual billing behavior (read-only on lapse, 3-month deletion).
+
+**Status 2026-08-24 — drafted, NOT publishable.** See
+[QA/7.2_tests/legal-pages.md](QA/7.2_tests/legal-pages.md).
+
+Decisions taken: **14-day money-back guarantee** · lapsed campaigns **deleted
+after 3 months** · minimum age **13 (16 where local law requires)** · **Utah,
+USA, through an LLC**.
+
+**Three blockers, none cosmetic:**
+
+1. ~~**The 3-month deletion the Refunds page describes does not exist.**~~
+   **BUILT 2026-08-26. Migrations applied; QA Areas A + B PASS 15/15; C, D, E
+   not run.** Migration `0036_campaign_lapse.sql` (the
+   clock, the countdown RPC, the sweep's work list), the `cleanup-campaigns`
+   Edge Function, the `railway/cleanup` cron service, and `LapseBanner` in the
+   campaign shell. See
+   [QA/7.2_tests/lapsed-campaign-cleanup.md](QA/7.2_tests/lapsed-campaign-cleanup.md)
+   — **nothing in it has been executed**, and the cron service has not been
+   created on Railway.
+
+   Design notes worth not re-deriving:
+   - **The clock never runs retroactively.** `read_only_since` is set when a
+     sweep first *observes* a campaign as read-only, not when its subscription
+     lapsed — so the launch flip starts a fresh 90 days for everyone instead of
+     finding a year of accumulated lapse and deleting the database on day one.
+   - **Three independent switches** must all be on before anything is deleted
+     (`enforce_active`, `lapse_delete_enabled`, `CLEANUP_DELETE_ENABLED`).
+     Running early is unrecoverable; running late costs nothing.
+   - **A warning is recorded only after Resend accepts it**, and deletion
+     requires the *final* warning to be recorded. So a broken mailer means the
+     sweep warns forever and deletes nothing — which is the correct behaviour,
+     and is what still makes the Resend domain a real dependency rather than a
+     nice-to-have.
+
+   **The first QA run found a real bug and it was not in 0036.**
+   `private.campaign_is_active()` (migration **0005**) returned **NULL, not
+   false**, for a campaign with no subscription row — `NULL in (...)` is NULL.
+   Every earlier caller used it where NULL and false are indistinguishable (RLS
+   `using`, an already-coalesced helper, JS `!null`), so it had never given a
+   wrong answer. 0036 was the first to write `not campaign_is_active(...)` in a
+   WHERE clause, where `not NULL` matches nothing. Unfixed, the clock would have
+   started only for campaigns with a *lapsed subscription row* and never for
+   never-subscribed ones — the larger group after the flip, and the one 0036
+   exists to cover. Fixed in `0037_campaign_is_active_null.sql`.
+
+   Still owed before publishing: verify a Resend sending domain (warnings
+   currently reach only the Resend account owner, so QA Area E cannot be run
+   honestly), create the `cleanup` service, run the QA, then publish.
+2. **No LLC yet.** Naming an entity that has not been formed is worse than naming
+   a person — the agreement would be with a party that does not exist.
+3. **No contact address.** A privacy policy naming a dead mailbox turns a
+   GDPR/CCPA request into a missed deadline.
+
+Enforced rather than remembered: `isLegalConfigComplete()` is false while the
+entity or contact is unset, so every policy page renders a **"DRAFT — not in
+force, do not publish"** banner naming what is missing, and the acceptance prompt
+does not appear at all. Filling in two constants in
+`src/features/legal/legalConfig.ts` clears it.
+
+**The documents are not legal advice and have not been reviewed by a lawyer** —
+they are drafts describing actual system behaviour. Every factual claim traces to
+code (see QA Area D); the sole exception is the 3-month deletion, which is why it
+is blocker 1.
 
 ---
 

@@ -64,7 +64,66 @@ grant all    on storage.s3_multipart_uploads, storage.s3_multipart_uploads_parts
 grant select on storage.s3_multipart_uploads, storage.s3_multipart_uploads_parts
   to anon, authenticated;
 
+-- --- Service-role-only FUNCTIONS -------------------------------------------
+-- Functions are the mirror image of tables here, and the asymmetry is a trap:
+--   * a new TABLE starts with NO privileges, so it must be granted;
+--   * a new FUNCTION starts EXECUTABLE BY PUBLIC, so it must be revoked.
+-- On top of that, this stack's init sets
+--     alter default privileges … grant execute on functions
+--       to anon, authenticated, service_role;
+-- so every new function ALSO gets a grant held by `authenticated` **by name**.
+-- `revoke … from public` does not touch a named-role grant, which is why the
+-- revokes at the end of migrations 0009 and 0030 read as though they locked
+-- those functions down while leaving them callable by any signed-in user.
+--
+-- Discovered 2026-08-21: an authenticated player could call
+-- account_deletion_targets with another user's id and get their Storage paths,
+-- and campaign_entitlements for a campaign they were not a member of. See
+-- migration 0031.
+--
+-- Re-applied on EVERY migrate run, deliberately: default privileges re-grant
+-- execute at creation time, so this has to be a standing sweep rather than a
+-- one-off migration, or the next new function re-opens the hole.
+--
+-- To add a function here it must be one that does NOT check the caller's
+-- identity — i.e. it takes an id and answers without a membership test. A
+-- function that reads auth.uid() and describes only the caller (such as
+-- account_deletion_preview) belongs to `authenticated` and must NOT be listed.
+do $$
+declare
+  fn text;
+  service_only text[] := array[
+    'campaign_entitlements(uuid)',  -- 0009: arbitrary campaign id, no membership check
+    'lapse_sweep_targets()',        -- 0036: returns every lapsed owner's EMAIL
+    'record_lapse_warning(uuid,int)', -- 0036: writing it unlocks deletion
+    'refresh_lapse_state()'         -- 0036: writes read_only_since on every campaign
+  ];
+begin
+  foreach fn in array service_only loop
+    -- to_regprocedure returns null rather than raising if the function is absent,
+    -- so a dropped function does not fail the whole sweep.
+    if to_regprocedure('public.' || fn) is not null then
+      execute format('revoke execute on function public.%s from public, anon, authenticated', fn);
+      execute format('grant execute on function public.%s to service_role', fn);
+    end if;
+  end loop;
+end $$;
+
 -- --- Verification ----------------------------------------------------------
+-- Any function here is callable by a signed-in user despite being service-role
+-- only. Expected output: no rows. This is informational when the file is run by
+-- hand; the enforcing copy of this check lives in railway/migrate/migrate.sh,
+-- which exits non-zero so a bad deploy actually fails.
+select p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')'
+         as service_only_function_executable_by_authenticated
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and p.proname in ('campaign_entitlements', 'account_deletion_targets',
+                    'lapse_sweep_targets', 'record_lapse_warning',
+                    'refresh_lapse_state')
+  and has_function_privilege('authenticated', p.oid, 'execute');
+
 -- Any table listed here is unreachable from the app. Expected output: no rows.
 select c.relname as table_without_authenticated_select
 from pg_class c

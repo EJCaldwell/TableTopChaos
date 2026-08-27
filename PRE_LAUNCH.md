@@ -39,6 +39,19 @@ subscriptions that nobody can actually buy.
       and that a reused card *cancels* rather than charges. It passed in sandbox
       (QA 1.5), but card fingerprinting is the kind of thing worth seeing once
       with a real card.
+- [ ] **Check `public.orphaned_subscriptions` before and after go-live.** Each row
+      is a Stripe subscription still billing with no campaign attached — money
+      taken for something the customer cannot see. Cancel or refund each one
+      deliberately. A rising `seen_count` means it is still live.
+
+      **The cause was fixed 2026-08-24** — deleting a campaign now cancels its
+      Stripe subscription first (PLANNING, "deleting a campaign now cancels its
+      Stripe subscription"), so new orphans should be rare. But **subscriptions
+      orphaned before that fix were not retroactively cancelled**, and this table
+      only records ones Stripe has since sent an event about. Cross-check the
+      Stripe dashboard's active subscriptions against `campaign_subscriptions`
+      once by hand before taking real payments.
+
 - [ ] **Set up the daily storage-cleanup cron.** Deferred since Phase 1.5, and
       still not scheduled. Without it, orphaned media accumulates and storage
       caps drift from reality.
@@ -139,6 +152,41 @@ cannot reach from inside the repo.
       is a guess. Restore one into the local compose stack and check the row
       counts against `QA/6_tests/data-migration.md`.
 
+      **Include the erasure-record replay in that test** — it is the one part of
+      the restore path with no other way to be verified. Follow
+      [railway/DEPLOY.md](railway/DEPLOY.md) §10 end to end: restore the dump,
+      run `migrate`, replay `/backups/deleted-accounts-latest.sql` with
+      `psql -f`, run `migrate` again, and confirm it reports
+      `RE-DELETED n account(s)`. Everything else about the tombstone is verified;
+      the replay itself is not, because there is deliberately no psql path to the
+      Railway database.
+
+- [ ] **After ANY restore, reconcile the two things automation cannot.** The
+      `migrate` job already re-applies right-to-erasure deletions automatically
+      (`railway/scripts/91_reapply_deletions.sql` — a restore would otherwise
+      resurrect deleted accounts, password hash included). Two gaps remain that
+      it cannot close:
+
+      1. **Stripe.** Cancelled subscriptions do not come back, so a restored
+         `campaign_subscriptions` row can claim `active` while Stripe says
+         `canceled`, and no webhook will correct it. Harmless while
+         `enforce_active` is false; **after the flip a restored campaign would
+         get full access with no subscription behind it.** Reconcile every row
+         against Stripe before flipping.
+      2. **Storage files are not in a `pg_dump`.** Restored `storage.objects`
+         rows may point at files that no longer exist — broken images rather
+         than leaked data. The sweep reports the count; it deliberately does not
+         delete the rows, because deleting a row strands the underlying file
+         (the row is storage-api's index, not the bytes).
+
+- [ ] **Apply schema changes through the `migrate` service, never by hand.**
+      `railway up --service migrate` (see [railway/DEPLOY.md](railway/DEPLOY.md)
+      §9). Applying DDL through a one-off TCP proxy is what produced the 0023
+      drift — a migration live in the database but absent from the repo, so the
+      repo stopped being the source of truth without anything failing. The job
+      also re-runs the grant sweep and asserts RLS on every public table, both of
+      which a manual `psql` session will skip.
+
 - [ ] **Rotate the hosted project's service-role key** once the cutover is done,
       and **delete `railway/.env.migrate`**. That file holds the old project's
       database URL and secret key; it exists only for the one-off migration.
@@ -179,6 +227,55 @@ cannot reach from inside the repo.
       Note both endpoints can be registered at once — Stripe delivers to all
       enabled endpoints — which is a deliberate belt-and-braces option during
       the switch. Remove the hosted one when the project is decommissioned.
+
+---
+
+- [ ] **Fill in the legal entity and contact address**, in
+      `src/features/legal/legalConfig.ts`. Both are `null`, so all three policy
+      pages currently render a **"DRAFT — not in force, do not publish"** banner
+      and the acceptance prompt is suppressed. Setting `ENTITY_NAME` and
+      `CONTACT_EMAIL` clears it automatically — nothing else to change.
+
+      Form the LLC first (decided 2026-08-24). Naming an entity that has not been
+      formed is worse than naming yourself personally: the agreement would be
+      with a party that does not exist.
+
+- [ ] **Finish and arm the 3-month cleanup before publishing the Refunds page.**
+      The page promises that read-only campaigns are deleted after three months,
+      with warnings at 30/7/1 days.
+
+      **Built 2026-08-26 but not deployed, not armed and not tested** — migration
+      0036, the `cleanup-campaigns` Edge Function, the `railway/cleanup` cron
+      service and the in-app countdown. What is still owed:
+
+      1. **Verify the Resend sending domain** (§3 above). Until then warnings
+         reach only your own address, so QA Area E cannot be run honestly.
+      2. ~~Apply migration 0036~~ — **done 2026-08-26**, along with 0037 (which
+         fixes a NULL-vs-false bug in `campaign_is_active` that the first QA run
+         exposed). Both are inert while `enforce_active` is false.
+      3. ~~Create the `cleanup` cron service~~ — **done 2026-08-26**. Running
+         daily at 09:00 UTC in dry-run with all three deletion switches off;
+         cron firing verified. `cleanup-campaigns` is deployed and its shared-key
+         auth is tested. `RESEND_API_KEY` is set but still points at
+         `onboarding@resend.dev`, so warnings reach only your own address —
+         item §3 above is what fixes that.
+      4. **Finish [QA/7.2_tests/lapsed-campaign-cleanup.md](QA/7.2_tests/lapsed-campaign-cleanup.md)**
+         — Areas A and B pass (15/15, including the interlock that stops any
+         deletion without a *delivered* final warning). **C (a real deletion),
+         D (the browser banner) and E (emails) are still unrun**, and D is
+         yours to run — it cannot be self-QA'd.
+      5. **Watch a full cycle in dry-run**, then flip the three switches
+         (`enforce_active`, `lapse_delete_enabled`, `CLEANUP_DELETE_ENABLED`).
+      6. **Then** publish the page.
+
+      Deletion is off behind three independent switches by design: running it
+      early is unrecoverable, running it late costs nothing. The default state is
+      safe, so this cannot leak out by being forgotten — but it also will not
+      start working by itself.
+
+- [ ] **Have the Terms and Privacy Policy reviewed by a lawyer**, particularly
+      the liability and indemnity sections. They are drafts describing how the
+      system behaves, not legal advice.
 
 ---
 

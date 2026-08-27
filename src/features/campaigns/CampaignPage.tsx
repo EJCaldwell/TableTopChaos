@@ -26,6 +26,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
 import { AppHeader } from '../../components/AppHeader'
 import { FormError } from '../../components/ui'
+import { LapseBanner } from '../billing/LapseBanner'
 import { OverviewPanel } from './OverviewPanel'
 import { WorkspaceShell } from './WorkspaceShell'
 import { tabsForRole } from './tabs'
@@ -270,6 +271,11 @@ export function CampaignPage() {
           ) : undefined
         }
       />
+      {/* Deletion countdown, above BOTH views and outside the scroll area —
+          a notice that your campaign is about to be destroyed must not be
+          something you can scroll a panel past. Renders nothing unless the
+          campaign is actually read-only. */}
+      {campaign && <LapseBanner campaignId={campaign.id} />}
       <main style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {loading ? (
           <p style={{ color: 'var(--color-text-muted)', padding: 'var(--space-8)' }}>Loading…</p>

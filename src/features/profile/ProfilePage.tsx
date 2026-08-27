@@ -24,6 +24,8 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../auth/AuthProvider'
 import { Button, FormError, FormNotice, TextField } from '../../components/ui'
+import { DeleteAccountSection } from './DeleteAccountSection'
+import { POLICY_VERSION, isLegalConfigComplete } from '../legal/legalConfig'
 
 export function ProfilePage() {
   // Account-level UI preference; browser-local, applied when a workspace mounts.
@@ -35,6 +37,9 @@ export function ProfilePage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  // Recorded policy acceptance (7.2), read alongside the profile.
+  const [acceptedVersion, setAcceptedVersion] = useState<string | null>(null)
+  const [acceptedAt, setAcceptedAt] = useState<string | null>(null)
 
   // Load the profile row once we know the user id.
   useEffect(() => {
@@ -48,7 +53,7 @@ export function ProfilePage() {
     //    the explicit .eq is belt-and-suspenders + lets us use .single().
     supabase
       .from('profiles')
-      .select('display_name')
+      .select('display_name, legal_version_accepted, legal_accepted_at')
       .eq('id', user.id)
       .single()
       .then(({ data, error }) => {
@@ -57,6 +62,8 @@ export function ProfilePage() {
           setError(error.message)
         } else {
           setDisplayName(data.display_name ?? '')
+          setAcceptedVersion(data.legal_version_accepted ?? null)
+          setAcceptedAt(data.legal_accepted_at ?? null)
         }
         setLoading(false)
       })
@@ -128,10 +135,11 @@ export function ProfilePage() {
 
         {/* Named rather than omitted: a missing control is a gap worth seeing,
             and "where do I change my password?" is the first thing people look
-            for here. Tracked as 7.3 / 7.1 in PLANNING.md. */}
+            for here. Tracked as 7.3 in PLANNING.md. (Account deletion shipped in
+            7.1 — see the danger zone below.) */}
         <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', marginTop: 'var(--space-4)' }}>
-          Changing your email, changing your password from here, and deleting
-          your account aren't available yet.
+          Changing your email and changing your password from here aren't
+          available yet.
         </p>
       </section>
 
@@ -188,12 +196,41 @@ export function ProfilePage() {
       {/* ---- Legal: policies and recorded acceptance (Phase 7.2) ---- */}
       <section style={{ marginTop: 'var(--space-8)' }}>
         <h2 style={{ fontSize: '1.1rem' }}>Legal</h2>
-        <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', marginTop: 0 }}>
-          Terms of Service and Privacy Policy, and the date you accepted them,
-          will appear here. Neither document exists yet — they ship with phase 7
-          and are required before launch.
+        <p style={{ fontSize: '0.9rem', marginTop: 0 }}>
+          <Link to="/legal/terms">Terms of Service</Link>
+          {' · '}
+          <Link to="/legal/privacy">Privacy Policy</Link>
+          {' · '}
+          <Link to="/legal/refunds">Refunds &amp; Cancellation</Link>
         </p>
+        {/* The recorded acceptance is the point of this row: "which version did
+            I agree to, and when?" is unanswerable from a tick-box alone. Read
+            from profiles.legal_version_accepted (migration 0035). */}
+        {acceptedVersion ? (
+          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
+            You accepted version <strong>{acceptedVersion}</strong>
+            {acceptedAt ? ` on ${new Date(acceptedAt).toLocaleDateString()}` : ''}.
+            {acceptedVersion !== POLICY_VERSION && (
+              <> The current version is <strong>{POLICY_VERSION}</strong>.</>
+            )}
+          </p>
+        ) : (
+          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
+            No acceptance recorded for this account yet.
+          </p>
+        )}
+        {!isLegalConfigComplete() && (
+          <p style={{ color: 'var(--color-danger)', fontSize: '0.85rem' }}>
+            These documents are still drafts and are not in force — see the notice
+            on each page.
+          </p>
+        )}
       </section>
+
+      {/* ---- Danger zone: account deletion (Phase 7.1) ----
+          Last on the page and visually separated. It is the only irreversible
+          action here, and the only one that destroys OTHER people's data. */}
+      <DeleteAccountSection />
     </main>
   )
 }

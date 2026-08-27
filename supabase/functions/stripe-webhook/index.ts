@@ -129,7 +129,10 @@ async function syncSubscription(sub: Stripe.Subscription) {
     campaignId = data?.campaign_id ?? null
   }
   if (!campaignId) {
+    // Recorded rather than dropped. Without this the event vanishes into a log
+    // line while Stripe keeps billing — see 0033.
     console.error('stripe-webhook: no campaign_id for subscription', sub.id)
+    await recordOrphan(admin, sub, null, 'unresolvable')
     return
   }
 
@@ -194,7 +197,72 @@ async function syncSubscription(sub: Stripe.Subscription) {
     },
     { onConflict: 'campaign_id' },
   )
-  if (error) console.error('stripe-webhook: upsert failed', error)
+  if (error) {
+    // 23503 = foreign key violation, i.e. the campaign does not exist. This is
+    // PERMANENT: the campaign was deleted while subscribed (deleteCampaign does
+    // not cancel Stripe), or a restore predates it. Retrying cannot fix it, so
+    // record it for reconciliation and let the handler acknowledge the event —
+    // making Stripe retry for days would only bury the signal in noise.
+    if ((error as { code?: string }).code === '23503') {
+      console.error(
+        `stripe-webhook: campaign ${campaignId} missing for subscription ${sub.id} — recording as orphaned`,
+      )
+      await recordOrphan(admin, sub, campaignId, 'campaign_missing')
+      return
+    }
+    // Anything else may be transient (deadlock, connection blip). THROW so the
+    // handler returns 500 and Stripe retries with backoff — and so a persistent
+    // problem eventually surfaces as a failing endpoint in the Stripe dashboard
+    // rather than as silence. Previously every failure here was swallowed.
+    throw new Error(`campaign_subscriptions upsert failed: ${error.message}`)
+  }
+}
+
+/**
+ * Records a subscription that has no campaign to attach to (migration 0033).
+ *
+ * Each row is money still being taken with nothing in the app to show for it,
+ * so the point is durability: a log line is not something anyone will find
+ * later. Keyed by subscription id and updated in place, so `seen_count` rising
+ * is the signal that Stripe is still sending events for it — i.e. it is live
+ * rather than a historical blip.
+ *
+ * Never throws: this is the error path, and failing here would turn a
+ * recoverable billing inconsistency into a 500 loop.
+ *
+ * @param admin - Service-role client (this table is RLS-denied to everyone else).
+ * @param sub - The Stripe subscription that could not be attached.
+ * @param campaignId - The campaign Stripe believes it belongs to, or null.
+ * @param reason - 'campaign_missing' | 'unresolvable'.
+ */
+async function recordOrphan(
+  admin: ReturnType<typeof serviceClient>,
+  sub: Stripe.Subscription,
+  campaignId: string | null,
+  reason: 'campaign_missing' | 'unresolvable',
+) {
+  try {
+    const { data: existing } = await admin
+      .from('orphaned_subscriptions')
+      .select('seen_count')
+      .eq('stripe_subscription_id', sub.id)
+      .maybeSingle()
+
+    await admin.from('orphaned_subscriptions').upsert(
+      {
+        stripe_subscription_id: sub.id,
+        stripe_customer_id: sub.customer as string,
+        campaign_id: campaignId,
+        status: sub.status,
+        reason,
+        last_seen_at: new Date().toISOString(),
+        seen_count: (existing?.seen_count ?? 0) + 1,
+      },
+      { onConflict: 'stripe_subscription_id' },
+    )
+  } catch (err) {
+    console.error('stripe-webhook: could not record orphaned subscription', err)
+  }
 }
 
 Deno.serve(async (req) => {

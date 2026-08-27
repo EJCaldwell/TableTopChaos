@@ -446,6 +446,349 @@ back. An unverified backup is not a backup.
 protects. That covers a bad migration or a dropped table, not the loss of the
 Railway account or a region. Copying dumps off-platform is a PRE_LAUNCH item.
 
+## 9. `migrate` (on-demand job)
+
+| | |
+|---|---|
+| Build | `rootDirectory: "/"`, `dockerfilePath: railway/migrate/Dockerfile` |
+| Trigger | **redeploying the service is the run** — no cron, no schedule |
+| Restart policy | `NEVER` — a job that restarts on exit runs forever |
+| Start command | **none.** It cannot be unset once set (see §8) |
+| Variable | `MIGRATE_DB_URL` → `supabase_admin` over `postgres.railway.internal:5432` |
+| Created | 2026-08-21, service `4ddeff7e-b382-4b58-a405-7ead912fdf9e` |
+
+**Why it exists.** After the Phase 6 cutover, production is this stack, which has
+no public database endpoint by design. Without a job service, every schema change
+needs a TCP proxy opened by hand — a manual step in front of every migration,
+which is precisely how migration 0023 came to be applied to hosted but never
+committed (see `QA/6_tests/`). Phase 7 alone has four subphases of schema work.
+
+**Usage:** add a file to `supabase/migrations/`, then
+
+```sh
+railway up --service migrate
+```
+
+Only new files run. `rootDirectory` is `/` because the Dockerfile copies both
+`supabase/migrations/` and `railway/scripts/`, so it needs the repo root as build
+context. Migrations are **baked into the image**, so the image *is* the schema
+version: a deploy is reproducible and a rollback is redeploying an older image.
+
+### Two things run on EVERY invocation, not only when a migration applies
+
+1. **The grant sweep** (`railway/scripts/90_grant_app_privileges.sql`). No
+   migration issues a table `GRANT` — hosted supplied them as project defaults —
+   so a new table would arrive readable by nobody and the app would 401 on it.
+   Unconditional, so a new table cannot ship ungranted. This is the §6.1 lesson
+   encoded.
+2. **An RLS assertion that fails the deploy.** A public table with RLS disabled
+   fails **OPEN**: the app looks normal while every DM note is readable by anyone
+   signed in. Nothing visibly breaks, so it is asserted rather than assumed. Any
+   such table exits non-zero.
+
+It also issues `notify pgrst, 'reload schema'` — without it a new table or column
+404s with "relation does not exist" until PostgREST happens to restart, which
+reads as a broken migration.
+
+### Baselining — the one sharp edge
+
+Tracking lives in `supabase_migrations.schema_migrations`, deliberately the same
+table the Supabase CLI uses, so reaching for the CLI later agrees with what this
+recorded instead of trying to replay everything.
+
+The Railway database already had all 27 migrations applied **by hand** during
+6.1/6.2, with nothing recording it. So when the tracking table is empty **and**
+`public.campaigns` exists, the run treats the database as provisioned and
+**records every existing file as applied without executing it** — re-running 27
+migrations against live data is not something to leave to whether each one
+happens to be idempotent. A genuinely empty database runs everything instead.
+The decision is logged loudly in a banner, because silently picking the wrong
+branch would be severe.
+
+Both conditions are required, so it **cannot silently re-baseline** later: once
+anything is recorded, that branch is unreachable.
+
+**Verified 2026-08-21.** First run: `28 new, 0 already recorded`, all baselined,
+both grant assertions returned 0 rows, RLS check OK. Immediate second run:
+`0 new, 28 already recorded`, no baseline banner, grant sweep re-run, exit 0 —
+so it is safe to redeploy at any time. (28 files, not 29: there is no `0018`,
+which `0019_revert_encounters.sql` reverted.)
+
+> Railway interleaves container stdout with its own lifecycle lines, so log
+> output can appear **out of order** — `0025`/`0026` printed after the summary on
+> the first run. Read the summary line, not the ordering.
+
+---
+
+## 10. Restoring a backup — the runbook
+
+**Read this before restoring anything.** A restore is the one operation that can
+silently undo a right-to-erasure request, and the protection is not fully
+automatic.
+
+### The flaw the procedure exists to close
+
+The tombstone table (`public.deleted_accounts`, migration 0032) lets the migrate
+job re-delete accounts a restore resurrected. But **it lives inside the database**,
+so a backup taken *before* a deletion does not contain it:
+
+```
+T0  nightly backup taken        -> contains the user, NO tombstone
+T1  user deletes their account  -> tombstone written
+T2  you restore the T0 backup   -> user is back, tombstone is GONE
+```
+
+That is exactly the restore anyone would actually perform. The sweep then matches
+nothing, and the person is back — able to sign in with their old password. The
+in-database tombstone alone covers only the narrower case where the tombstone
+itself survived.
+
+So the erasure record must come from **outside** the restored data. Two sources,
+in order of preference:
+
+| Situation | Best source | Currency |
+|---|---|---|
+| Database still reachable (bad migration, bad data, botched deploy) | **Export it live, right now, before restoring** | to the second |
+| Database is gone (volume lost, region failure) | `/backups/deleted-accounts-latest.sql` on the backup volume | to the last nightly run — **up to 24h of deletions may be missing** |
+
+### Procedure
+
+**Step 0a — copy the NEWER dumps somewhere else first.**
+
+After a restore, the dumps taken *after* the snapshot you are restoring are the
+only surviving record of what the restore is about to erase: who signed up, what
+they wrote, what they paid. `BACKUP_KEEP=14` prunes **by count**, so the nightly
+runs that follow will quietly push them off the volume while you are still
+working out how big the gap was.
+
+```sh
+# from the backup volume, before restoring anything
+cp /backups/tabletopchaos-<newer>.sql.gz  ~/restore-evidence/
+cp /backups/deleted-accounts-latest.sql   ~/restore-evidence/
+```
+
+**Step 0b — if the database is still reachable, capture the erasure record.**
+Do this before anything destructive. It is the only moment the list is complete.
+
+```sh
+psql "$DB_URL" -tAX -f railway/scripts/92_export_tombstones.sql > tombstones.sql
+wc -l tombstones.sql   # sanity: one INSERT per erased account
+```
+
+**Step 1 — restore the dump.**
+
+```sh
+gunzip -c tabletopchaos-YYYYMMDD-HHMMSS.sql.gz | psql "$DB_URL"
+```
+
+**Step 2 — run the migrate job.** This applies any migrations the restored
+snapshot predates (including 0032 itself, if the backup is old enough that
+`deleted_accounts` does not exist yet), re-applies the grant sweep, and asserts
+RLS.
+
+```sh
+railway up --service migrate
+```
+
+**Step 3 — re-import the erasure record.** From step 0 if you have it, otherwise
+from the backup volume. The statements are `ON CONFLICT DO NOTHING`, so this is
+idempotent and an older export can never clobber a newer record.
+
+```sh
+psql "$DB_URL" -f tombstones.sql
+```
+
+**Step 4 — run migrate AGAIN.** This is the step that actually re-deletes the
+resurrected accounts, and it is **mandatory, not optional**. Between the restore
+and this run, those accounts are live and can sign in.
+
+```sh
+railway up --service migrate
+```
+
+Expect `RE-DELETED n account(s)` in the log if any were resurrected, and
+`erasure check OK` at the end. The deploy **fails** if a tombstoned account is
+still present, so a silent failure here is not possible.
+
+### What a restore can never put back
+
+- **Storage files.** Deleted at erasure time and never present in a `pg_dump`, so
+  restored `storage.objects` rows point at missing bytes. Broken images, not
+  leaked data. The sweep reports the count and deliberately does not delete those
+  rows — deleting a row strands the file, because that table is storage-api's
+  index rather than the bytes.
+- **Stripe subscriptions.** Cancelled at Stripe and not restorable. A restored
+  `campaign_subscriptions` row can therefore claim `active` while Stripe says
+  `canceled`, and no webhook will correct it. Harmless while `enforce_active` is
+  false; **after that flip a restored campaign would get full access with no
+  subscription behind it.** Reconcile every row against Stripe before flipping.
+
+### Step 5 — reconcile Stripe in BOTH directions
+
+The direction above (database says active, Stripe says cancelled) costs you
+nothing but a wrong entitlement. **The opposite direction costs a customer
+money**, and it is the one a restore creates when it predates an account or a
+campaign:
+
+| Direction | Symptom | Consequence |
+|---|---|---|
+| Row exists, Stripe cancelled | campaign looks paid | free access after the `enforce_active` flip |
+| **Stripe active, no row** | nothing in the app at all | **the customer keeps being charged for something they cannot see** |
+
+The second case is now recorded rather than lost: the webhook writes it to
+`public.orphaned_subscriptions` (migration 0033) instead of swallowing the
+foreign-key failure. Check it after any restore:
+
+```sql
+select stripe_subscription_id, stripe_customer_id, campaign_id, status,
+       reason, seen_count, last_seen_at
+from public.orphaned_subscriptions
+order by last_seen_at desc;
+```
+
+A **rising `seen_count`** means Stripe is still sending events for it — the
+subscription is live and still billing. For each row: cancel it in Stripe, and
+refund what was taken after the restore. There is no automatic path, because
+only you can decide between cancel, refund, or reinstate the campaign.
+
+Then list active subscriptions in the Stripe dashboard and check every one has a
+matching `campaign_subscriptions` row. `orphaned_subscriptions` only catches
+subscriptions Stripe has sent an event about **since** the restore; a quiet
+annual subscription may not emit one for months.
+
+> **This is not only a restore problem.** `deleteCampaign` performs a plain
+> database DELETE with **no Stripe cancellation**, so any DM who deletes a
+> campaign while subscribed leaves a live subscription behind — the same orphan,
+> arriving through the front door. Tracked in PLANNING; until it is fixed,
+> `orphaned_subscriptions` will accumulate rows in normal use, not just after a
+> restore.
+
+### Residual gap, stated plainly
+
+If the database is lost entirely, deletions made since the last nightly export
+are unrecoverable as records — those accounts would come back and stay back. The
+window is bounded by the backup schedule (`0 8 * * *`). Closing it further means
+exporting more often than nightly; worth revisiting if real users are relying on
+erasure.
+
+---
+
+## 11. `cleanup` (cron) — lapsed-campaign sweep
+
+| | |
+|---|---|
+| Build | `railway/cleanup`, `Dockerfile` |
+| Volume | none |
+| Cron | `0 9 * * *` (daily, an hour after `backup`) |
+| Restart policy | `NEVER` — a cron job that restarts on exit runs forever |
+| Variables | `CLEANUP_URL`, `CLEANUP_SECRET`, `CLEANUP_DRY_RUN` |
+
+**Created and verified 2026-08-26** (service `9bb84bc1-24e6-407a-81c6-95ad86018bdf`),
+running daily in **dry-run with deletion disarmed**. Cron firing confirmed by
+temporarily setting `*/5 * * * *`, watching one run, then restoring `0 9 * * *`:
+
+```
+cleanup: POST https://gateway-…/functions/v1/cleanup-campaigns (dryRun=true)
+cleanup: HTTP 200
+ dryRun=true deleteEnabled=false refreshed={"started":0,"cleared":0}
+ onClock=0 dueForDelete=0 warned=[] deleted=[] skipped=[] errors=[]
+cleanup: done
+```
+
+All three deletion switches remain off, so this reports and changes nothing.
+
+This is the half of Phase 7.2 that makes the Refunds page true: *"a campaign that
+has been read-only for three months is permanently deleted, and we email the
+owner 30, 7 and 1 days before."* Until it runs, that sentence describes nothing,
+which is why the page carries a DRAFT banner.
+
+Scheduled **after** `backup` on purpose. If the sweep ever deletes something it
+should not have, the most recent dump is from that morning and predates it.
+
+### Why a cron service and not `pg_cron`
+
+The work is not SQL. It cancels Stripe subscriptions, deletes Storage objects
+and calls Resend — none of which Postgres can reach. The database holds only the
+clock (`campaigns.read_only_since`, migration 0036); the `cleanup-campaigns` Edge
+Function does everything that touches the outside world. `cleanup.sh` is one
+`curl` and a status check, kept dumb enough that "the cron is wrong" is never a
+plausible diagnosis.
+
+### The clock never runs retroactively
+
+`read_only_since` is set to `now()` the first time a sweep **observes** a
+campaign as read-only. It is not derived from when the subscription actually
+lapsed. This is load-bearing: while `enforce_active` is `false` every campaign is
+"active", so the first sweep after the launch flip starts a fresh 90-day clock
+for everybody — instead of finding a year of accumulated lapse and deleting the
+entire database on day one.
+
+### Three switches, all of which must be on
+
+| Switch | Where | Default |
+|---|---|---|
+| `enforce_active` | `private.billing_config` | `false` |
+| `lapse_delete_enabled` | `private.billing_config` | `false` |
+| `CLEANUP_DELETE_ENABLED` | `functions` service env | unset |
+
+Three rather than one because running this early is unrecoverable and running it
+late costs nothing. With deletion off, clocks still tick and the in-app countdown
+still shows — it says plainly that nothing will be deleted — so a full cycle can
+be watched in production before anything irreversible is armed.
+
+### The delivered-warning interlock
+
+A campaign is never deleted unless its **final** warning was recorded, and
+`lapse_warned_days` is written **only after Resend accepts the message**. So if
+mail is broken, `due_for_delete` never becomes true and the sweep warns forever
+without deleting anything.
+
+That is not a theoretical safeguard. Until a sending domain is verified, Resend
+delivers only to the Resend account owner's own address (PRE_LAUNCH §3) — every
+other warning is silently dropped. Deleting somebody's campaign after a warning
+that was never delivered is the exact failure this design exists to prevent.
+
+### Variables
+
+```
+CLEANUP_URL=https://<gateway-domain>/functions/v1/cleanup-campaigns
+CLEANUP_SECRET=<long random string>   # must match the functions service
+CLEANUP_DRY_RUN=true                  # start here; false only after a full cycle
+```
+
+Unlike `backup` and `migrate`, this service builds from `railway/cleanup` with
+`dockerfilePath: Dockerfile` — it needs nothing outside its own directory, and
+giving a cron container a database URL it never uses is a credential lying
+around for no reason.
+
+Set on the **`functions`** service (done 2026-08-26):
+
+```
+CLEANUP_SECRET=<the same string>
+CLEANUP_DELETE_ENABLED=false
+RESEND_API_KEY=<resend key>
+RESEND_FROM="TableTopChaos <notices@yourdomain>"
+```
+
+Set secrets with `railway variables --set-from-stdin`, never `--set` — the
+latter echoes the value into the shell history and the deploy log.
+
+`cleanup-campaigns` authenticates on `x-cleanup-key` (constant-time compare)
+rather than a JWT: the caller is a cron container, not a user. An unset
+`CLEANUP_SECRET` denies **every** request rather than allowing them — a
+mass-delete endpoint has to fail closed.
+
+### Verifying it
+
+Cron services do not run on deploy. Temporarily set `*/5 * * * *`, watch, then
+restore the schedule. With `CLEANUP_DRY_RUN=true` a run reports exactly what it
+would have done and changes nothing except the clocks themselves (which is not
+destructive, and a dry run against stale clocks tells you nothing).
+
+A non-200, or a 200 carrying a non-empty `errors` array, fails the deploy. That
+second case is the important one: undelivered warnings must not scroll past as a
+green run.
+
 ## Order of operations
 
 1. `postgres` with its volume → wait healthy

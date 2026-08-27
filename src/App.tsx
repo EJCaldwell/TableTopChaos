@@ -19,6 +19,9 @@ import { UpdatePasswordPage } from './features/auth/UpdatePasswordPage'
 import { ProfilePage } from './features/profile/ProfilePage'
 import { DashboardPage } from './features/campaigns/DashboardPage'
 import { CampaignPage } from './features/campaigns/CampaignPage'
+import { TermsPage } from './features/legal/TermsPage'
+import { PrivacyPage } from './features/legal/PrivacyPage'
+import { RefundsPage } from './features/legal/RefundsPage'
 
 /** Fallback for unmatched routes. */
 function NotFound() {
@@ -39,6 +42,13 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignUpPage />} />
       <Route path="/reset-password" element={<RequestPasswordResetPage />} />
+
+      {/* Legal pages (7.2) sit OUTSIDE the authenticated area on purpose: a
+          prospective user must be able to read the terms before signing up, and
+          a departing one after their account is gone. */}
+      <Route path="/legal/terms" element={<TermsPage />} />
+      <Route path="/legal/privacy" element={<PrivacyPage />} />
+      <Route path="/legal/refunds" element={<RefundsPage />} />
       <Route path="/update-password" element={<UpdatePasswordPage />} />
 
       {/* Protected routes — redirect to /login without a session. */}

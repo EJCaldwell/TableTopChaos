@@ -9,6 +9,7 @@
  */
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from './AuthProvider'
+import { LegalAcceptanceBanner } from '../legal/LegalAcceptanceBanner'
 
 export function RequireAuth() {
   const { session, loading } = useAuth()
@@ -30,5 +31,14 @@ export function RequireAuth() {
     return <Navigate to="/login" replace state={{ from: location }} />
   }
 
-  return <Outlet />
+  // Mounted here rather than per-page so the prompt follows the user through
+  // the whole signed-in app instead of only appearing on the dashboard. It
+  // renders nothing when the current policy version is already accepted, and
+  // nothing at all while the policies are still drafts.
+  return (
+    <>
+      <LegalAcceptanceBanner />
+      <Outlet />
+    </>
+  )
 }

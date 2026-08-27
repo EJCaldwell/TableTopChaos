@@ -157,24 +157,32 @@ export type Database = {
           created_at: string
           game_mode: Database["public"]["Enums"]["game_mode"]
           id: string
+          // 0036: the lapse clock. Null = writable. Written ONLY by
+          // refresh_lapse_state(); no client may set either of these.
+          lapse_warned_days: number | null
           name: string
           owner_id: string
+          read_only_since: string | null
           updated_at: string
         }
         Insert: {
           created_at?: string
           game_mode?: Database["public"]["Enums"]["game_mode"]
           id?: string
+          lapse_warned_days?: number | null
           name: string
           owner_id: string
+          read_only_since?: string | null
           updated_at?: string
         }
         Update: {
           created_at?: string
           game_mode?: Database["public"]["Enums"]["game_mode"]
           id?: string
+          lapse_warned_days?: number | null
           name?: string
           owner_id?: string
+          read_only_since?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -839,11 +847,16 @@ export type Database = {
         ]
       }
       profiles: {
+        // legal_* columns added by migration 0035 (Phase 7.2) and written here
+        // by hand — the generator targets the old hosted project, which is no
+        // longer where migrations are applied.
         Row: {
           avatar_url: string | null
           created_at: string
           display_name: string | null
           id: string
+          legal_accepted_at: string | null
+          legal_version_accepted: string | null
           updated_at: string
         }
         Insert: {
@@ -851,6 +864,8 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id: string
+          legal_accepted_at?: string | null
+          legal_version_accepted?: string | null
           updated_at?: string
         }
         Update: {
@@ -858,6 +873,8 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id?: string
+          legal_accepted_at?: string | null
+          legal_version_accepted?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -1231,6 +1248,48 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      // Migration 0030 (Phase 7.1). Hand-written rather than generated: the
+      // generator targets the old hosted project, which is no longer where
+      // migrations are applied — production is the self-hosted Railway stack and
+      // has no public database endpoint to introspect. Keep these in sync with
+      // supabase/migrations/0030_account_deletion.sql by hand.
+      //
+      // No Args: the RPC reads auth.uid() itself, deliberately, so it cannot be
+      // pointed at another account. `Record<PropertyKey, never>` is the shape the
+      // generator emits for a zero-argument function.
+      account_deletion_preview: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
+      // NOTE: account_deletion_targets was added in 0030 and DROPPED in 0031 —
+      // `revoke from public` left `authenticated` holding execute by name, so it
+      // leaked other users' Storage paths. Not re-added here on purpose; the
+      // Edge Function reads the tables directly with the service role.
+      // Migration 0035 (Phase 7.2). Records the CALLING user's acceptance;
+      // timestamp is stamped server-side so it cannot be backdated.
+      record_legal_acceptance: {
+        Args: { p_version: string }
+        Returns: undefined
+      }
+      // Migration 0036 (Phase 7.2). The lapse countdown, readable by any MEMBER
+      // of the campaign — the read-only freeze and the eventual deletion hit
+      // players too, so this is not billing information.
+      //
+      // Always returns exactly one row; read_only_since is null when the
+      // campaign is writable. Raises insufficient_privilege for non-members.
+      campaign_lapse_status: {
+        Args: { p_campaign_id: string }
+        Returns: {
+          read_only_since: string | null
+          delete_after: string | null
+          days_remaining: number | null
+          deletion_enabled: boolean
+        }[]
+      }
+      // Also from 0036, but service-role only and deliberately NOT typed here:
+      // lapse_sweep_targets(), record_lapse_warning() and refresh_lapse_state().
+      // The browser client can never call them, and listing them would invite
+      // exactly that. The cleanup Edge Function calls them untyped.
       campaign_entitlements: {
         Args: { p_campaign_id: string }
         Returns: {

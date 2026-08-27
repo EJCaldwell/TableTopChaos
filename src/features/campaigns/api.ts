@@ -130,18 +130,45 @@ export async function createCampaign(
 /**
  * Permanently deletes a campaign and everything under it (DM/owner only).
  *
- * Supabase call: delete from `campaigns` by id.
- *  - RLS: campaigns_delete_owner allows the delete only when
- *    owner_id = auth.uid(), i.e. the DM who created the campaign. A player's
- *    delete simply matches no rows and silently no-ops (no error, no deletion).
- *  - Side effect: ON DELETE CASCADE foreign keys remove the campaign's
- *    `campaign_members` and `invite_codes` rows automatically, so the campaign
- *    is fully purged from the database — no orphaned membership or code rows.
+ * Edge Function: `delete-campaign`
+ *  - Payload: `{ campaignId }`
+ *  - Returns: `{ deleted: { campaignId, subscriptionsCanceled, mediaFiles } }`
+ *  - Errors: 401 not signed in · 403 not the owner · 404 no such campaign ·
+ *    **502 the Stripe cancellation failed and NOTHING was deleted** (retryable)
+ *
+ * WHY NOT A PLAIN DELETE ANY MORE. This used to be
+ * `supabase.from('campaigns').delete()`, which tidied the database and **never
+ * told Stripe** — so the card kept being charged for a campaign that no longer
+ * existed, with no in-app trace, because campaign_subscriptions cascaded away
+ * too. It also stranded the campaign's Storage files: the cascade removes
+ * `media_assets` ROWS, not the objects themselves.
+ *
+ * Cancelling a subscription needs the Stripe secret key, so it can only happen
+ * server-side. Migration 0034 removed the `campaigns_delete_owner` RLS policy so
+ * a direct delete is no longer possible at all — the check is unchanged, but it
+ * now lives in the one place that can also reach Stripe.
+ *
  * @param campaignId - The campaign to delete.
+ * @throws With the function's own message, which is written for the user and
+ *         distinguishes "nothing was deleted, retry" from a partial failure.
  */
 export async function deleteCampaign(campaignId: string): Promise<void> {
-  const { error } = await supabase.from('campaigns').delete().eq('id', campaignId)
-  if (error) throw error
+  const { error } = await supabase.functions.invoke('delete-campaign', {
+    body: { campaignId },
+  })
+  if (error) {
+    // supabase-js wraps non-2xx responses; pull our JSON { error } out of the
+    // raw Response so the user sees why, rather than a generic
+    // "Edge Function returned a non-2xx status code".
+    let message = error.message
+    try {
+      const body = await (error as unknown as { context?: Response }).context?.json?.()
+      if (body && typeof body.error === 'string') message = body.error
+    } catch {
+      /* fall back to error.message */
+    }
+    throw new Error(message)
+  }
 }
 
 /**

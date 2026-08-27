@@ -44,8 +44,11 @@ const WORKER_LIMITS = {
  * from the image. Keep in sync with supabase/functions/.
  */
 const ALLOWED = new Set([
+  'cleanup-campaigns',
   'create-billing-portal-session',
   'create-checkout-session',
+  'delete-account',
+  'delete-campaign',
   'export-campaign',
   'export-journal',
   'import-campaign',
