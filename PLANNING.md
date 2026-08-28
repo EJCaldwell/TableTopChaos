@@ -231,8 +231,8 @@ These framed the whole plan and should not be quietly reversed:
 
 ### Phase 8: Automated testing & CI
 - [x] 8.1 — Test infrastructure + unit/component tests (Vitest + RTL) *(**129 tests, 6 files, all passing.** Vitest 3 + jsdom + RTL + v8 coverage; `npm test` / `test:watch` / `coverage`. 100% statements on dice, HP/death-saves, safe-markdown and username rules — three of those EXTRACTED from components to be testable, with dice randomness injected so totals are asserted exactly. Component test for the campaign roster **closes 7.4's rendering gap**: `username (Character)`, identical for player and DM, no "Unnamed adventurer", survives a failed character lookup. Tests are type-checked by `tsc -b`, which caught two unsound casts Vitest ran green. Whole-app coverage 2.48%, reported honestly. **Not done:** `extractNpcHp`, initiative sort, import id-remap; every other panel)*
-- [ ] 8.2 — RLS / database policy tests
-- [ ] 8.3 — End-to-end smoke tests (Playwright) + CI pipeline
+- [x] 8.2 — RLS / database policy tests *(**63 assertions, all passing**, in plain SQL — `railway/scripts/95_rls_matrix.sql`, run from the migrate job so a policy regression fails the deploy. Five personas incl. a second player (the peer-leak case); journal stays invisible to the DM; locked tables invisible to all; structural checks for RLS-enabled, no-anon-policies and the service-role-only function list. Runs inside a never-committed transaction — safe against production, which is the only database there is. **Proven to fail** on a deliberately loosened policy. **Not covered:** storage.objects policies, Edge Function authz, realtime filtering)*
+- [~] 8.3 — End-to-end smoke tests (Playwright) + CI pipeline *(**CI half DONE** — .github/workflows/ci.yml runs install/typecheck/build/129 unit tests/62 layout checks on every push and PR, verified by simulating the CI env locally. RLS matrix and `npm audit` excluded with stated reasons. **Blocked:** Playwright needs working signup (Resend 550) and writes to production with no rollback. **Owed:** branch protection — blocking merge is a repo setting, not a workflow one)*
 
 ### Phase 9: Playspace mode (grid battlemap + dynamic vision & lighting)
 - [ ] 9.1 — Battlemap & tokens
@@ -1600,6 +1600,38 @@ Supabase connection is 8.2; real browser journeys are 8.3.
   the security model a **regression test**, not a one-time manual pass.
 - QA: the suite fails loudly if any policy is loosened/removed.
 
+**Status 2026-08-28 — DONE. 63 assertions, all passing, gating every schema
+change.** See [QA/8.2_tests/](QA/8.2_tests/).
+
+Plain SQL rather than pgTAP: no extension to install on the self-hosted stack,
+and the harness is readable by anyone who knows `psql`.
+[railway/scripts/95_rls_matrix.sql](railway/scripts/95_rls_matrix.sql) runs from
+[migrate.sh](railway/migrate/migrate.sh) on every `railway up --service migrate`,
+so **a migration that loosens a policy cannot deploy.**
+
+Decisions worth not re-deriving:
+
+- **The whole run is one transaction that never commits.** There is no test
+  database — no Docker locally, no staging project — so it runs against
+  production. Fixtures are seeded, asserted, then discarded by `ROLLBACK` on
+  success or by the raised exception on failure. Verified after every run: user
+  and campaign counts unchanged.
+- **Five personas**, and the second PLAYER is the most valuable one: a legitimate
+  member who must not see a peer's journal, sheet or inventory is what every
+  in-campaign leak actually looks like.
+- **Denied table read ≠ denied function call.** A table returns zero rows; a
+  function raises. Separate helpers, because checking both as "zero rows" would
+  let a function that stopped refusing and started returning nothing pass a test
+  written to prove it refuses.
+- **Allowed paths are asserted too**, or "everything is denied" would pass.
+- **Proven to fail**, not just to pass: granting `anon` SELECT on campaigns, and
+  disabling RLS on `journal_entries`, are both caught. A security suite that has
+  never failed is not evidence.
+
+**Not covered:** `storage.objects` policies (avatar visibility was asserted
+ad-hoc in 7.3 but is not in the automated run — it should be), Edge Function
+authorization, and realtime event filtering.
+
 ### Subphase 8.3: End-to-end smoke tests (Playwright) + CI pipeline
 - A few **Playwright** flows against a test project: sign up → create campaign →
   start trial → invite/join → fill a sheet → DM views party → DM shares a handout
@@ -1607,6 +1639,30 @@ Supabase connection is 8.2; real browser journeys are 8.3.
 - Wire **CI** (GitHub Actions or similar): typecheck + build + unit + RLS + e2e on
   every push; block merge on failure.
 - QA: CI is green on main; a deliberately broken policy/logic change is caught.
+
+**Status 2026-08-28 — CI half DONE; e2e half BLOCKED.** See
+[QA/8.3_tests/](QA/8.3_tests/).
+
+[.github/workflows/ci.yml](.github/workflows/ci.yml) runs `npm ci`, `npm run
+build` (typecheck + bundle), `npm test` (129) and `npm run qa:checks` (62) on
+every push and PR. Verified by simulating the CI environment locally — swapping
+the real `.env` for placeholders — because `src/lib/env.ts` throws at module load
+without config, and the component tests reach that assertion. A run without a
+placeholder `.env` would have failed on import rather than on anything real.
+
+**Deliberately excluded, with reasons:**
+- **The RLS matrix**, because it needs the production database (there is no test
+  one). Its credentials in GitHub secrets would be a superuser path into the live
+  database held by a third party, duplicating a check that already gates every
+  schema change from the `migrate` job. Blast radius up, gating unchanged.
+- **`npm audit`** — 4 pre-existing high advisories (react-router, postcss,
+  nanoid). A gate that is red on arrival gets ignored, and an ignored gate is
+  worse than none.
+
+**Still owed:** Playwright flows (signup returns 500 until the Resend domain
+exists, and e2e writes to production with no rollback), and **branch protection**
+— "block merge on failure" is a repo setting, not a workflow setting, so CI is
+currently a signal rather than a gate.
 
 ## Phase 9: Playspace mode (grid battlemap + dynamic vision & lighting)
 **Goal:** In `playspace` and `rpg` campaigns, a shared grid battlemap where the DM

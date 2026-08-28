@@ -169,6 +169,13 @@ cannot reach from inside the repo.
       honestly instead of showing `{}`, but the flow itself is unproven
       end to end: nobody has ever confirmed an email change in this app.
 
+- [ ] **Turn on branch protection for `main`.** CI exists
+      (`.github/workflows/ci.yml`) and runs on every push and PR, but **"block
+      merge on failure" is a repository setting, not a workflow setting** —
+      GitHub does not enforce a check until it is marked required. Until then CI
+      reports a status nobody is obliged to respect. Settings → Branches →
+      require the `Typecheck, build & test` check.
+
 - [ ] **Repoint `GOTRUE_SITE_URL` at the real frontend origin.** It is currently
       `http://localhost:5173` on the Railway `auth` service, because the frontend
       has no deployed home yet. It is what confirmation and password-reset links

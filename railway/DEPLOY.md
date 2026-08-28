@@ -474,7 +474,7 @@ Only new files run. `rootDirectory` is `/` because the Dockerfile copies both
 context. Migrations are **baked into the image**, so the image *is* the schema
 version: a deploy is reproducible and a rollback is redeploying an older image.
 
-### Two things run on EVERY invocation, not only when a migration applies
+### Three things run on EVERY invocation, not only when a migration applies
 
 1. **The grant sweep** (`railway/scripts/90_grant_app_privileges.sql`). No
    migration issues a table `GRANT` — hosted supplied them as project defaults —
@@ -519,6 +519,24 @@ which `0019_revert_encounters.sql` reverted.)
 > the first run. Read the summary line, not the ordering.
 
 ---
+
+### The RLS access-control matrix (Phase 8.2)
+
+`railway/scripts/95_rls_matrix.sql` seeds a DM, two players, a non-member and
+anon, then asserts the full read/write matrix — 63 assertions — inside a
+transaction that never commits. On failure it raises, which aborts the
+transaction and exits non-zero, so **a migration that loosens a policy cannot
+deploy.**
+
+This is the third check in the same family and the only behavioural one. The
+other two are structural: RLS is enabled, and five named functions are not
+executable by `authenticated`. Neither says anything about what the policies
+actually allow.
+
+Safe against production because nothing commits — verified by user and campaign
+counts being unchanged after each run. Proven to catch a regression rather than
+merely to pass: granting `anon` SELECT on `campaigns`, and disabling RLS on
+`journal_entries`, are both detected.
 
 ## 10. Restoring a backup — the runbook
 
