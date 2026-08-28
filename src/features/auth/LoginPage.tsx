@@ -8,6 +8,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { authErrorMessage } from './authErrors'
 import { AuthCard, Button, FormError, TextField } from '../../components/ui'
 
 export function LoginPage() {
@@ -36,7 +37,17 @@ export function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     setBusy(false)
     if (error) {
-      setError(error.message)
+      // Distinguish "your details are wrong" from "the server is broken":
+      // a 5xx arrives as "{}" (see authErrors.ts), and showing that where a
+      // wrong-password message belongs sends people to reset a password that
+      // was never the problem.
+      setError(
+        authErrorMessage(
+          error,
+          'We could not sign you in just now — this looks like a problem on our ' +
+            'side rather than your details. Please try again in a moment.',
+        ),
+      )
       return
     }
     navigate(redirectTo, { replace: true })

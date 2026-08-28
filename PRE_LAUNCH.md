@@ -121,17 +121,53 @@ cannot reach from inside the repo.
       custom SMTP sender" item — decided 2026-08-19: Resend, wired into the
       Railway `auth` service and verified working end to end.)*
 
-      **This is a hard blocker on real users, not a polish item.** With no
-      verified domain, Resend sends from the shared `onboarding@resend.dev` and
-      **delivers only to the address that owns the Resend account**
-      (`ejcaldwell06@gmail.com`). Every other signup gets a confirmation email
-      that is silently never delivered — and because `MAILER_AUTOCONFIRM` is
-      correctly `false`, those accounts can never be activated. The failure is
-      invisible from the app's side: the signup returns success.
+      **This is a hard blocker on real users, not a polish item — and it is
+      worse than previously written here.** Corrected 2026-08-27 after
+      reproducing it: with no verified domain, Resend rejects the message at
+      SMTP time rather than accepting and dropping it:
+
+      ```
+      550 You can only send testing emails to your own email address
+      (ejcaldwell06@gmail.com). To send emails to other recipients, please
+      verify a domain at resend.com/domains, and change the `from` address
+      to an email using this domain.
+      ```
+
+      GoTrue therefore returns **500 "Error sending confirmation email"** and
+      **rolls the account back**. So:
+
+      - **NOBODY CAN CREATE AN ACCOUNT AT ALL**, the owner included. Verified:
+        `ejcaldwell06+qaprobe@gmail.com` also fails — Resend means that one exact
+        address, and plus-addressing does not count.
+      - No half-created accounts accumulate (the rollback is clean), which is the
+        one thing this is better than the old description claimed.
+      - The earlier wording here — "silently never delivered", accounts that
+        "can never be activated", "the signup returns success" — was **wrong on
+        all three counts**. Nothing is silent, no account exists, and the signup
+        returns 500.
+
+      The same 550 blocks password resets and the 7.3 email-change flow, and it
+      is why QA 7.2 area E and 7.4 area E cannot be run.
 
       Register a domain, add it at resend.com/domains, complete the DNS records,
       then change `GOTRUE_SMTP_ADMIN_EMAIL` on the `auth` service from
       `onboarding@resend.dev` to an address on that domain.
+
+      *(A temporary `MAILER_AUTOCONFIRM=true` would unblock signup for testing by
+      skipping the email entirely. Deliberately NOT done — it lets anyone sign up
+      with an address they do not own, and it is one more flag to remember to
+      turn off. Noted as an option, not a plan.)*
+
+      Register a domain, add it at resend.com/domains, complete the DNS records,
+      then change `GOTRUE_SMTP_ADMIN_EMAIL` on the `auth` service from
+      `onboarding@resend.dev` to an address on that domain.
+
+- [ ] **Re-test the email-change flow once the sending domain is verified.**
+      `auth.updateUser({ email })` currently fails with a 500 ("Error sending
+      email change email") for any address Resend will not deliver to, so
+      QA/7.3_tests area **C5** has never been run. The UI now reports this
+      honestly instead of showing `{}`, but the flow itself is unproven
+      end to end: nobody has ever confirmed an email change in this app.
 
 - [ ] **Repoint `GOTRUE_SITE_URL` at the real frontend origin.** It is currently
       `http://localhost:5173` on the Railway `auth` service, because the frontend

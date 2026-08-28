@@ -31,6 +31,8 @@ import {
   loadLayout,
   saveLayout,
   layoutStorageKey,
+  resetAllLayouts,
+  selectLayoutKeys,
   MIN_FLOAT_H,
   MIN_FLOAT_W,
   type CampaignLayout,
@@ -51,6 +53,13 @@ const store = new Map<string, string>()
   getItem: (k: string) => store.get(k) ?? null,
   setItem: (k: string, v: string) => void store.set(k, v),
   removeItem: (k: string) => void store.delete(k),
+  // length/key(i) are the enumeration half of the Storage API, used by
+  // resetAllLayouts. Stubbed as getters over the same Map so the harness and a
+  // real browser cannot diverge.
+  get length() {
+    return store.size
+  },
+  key: (i: number) => [...store.keys()][i] ?? null,
 }
 
 let passed = 0
@@ -318,6 +327,44 @@ const restored = loadLayout(CID, DM_TABS)
 check('a saved arrangement round-trips exactly', JSON.stringify(restored) === JSON.stringify(arranged), restored)
 check('...and stacking order is preserved', restored.floating[1].key === 'npcs')
 check('saveLayout stamps the current schema version', JSON.parse(store.get(KEY)!).v === LAYOUT_VERSION)
+
+// ---------------------------------------------------------------------------
+// resetAllLayouts — the global "reset every campaign's layout" escape hatch
+//
+// The risk here is not the deletion, it is the MATCHING: this runs across the
+// user's entire localStorage, so a pattern one character too greedy would take
+// out their tab selections, their rail-side preference, or another app's data
+// on the same origin.
+// ---------------------------------------------------------------------------
+
+console.log('\nresetAllLayouts — clears arrangements and nothing else')
+
+store.clear()
+saveLayout('aaaa-1111', arranged)
+saveLayout('bbbb-2222', arranged)
+store.set('campaign:aaaa-1111:activeTab', 'npcs')
+store.set('campaign:bbbb-2222:view', 'overview')
+store.set('prefs:railSide', 'left')
+store.set('some-other-app:layout', 'keep me')
+
+check('selects only exact campaign layout keys',
+  JSON.stringify(selectLayoutKeys([...store.keys()]).sort())
+    === JSON.stringify(['campaign:aaaa-1111:layout', 'campaign:bbbb-2222:layout']))
+
+const removed = resetAllLayouts()
+check('reports how many layouts it removed', removed === 2, removed)
+check('both campaign layouts are gone',
+  !store.has('campaign:aaaa-1111:layout') && !store.has('campaign:bbbb-2222:layout'))
+check('activeTab survives — "where was I" is not "how was it arranged"',
+  store.get('campaign:aaaa-1111:activeTab') === 'npcs')
+check('the per-campaign view survives', store.get('campaign:bbbb-2222:view') === 'overview')
+check('the account-level rail-side preference survives',
+  store.get('prefs:railSide') === 'left')
+check('an unrelated key containing "layout" is untouched',
+  store.get('some-other-app:layout') === 'keep me')
+check('a campaign reloads to the DEFAULT layout afterwards',
+  JSON.stringify(loadLayout('aaaa-1111', DM_TABS)) === JSON.stringify(DEFAULT_LAYOUT))
+check('running it again is a harmless no-op', resetAllLayouts() === 0)
 
 // ---------------------------------------------------------------------------
 

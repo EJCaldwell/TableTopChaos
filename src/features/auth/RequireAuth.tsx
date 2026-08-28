@@ -10,6 +10,7 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from './AuthProvider'
 import { LegalAcceptanceBanner } from '../legal/LegalAcceptanceBanner'
+import { ProvisionalUsernameBanner } from '../profile/ProvisionalUsernameBanner'
 
 export function RequireAuth() {
   const { session, loading } = useAuth()
@@ -38,6 +39,10 @@ export function RequireAuth() {
   return (
     <>
       <LegalAcceptanceBanner />
+      {/* Asks users whose username was generated for them (backfilled by 0039,
+          or assigned at signup because their choice was taken) to pick their
+          own. Renders nothing for everyone else. */}
+      <ProvisionalUsernameBanner />
       <Outlet />
     </>
   )

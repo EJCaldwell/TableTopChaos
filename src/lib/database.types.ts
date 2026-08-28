@@ -850,32 +850,43 @@ export type Database = {
         // legal_* columns added by migration 0035 (Phase 7.2) and written here
         // by hand — the generator targets the old hosted project, which is no
         // longer where migrations are applied.
+        //
+        // 0039 renamed display_name → username and made it NOT NULL: it is
+        // required, globally unique (case-insensitively) and never absent, which
+        // is why `username: string` rather than `string | null`. It is absent
+        // from Insert on purpose — rows are created solely by the
+        // handle_new_user trigger, never by a client.
         Row: {
           avatar_url: string | null
           created_at: string
-          display_name: string | null
           id: string
           legal_accepted_at: string | null
           legal_version_accepted: string | null
           updated_at: string
+          username: string
+          username_is_provisional: boolean
         }
         Insert: {
           avatar_url?: string | null
           created_at?: string
-          display_name?: string | null
           id: string
           legal_accepted_at?: string | null
           legal_version_accepted?: string | null
           updated_at?: string
+          username: string
+          username_is_provisional?: boolean
         }
         Update: {
           avatar_url?: string | null
           created_at?: string
-          display_name?: string | null
           id?: string
           legal_accepted_at?: string | null
           legal_version_accepted?: string | null
           updated_at?: string
+          username?: string
+          // Clients may clear this when the user chooses a real name; nothing
+          // else should ever set it true.
+          username_is_provisional?: boolean
         }
         Relationships: []
       }
@@ -1277,6 +1288,17 @@ export type Database = {
       //
       // Always returns exactly one row; read_only_since is null when the
       // campaign is writable. Raises insufficient_privilege for non-members.
+      // Migration 0041 (Phase 7.4.2). Who plays what, for ONE campaign, to
+      // members of it. Returns owner_id + character NAME only — it does NOT
+      // widen private.can_read_character, so sheets, inventory, journals and
+      // lore stay owner-or-DM. Raises insufficient_privilege for non-members.
+      campaign_character_names: {
+        Args: { p_campaign_id: string }
+        Returns: {
+          user_id: string
+          character_name: string
+        }[]
+      }
       campaign_lapse_status: {
         Args: { p_campaign_id: string }
         Returns: {

@@ -143,12 +143,18 @@ Deno.serve(async (req: Request) => {
     const scheduleSessions = await all('schedule_sessions', 'campaign_id', campaignId)
     const scheduleRsvps = await allIn('schedule_rsvps', 'session_id', scheduleSessions.map((s) => s.id))
 
-    // Resolve member auth ids → display names (never leak auth identities).
+    // Resolve member auth ids → usernames (never leak auth identities).
+    //
+    // The column was renamed display_name → username in migration 0039. The
+    // EXPORT KEY stays `display_name` on purpose: archives already downloaded by
+    // users contain that key, and import-campaign reads it. Renaming it would
+    // silently break every existing archive for the sake of matching a column
+    // name that nobody reading a backup can see.
     const profileIds = members.map((m) => m.user_id)
     const { data: profiles } = profileIds.length
-      ? await svc.from('profiles').select('id, display_name').in('id', profileIds)
-      : { data: [] as { id: string; display_name: string }[] }
-    const nameById = new Map((profiles ?? []).map((p) => [p.id, p.display_name]))
+      ? await svc.from('profiles').select('id, username').in('id', profileIds)
+      : { data: [] as { id: string; username: string }[] }
+    const nameById = new Map((profiles ?? []).map((p) => [p.id, p.username]))
     const exportedMembers = members.map((m) => ({
       display_name: nameById.get(m.user_id) ?? 'Unknown',
       role: m.role,

@@ -37,7 +37,8 @@ export function PartyPanel({ campaignId }: { campaignId: string }) {
   // owner_id → display name, for labelling whose character each one is.
   const nameByUser = useMemo(() => {
     const m = new Map<string, string>()
-    for (const mem of members) m.set(mem.userId, mem.displayName ?? 'Unnamed player')
+    // Usernames are required since 0039, so there is no nameless case to cover.
+    for (const mem of members) m.set(mem.userId, mem.username)
     return m
   }, [members])
 

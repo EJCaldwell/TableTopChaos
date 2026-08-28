@@ -13,8 +13,11 @@
  *     members it has, so the blast radius is concrete at the moment of deciding.
  *
  *  2. **Type-your-email to confirm**, not a second "are you sure" button. Email
- *     rather than display name because display_name is nullable and non-unique,
- *     so it cannot be a reliable token. The Edge Function re-checks it
+ *     rather than the username: the username is now unique and required (0039),
+ *     so it would work as a token — but it is also the thing shown to everyone
+ *     in your campaigns, so it is the string a bystander is most likely to know
+ *     and the least likely to make anyone pause. The email is private, and
+ *     typing it is a moment of deliberation. The Edge Function re-checks it
  *     server-side; this is a guard against mistakes, not a security boundary.
  *
  *  3. **Export is offered first, not mentioned afterwards.** By the time someone

@@ -221,16 +221,16 @@ These framed the whole plan and should not be quietly reversed:
   - [x] 7.2.1 — Backend *(migration 0035: versioned acceptance + server-stamped RPC)*
   - [x] 7.2.2 — Web UI *(3 policy pages, signup consent, re-prompt banner, profile Legal section)*
   - [~] 7.2.3 — QA *(automated PASS; content accuracy reviewed; browser pass deferred until unblocked)*
-- [ ] 7.3 — Profile & account management
-  - [ ] 7.3.1 — Web UI
-  - [ ] 7.3.2 — QA
-- [ ] 7.4 — Usernames (unique, required)
-  - [ ] 7.4.1 — Backend
-  - [ ] 7.4.2 — Web UI
-  - [ ] 7.4.3 — QA
+- [x] 7.3 — Profile & account management
+  - [x] 7.3.1 — Web UI *(change password + change email from Profile, both re-verifying the current password; avatar upload via `upload-media` with `scope: 'avatar'` (migration 0038, 5 MB cap); global reset-all-layouts)*
+  - [x] 7.3.2 — QA *(**PASS — all areas, 2026-08-27.** Automated: build clean, `qa:checks` **62/62** (was 53). Server-side: avatar access control 6/6 (stranger and anon denied; no regression to campaign media), deployed upload path 7/7 (**GPS-tagged JPEG → 0 EXIF tags out**), zero orphaned objects after three replacements, 5 MB cap enforced while campaign media keeps its 10 MB. Manual A/B/D PASS as reported by the user; C3 initially FAILED showing `{}` — a `@supabase/auth-js` defect where any 5xx is `JSON.stringify(Response)` — fixed with `authErrors.ts` and swept across all five auth surfaces. **NOT RUN:** C5 (email-change confirmation) needs a deliverable address, and D6 is skipped by design — nothing renders co-member avatars yet)*
+- [~] 7.4 — Usernames (unique, required) *(backend + UI done; QA partial — see below)*
+  - [x] 7.4.1 — Backend *(migration **0039**: display_name → username, backfill, `unique (lower(username))`, 3–20 char + charset + reserved-word CHECK, and a signup allocator that never fails on a collision. **0040** fixed two allocator defects found before any signup used them. **0041** exposes character NAMES to campaign members without widening `can_read_character`. **0042/0043** short-name exceptions (`EJ`, `QA`). **0044–0047** the language filter: trigger-based, table-driven, matched on letters only.)*
+  - [x] 7.4.2 — Web UI *(signup + Profile take a username with 23505 handled as a field error; `ProvisionalUsernameBanner` for generated names; roster reads `username (Character)`; every "Unnamed adventurer" fallback deleted; sweep enforced by the type layer)*
+  - [~] 7.4.3 — QA *(**server-side PASS**: backfill 5/5, constraint matrix 8/8, allocator 9 cases ×2, 3 real signups through GoTrue, character-name exposure 4 access + 7 privacy assertions, language filter 30/30 both directions. **Data layer verified** for browser areas A/C/D — roster composes identically for DM and player, no fallback string reachable. **NOT verified: the rendering itself.** Area E (signup form) BLOCKED on the Resend 550. See QA/7.4_tests/)*
 
 ### Phase 8: Automated testing & CI
-- [ ] 8.1 — Test infrastructure + unit/component tests (Vitest + RTL)
+- [x] 8.1 — Test infrastructure + unit/component tests (Vitest + RTL) *(**129 tests, 6 files, all passing.** Vitest 3 + jsdom + RTL + v8 coverage; `npm test` / `test:watch` / `coverage`. 100% statements on dice, HP/death-saves, safe-markdown and username rules — three of those EXTRACTED from components to be testable, with dice randomness injected so totals are asserted exactly. Component test for the campaign roster **closes 7.4's rendering gap**: `username (Character)`, identical for player and DM, no "Unnamed adventurer", survives a failed character lookup. Tests are type-checked by `tsc -b`, which caught two unsound casts Vitest ran green. Whole-app coverage 2.48%, reported honestly. **Not done:** `extractNpcHp`, initiative sort, import id-remap; every other panel)*
 - [ ] 8.2 — RLS / database policy tests
 - [ ] 8.3 — End-to-end smoke tests (Playwright) + CI pipeline
 
@@ -1318,6 +1318,44 @@ gap rather than hiding it, so the UI and this list agree.
   upload goes through the same validation as campaign media; reset-all-layouts
   clears every campaign's arrangement and nothing else.
 
+**Status 2026-08-27 — BUILT; server-side QA PASS, manual QA awaiting the user.**
+See [QA/7.3_tests/](QA/7.3_tests/).
+
+All four items are built: password change, email change, avatar upload, and
+global reset-all-layouts. `npm run build` clean; `npm run qa:checks` **62/62**
+(was 53). Migration **0038_avatar_storage.sql** applied.
+
+Decisions worth not re-deriving:
+
+- **Both credential changes require the current password.** supabase-js will
+  change either from a live session alone, so a borrowed session would otherwise
+  be enough to take an account over permanently — change the email, change the
+  password, and the real owner has no route back. Re-verification costs one
+  field.
+- **Email change reports "confirmation sent", never "saved".** The address does
+  not change until the link is opened; a form claiming otherwise would leave
+  someone believing their recovery route had moved when it had not.
+- **The avatar goes through `upload-media` with `scope: 'avatar'`**, not a second
+  function — so it inherits magic-byte sniffing, the pixel-count guard, EXIF/GPS
+  stripping, WebP re-encode and the moderation hook. Verified with a real
+  GPS-tagged fixture: 0 EXIF tags out. It skips membership, the read-only lock
+  and the storage cap (an avatar belongs to a person, not a campaign), and the
+  server derives the storage path from the JWT so it can only ever write your
+  own.
+- **`profiles.avatar_url` holds a storage PATH, not a URL** — the bucket is
+  private, so any URL would expire in an hour. Migration 0038 adds the read
+  policy: **you, and anyone you share a campaign with** — matching the profile
+  row's own visibility from 0004.
+- **A new random filename per upload**, with the old object deleted only *after*
+  the profile points at the new one. A fixed path overwritten in place keeps
+  serving the old image from cache.
+
+**Not claimed:** nothing renders avatars outside your own Profile yet (roster,
+party view and header are unchanged), and there is no "remove avatar" control.
+**Email change cannot be tested end to end** until the Resend sending domain is
+verified — the confirmation goes to the new address, and Resend currently
+delivers only to the account owner's.
+
 ---
 
 ### Subphase 7.4: Usernames (unique, required)
@@ -1407,6 +1445,101 @@ accounts means forcing a rename on strangers. Cheap now, rude later.
 - **No new enumeration surface**: confirm there is still no endpoint that reveals
   whether an arbitrary username exists to a non-co-member.
 
+**Status 2026-08-27 — BUILT; server-side QA PASS, manual QA awaiting the user.**
+See [QA/7.4_tests/](QA/7.4_tests/).
+
+Migrations **0039** (rename + backfill + constraints + signup trigger), **0040**
+(allocator fixes), **0041** (member-readable character names). Build clean;
+`qa:checks` 62/62.
+
+Decisions worth not re-deriving:
+
+- **Signup can never fail on a collision.** The profile row is created by a
+  trigger on `auth.users`, so a unique violation there would abort the INSERT and
+  GoTrue would return an opaque *"Database error saving new user"* — a signup
+  broken by a race the user can neither see nor fix. `private.claim_username`
+  therefore always succeeds: it grants the requested name if free, otherwise a
+  suffixed variant flagged `username_is_provisional`, and the UI says so
+  afterwards.
+- **`username_is_provisional`** covers both backfilled accounts and taken-at-
+  signup ones, and drives a non-dismissible banner (`ProvisionalUsernameBanner`)
+  that follows the user until they rename. Not a hard block: their name is legal
+  and working, and locking someone out of a session over a cosmetic handle would
+  be worse than the problem.
+- **No availability endpoint, deliberately.** Collisions are discovered by
+  attempting the write and reading SQLSTATE 23505. This keeps the accepted narrow
+  oracle (one authenticated probe per write) instead of a public
+  `username_available()` that would let anyone enumerate accounts.
+- **Uniqueness is `unique (lower(username))`**, so `alex` and `Alex` cannot
+  coexist — while the column still stores the casing the user typed, and
+  recasing your OWN name still works.
+- **The roster pairing took option 2**, a function returning `owner_id` + name
+  only. Option 3 (widening `can_read_character`) was rejected: it also gates
+  `sheet_fields`, inventory and lore, so it would have exposed a player's entire
+  sheet to put a name on a roster line. QA asserts all seven character-scoped
+  tables stay hidden.
+
+**Two allocator defects were found and fixed before any signup used them**
+(0040): a reserved word was reused as the suffix base, so `admin` was granted
+`admin2` — the list stopped the literal string and nothing else; and names under
+three characters were discarded to `player` rather than extended to `ab2`.
+
+**Length: 3–20 characters**, both enforced server-side. Migration **0042** adds a
+named exception list to the MINIMUM only — `['ej', 'qa']` after 0043 — so the
+owner's handle and the QA fixture can be two characters while the floor stays at
+3 for everyone else. **Watch the size of that list:** two entries is a list of
+exceptions, ten is a 2-character minimum with extra steps, and at that point
+lowering the floor is the honest move. The list
+grants legality, not ownership — a listed name is protected only by whoever holds
+it plus the unique index, so if that account renames away it is claimable by
+anyone. Move it to `is_reserved_username` to block it outright.
+
+**Language filter (0044/0045, owner request 2026-08-27).** Profanity and slurs are
+blocked by a TRIGGER, not the CHECK constraint — a CHECK must be immutable and so
+cannot read a table, and a word list is exactly the thing that needs editing
+without a deploy. Both lists (`private.blocked_username_terms`,
+`private.allowed_username_terms`) are tables; adding a term is an INSERT.
+Terms carry a `match_mode`: substring for words with no innocent use, exact for
+short ones that appear inside ordinary words.
+
+**Scope narrowed by the owner (0046):** *"I just don't want swears out in the
+open. If people get creative with them it's fine."* 0044 folded leetspeak, so
+`sh1t` / `$hit` / `f_u_c_k` matched the plain word; that is chasing evasion, which
+is explicitly out of scope — and every fold is also a new source of false
+positives. **Matching is on LETTERS ONLY (0047):** case folded, with digits, underscores and
+punctuation stripped, then compared. So `f_u_c_k`, `F.U.C.K` and `Fuck123` are all
+blocked, while `sh1t` → `sht` passes **by design** — do not read that as a bug and
+"fix" it back.
+
+The cost of stripping separators is that it JOINS words that were apart, and the
+join can spell something the name never contained: **`Magic_Untold` →
+`magicuntold` → contains "cunt"**. Worse than the Scunthorpe case, because it
+cannot be predicted by reading the name — both words are innocent and only their
+junction is not. Accepted consequence, mitigated by the allowlist being a table:
+a false positive is one INSERT and no deploy.
+The message is *"That username isn't allowed"* rather than "not available", since
+the latter reads like a collision and sends people trying variations of a name
+that will never be accepted.
+
+**Testing it against names that should PASS is what made it usable.** The first
+run blocked `Scunthorpe` and `Shitake` — the literal Scunthorpe problem, on day
+one — and reviewing the rest of the list found `rape` inside Grape, `coon` inside
+Raccoon/Tycoon, `spic` inside Spicy/Suspicion, and `nazi` inside the given names
+Nazir/Nazia/Shahnaz. Fixed by demoting three to exact and allowlisting the
+remainder. 45/45 after.
+
+Deliberately **not mirrored client-side**: shipping the list to the browser
+publishes it. And a blocked request at signup is treated like a reserved one —
+the allocator falls through to an email-derived name rather than failing the
+signup.
+
+**Still best-effort:** `Scunthorpe_Fan` is blocked (the allowlist is exact-match),
+and no word list survives a determined user. The real remedy is that the owner can
+rename any account.
+
+**Not claimed:** renames are not tracked or rate-limited, and a freed username is
+immediately reclaimable.
+
 ---
 
 ## Phase 8: Automated testing & CI
@@ -1424,6 +1557,40 @@ layer; this adds the automated layer beneath them.)
   import, the realtime `mergeById` helper. Component tests for a couple of
   high-traffic panels (autosave indicator, a sheet section editor).
 - QA: `npm test` runs green locally; coverage report generated.
+
+**Status 2026-08-27 — DONE for the infrastructure and the first tranche of
+tests.** See [QA/8.1_tests/](QA/8.1_tests/). **129 tests, 6 files, all passing**;
+`npm test` / `test:watch` / `coverage` wired; build and `qa:checks` still clean.
+
+Covered at 100% statements: `dm/dice.ts`, `status/hp.ts`, `lore/safeMarkdown.ts`,
+`profile/username.ts`. Plus `mergeById` and a component test for the campaign
+roster.
+
+Decisions worth not re-deriving:
+
+- **Three modules were EXTRACTED to be testable**, not for tidiness: `rollNotation`
+  and the HP/death-save arithmetic were trapped inside components. Dice randomness
+  is now **injected**, so tests assert exact totals — a range assertion passes just
+  as happily when the code drops a modifier.
+- **Tests live in `src/` and are type-checked by `tsc -b`.** That caught two
+  unsound casts Vitest had run green, and means a test asserting against a stale
+  shape fails the build instead of rotting.
+- **`globals: false` silently disables RTL's auto-cleanup** (it hooks a global
+  `afterEach`). Cleanup is registered explicitly in `src/test/setup.ts`. The
+  failure mode was tests passing against stale renders — false confidence, not a
+  visible error.
+- **Whole-app coverage is 2.48% and reported honestly.** Narrowing the coverage
+  scope to only tested files would flatter the number and make it useless for
+  tracking 8.2/8.3.
+
+**This closes Phase 7.4's rendering gap:** the roster is now asserted in a real
+DOM to read `username (Character)` and to render **identically for a player and
+the DM** — the point of migration 0041 — plus the "Unnamed adventurer" fallback
+never appearing and usernames surviving a failed character lookup.
+
+**Not done:** `extractNpcHp`, initiative sort and the import id-remap are still
+inside their components; every other panel is untested. Anything needing a live
+Supabase connection is 8.2; real browser journeys are 8.3.
 
 ### Subphase 8.2: RLS / database policy tests
 - A **pgTAP (or SQL) harness** that seeds a DM + player + non-member + anon and

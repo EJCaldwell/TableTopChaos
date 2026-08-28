@@ -129,13 +129,13 @@ export function SchedulePanel({ campaignId, currentUserId, isDm }: {
     }
     const row = e.new
     if (!nameCache.current.has(row.user_id)) {
-      const { data } = await supabase.from('profiles').select('display_name').eq('id', row.user_id).maybeSingle()
-      nameCache.current.set(row.user_id, data?.display_name ?? null)
+      const { data } = await supabase.from('profiles').select('username').eq('id', row.user_id).maybeSingle()
+      nameCache.current.set(row.user_id, data?.username ?? null)
     }
     const name = nameCache.current.get(row.user_id) ?? null
     setRsvps((prev) => {
       const idx = prev.findIndex((r) => r.session_id === row.session_id && r.user_id === row.user_id)
-      const hydrated: RsvpWithName = { ...row, display_name: prev[idx]?.display_name ?? name }
+      const hydrated: RsvpWithName = { ...row, username: prev[idx]?.username ?? name }
       if (idx === -1) return [...prev, hydrated]
       const copy = prev.slice()
       copy[idx] = hydrated
@@ -218,7 +218,7 @@ export function SchedulePanel({ campaignId, currentUserId, isDm }: {
       if (mine) return prev.map((r) => (r === mine ? { ...r, status } : r))
       return [...prev, {
         id: `temp-${sessionId}`, session_id: sessionId, user_id: currentUserId, status,
-        created_at: '', updated_at: '', display_name: 'You',
+        created_at: '', updated_at: '', username: 'You',
       } as RsvpWithName]
     })
     await runSave(() => setRsvp(sessionId, currentUserId, status), `rsvp-${sessionId}`).catch(() => void refresh())
@@ -287,7 +287,7 @@ export function SchedulePanel({ campaignId, currentUserId, isDm }: {
           {/* Tally. */}
           <div style={{ display: 'flex', gap: 'var(--space-4)', flexWrap: 'wrap', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
             {(['yes', 'maybe', 'no'] as RsvpStatus[]).map((st) => {
-              const names = tally(st).map((r) => r.display_name || 'Someone')
+              const names = tally(st).map((r) => r.username || 'Someone')
         return (
                 <span key={st} title={names.join(', ')}>
                   <strong style={{ color: RSVP_COLORS[st] }}>{RSVP_LABELS[st]}: {names.length}</strong>

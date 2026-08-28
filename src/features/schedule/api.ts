@@ -14,9 +14,9 @@ export type ScheduleRsvp = Database['public']['Tables']['schedule_rsvps']['Row']
 /** The three availability states. */
 export type RsvpStatus = 'yes' | 'maybe' | 'no'
 
-/** An rsvp joined with the responder's display name (for the tally list). */
+/** An rsvp joined with the responder's username (for the tally list). */
 export interface RsvpWithName extends ScheduleRsvp {
-  display_name: string | null
+  username: string | null
 }
 
 /**
@@ -71,10 +71,10 @@ export async function deleteSession(id: string): Promise<void> {
  */
 export async function listRsvps(sessionIds: string[]): Promise<RsvpWithName[]> {
   if (sessionIds.length === 0) return []
-  // NOTE: we can't use a PostgREST embed (profiles(display_name)) here because
+  // NOTE: we can't use a PostgREST embed (profiles(username)) here because
   // schedule_rsvps.user_id references auth.users, not profiles — there's no FK
   // relationship for PostgREST to resolve, so an embed errors. Instead fetch the
-  // rsvps, then resolve display names from profiles in a second query.
+  // rsvps, then resolve usernames from profiles in a second query.
   const { data, error } = await supabase
     .from('schedule_rsvps')
     .select('*')
@@ -87,11 +87,15 @@ export async function listRsvps(sessionIds: string[]): Promise<RsvpWithName[]> {
   if (userIds.length > 0) {
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, display_name')
+      .select('id, username')
       .in('id', userIds)
-    for (const p of profiles ?? []) names.set(p.id, p.display_name)
+    for (const p of profiles ?? []) names.set(p.id, p.username)
   }
-  return rows.map((r) => ({ ...r, display_name: names.get(r.user_id) ?? null }))
+  // Still nullable here, unlike the roster: an RSVP's user_id points at
+  // auth.users, so a row can outlive the profile it names (and RLS may withhold
+  // a profile the caller does not share a campaign with). The panel renders
+  // "Someone" in that case.
+  return rows.map((r) => ({ ...r, username: names.get(r.user_id) ?? null }))
 }
 
 /**

@@ -187,3 +187,83 @@ export async function setMediaStatus(
   })
   if (error) throw new Error(error.message)
 }
+
+/**
+ * Largest file accepted for an avatar, checked before upload.
+ *
+ * Must match AVATAR_MAX_BYTES in supabase/functions/upload-media — the server is
+ * the authority, this is only for instant feedback. Note the two measure
+ * different things and that is deliberate: the client checks the file the user
+ * PICKED (so the message names a number they can see in their file manager),
+ * while the server checks what arrived after downscaling, which is always
+ * smaller. So a file passing here can never be rejected for size there.
+ */
+export const MAX_AVATAR_BYTES = 5 * 1024 * 1024
+
+/** Human form of {@link MAX_AVATAR_BYTES}, for UI copy and error messages. */
+export const MAX_AVATAR_LABEL = '5 MB'
+
+/** Result of an avatar upload (Phase 7.3.1). */
+export interface AvatarUploadResult {
+  /** Storage path now recorded on profiles.avatar_url. */
+  avatarPath: string
+  /** Short-lived signed URL so the caller can render it immediately. */
+  avatarUrl: string | null
+}
+
+/**
+ * Uploads the signed-in user's profile avatar.
+ *
+ * Edge Function: `upload-media` (POST multipart { scope: 'avatar', file }).
+ *  - Deliberately the SAME function as campaign media, so an avatar gets the
+ *    identical gauntlet: magic-byte type check, pixel-count guard, EXIF/GPS
+ *    stripping, WebP re-encode, moderation hook. A separate path would be a
+ *    second place to forget one of those — most dangerously the EXIF strip,
+ *    which on a phone photo means publishing where it was taken.
+ *  - No campaignId: an avatar belongs to a person. Membership, the read-only
+ *    lock and the storage cap are all skipped server-side, which is why the
+ *    server builds the storage path from the caller's JWT rather than from
+ *    anything in this request.
+ *  - The server also updates `profiles.avatar_url` and deletes the previous
+ *    object, so callers do not write the profile row themselves.
+ *
+ * @param file - The chosen image (PNG/JPEG/WebP/GIF, <= 10 MB).
+ * @returns The new storage path and a signed URL for immediate display.
+ * @throws With the server's message on any rejection (type, size, moderation).
+ */
+export async function uploadAvatar(file: File): Promise<AvatarUploadResult> {
+  // Size-check the chosen file BEFORE downscaling. Doing it after would let a
+  // 60 MB file be decoded and re-encoded in the browser first — the slow, memory
+  // hungry part — only to be told it was too big all along.
+  if (file.size > MAX_AVATAR_BYTES) {
+    throw new Error(`That image is too large for an avatar (max ${MAX_AVATAR_LABEL}).`)
+  }
+
+  // Downscale in the browser first, exactly as uploadMedia does. The server
+  // rejects any source above MAX_PIXELS (a memory guard — ImageMagick-WASM OOMs
+  // the worker on large rasters), and a modern phone photo is comfortably over
+  // it. Without this step, a normal camera picture fails with a size error.
+  const prepared = await downscaleIfNeeded(file)
+
+  const form = new FormData()
+  form.append('scope', 'avatar')
+  form.append('file', prepared)
+
+  const { data, error } = await supabase.functions.invoke<AvatarUploadResult>('upload-media', {
+    body: form,
+  })
+  if (error) {
+    // On a non-2xx, supabase-js exposes the raw Response on error.context; pull
+    // our JSON { error } message out of it rather than the generic wrapper text.
+    let message = error.message
+    try {
+      const body = await (error as unknown as { context?: Response }).context?.json?.()
+      if (body && typeof body.error === 'string') message = body.error
+    } catch {
+      /* fall back to error.message */
+    }
+    throw new Error(message)
+  }
+  if (!data) throw new Error('Upload failed.')
+  return data
+}
