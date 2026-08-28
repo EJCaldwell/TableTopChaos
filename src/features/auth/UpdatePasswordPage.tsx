@@ -10,6 +10,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { authErrorMessage } from './authErrors'
 import { AuthCard, Button, FormError, TextField } from '../../components/ui'
 
 export function UpdatePasswordPage() {
@@ -31,7 +32,15 @@ export function UpdatePasswordPage() {
     const { error } = await supabase.auth.updateUser({ password })
     setBusy(false)
     if (error) {
-      setError(error.message)
+      // If this fails the old password is still live, which is the one thing
+      // the user needs to know before they try signing in with the new one.
+      setError(
+        authErrorMessage(
+          error,
+          'We could not set your new password. It has NOT been changed — your ' +
+            'old password still works, and the reset link may have expired.',
+        ),
+      )
       return
     }
     navigate('/', { replace: true })

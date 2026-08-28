@@ -3,12 +3,32 @@
  * encounter images, handouts). Phase 1.6.1.
  *
  * Contract (called by the web app via supabase.functions.invoke with FormData):
+ *
+ *   CAMPAIGN MEDIA (the original purpose):
  *   POST multipart/form-data { campaignId: string, file: File }
  *   → 200 { asset: { id, campaign_id, storage_path, thumb_path, mime, byte_size,
  *                    width, height, moderation_status },
  *           originalUrl: string, thumbUrl: string }   (short-lived signed URLs)
  *   → 4xx { error } — not signed in / not a member / read-only / bad type /
  *                     too large / over storage cap / blocked by moderation
+ *
+ *   PROFILE AVATAR (Phase 7.3.1):
+ *   POST multipart/form-data { scope: 'avatar', file: File }   (no campaignId)
+ *   → 200 { avatarPath: string, avatarUrl: string }
+ *   → 4xx { error } — not signed in / bad type / over 5 MB / blocked
+ *
+ * WHY THE AVATAR SHARES THIS FUNCTION rather than getting its own. Every byte a
+ * user can put in front of another user must pass the same gauntlet: magic-byte
+ * type sniffing, the pixel-count guard, EXIF/GPS stripping, re-encoding, and the
+ * moderation hook. A second upload path would be a second place for one of those
+ * to be forgotten — and the one most easily forgotten is EXIF stripping, which
+ * on a phone photo means publishing the coordinates it was taken at.
+ *
+ * What the avatar branch deliberately SKIPS, and why: campaign membership (an
+ * avatar belongs to a person, not a campaign), the read-only lock (freezing a
+ * campaign must not stop you fixing your own profile picture), and the storage
+ * cap (it is a per-campaign budget, and one small image per user is naturally
+ * bounded — each upload replaces the previous).
  *
  * Pipeline (all server-side, synchronous — nothing goes "live" until it passes):
  *   1. AuthN: the caller's JWT identifies them (verify_jwt=false at the edge, we
@@ -43,6 +63,25 @@ const MAX_BYTES = 10 * 1024 * 1024
 const MAX_DIM = 2048
 /** Thumbnail box (fits within, preserves aspect). */
 const THUMB_DIM = 320
+/**
+ * Avatar box. Deliberately small: an avatar is only ever rendered at roster or
+ * header size, and storing a 2048px one would mean shipping it at that size to
+ * every co-member on every page load.
+ */
+const AVATAR_DIM = 256
+/**
+ * Per-file size cap for AVATARS — a fifth of the 10 MB campaign-media limit.
+ *
+ * Campaign media is content the campaign is for (maps, handouts) and is charged
+ * against a per-campaign storage cap. An avatar is neither: it is one small
+ * image per person, outside any cap, so nothing else bounds how much a user can
+ * push through this path. A tighter ceiling is what makes "no storage cap on
+ * avatars" safe rather than an open door.
+ *
+ * 5 MB is generous for a 256px output — comfortably above a typical phone photo
+ * — while still rejecting an absurd upload before it is decoded.
+ */
+const AVATAR_MAX_BYTES = 5 * 1024 * 1024
 
 /**
  * Hard ceiling on SOURCE pixel count, enforced from the file header BEFORE
@@ -190,6 +229,55 @@ function processImage(input: Uint8Array): Processed {
 }
 
 /**
+ * Strips metadata and re-encodes a single square-ish avatar to WebP.
+ *
+ * Separate from processImage rather than a flag on it: processImage is the
+ * heavily-tested campaign-media path, and an avatar needs exactly one output
+ * instead of an original-plus-thumbnail pair. A branch inside it would make both
+ * callers harder to reason about for the sake of avoiding twelve lines.
+ *
+ * `strip()` is the load-bearing call — it is what removes EXIF, including the
+ * GPS coordinates a phone photo carries. Re-encoding also guarantees the stored
+ * bytes really are an image, not a payload wearing an image's extension.
+ *
+ * @param input - Validated source bytes (type and pixel count already checked).
+ * @returns WebP bytes and the final dimensions.
+ * @throws If ImageMagick produces no output, or output that is not WebP.
+ */
+function processAvatar(input: Uint8Array): { bytes: Uint8Array; width: number; height: number } {
+  let out: Uint8Array | null = null
+  let width = 0
+  let height = 0
+
+  ImageMagick.read(input, (img) => {
+    img.strip()
+    // "Fit within", preserving aspect — never upscales a small source, and
+    // never distorts a non-square one. Cropping to a square is the client's
+    // business (CSS), not something to bake irreversibly into the stored file.
+    if (Math.max(img.width, img.height) > AVATAR_DIM) {
+      img.resize(new MagickGeometry(AVATAR_DIM, AVATAR_DIM))
+    }
+    width = img.width
+    height = img.height
+    img.write(MagickFormat.WebP, (data) => {
+      out = data.slice() // copy: the view is only valid inside the callback
+    })
+  })
+
+  if (!out) throw new Error('avatar processing produced no output')
+  // Same guard as processImage: ImageMagick silently writes the SOURCE format
+  // if the format argument is falsy, which would store bytes that lie about
+  // their type. Fail loudly rather than storing a mislabeled object.
+  const b = out as Uint8Array
+  const isWebp =
+    b.length >= 12 &&
+    b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+    b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50
+  if (!isWebp) throw new Error('avatar re-encode did not produce WebP output')
+  return { bytes: b, width, height }
+}
+
+/**
  * Moderation hook — the pluggable content-safety seam (1.6). Today it is a
  * pass-through (returns 'approved'): automated provider integration is deferred,
  * and the report-and-takedown flow (report_media / set_media_status) covers
@@ -217,36 +305,64 @@ Deno.serve(async (req) => {
     const form = await req.formData().catch(() => null)
     const campaignId = form?.get('campaignId')
     const file = form?.get('file')
-    if (typeof campaignId !== 'string' || !(file instanceof File)) {
+    // Avatar mode is opt-in by an explicit `scope` field, NOT inferred from a
+    // missing campaignId. Inferring it would turn a client bug that drops the
+    // campaign id into a silent avatar overwrite instead of a clear 400.
+    const isAvatar = form?.get('scope') === 'avatar'
+
+    if (!(file instanceof File)) {
+      return jsonResponse({ error: 'An image file is required.' }, 400)
+    }
+    if (!isAvatar && typeof campaignId !== 'string') {
       return jsonResponse({ error: 'campaignId and an image file are required.' }, 400)
     }
 
     const admin = serviceClient()
 
     // --- 2. AuthZ: caller is a member, and the campaign is writable. ---
-    const { data: membership } = await admin
-      .from('campaign_members')
-      .select('user_id')
-      .eq('campaign_id', campaignId)
-      .eq('user_id', user.id)
-      .maybeSingle()
-    if (!membership) {
-      return jsonResponse({ error: 'You are not a member of this campaign.' }, 403)
-    }
+    // Skipped entirely for avatars: there is no campaign to be a member of, and
+    // a read-only campaign must not stop you fixing your own profile picture.
+    // Identity is still established from the JWT above, and an avatar can only
+    // ever be written to the caller's OWN path (see step 7).
+    let ent: { is_active: boolean; storage_cap: number | null; storage_used: number } | null = null
+    if (!isAvatar) {
+      const { data: membership } = await admin
+        .from('campaign_members')
+        .select('user_id')
+        .eq('campaign_id', campaignId as string)
+        .eq('user_id', user.id)
+        .maybeSingle()
+      if (!membership) {
+        return jsonResponse({ error: 'You are not a member of this campaign.' }, 403)
+      }
 
-    const { data: ent, error: entErr } = await admin
-      .rpc('campaign_entitlements', { p_campaign_id: campaignId })
-      .single()
-    if (entErr || !ent) return jsonResponse({ error: 'Could not check campaign entitlements.' }, 500)
-    if (!ent.is_active) {
-      return jsonResponse({ error: 'This campaign is read-only; uploads are paused.' }, 403)
+      const { data: e, error: entErr } = await admin
+        .rpc('campaign_entitlements', { p_campaign_id: campaignId as string })
+        .single()
+      if (entErr || !e) return jsonResponse({ error: 'Could not check campaign entitlements.' }, 500)
+      if (!e.is_active) {
+        return jsonResponse({ error: 'This campaign is read-only; uploads are paused.' }, 403)
+      }
+      ent = e
     }
 
     // --- 3. Validate size + real type (magic bytes). ---
     const bytes = new Uint8Array(await file.arrayBuffer())
     if (bytes.length === 0) return jsonResponse({ error: 'The file is empty.' }, 400)
-    if (bytes.length > MAX_BYTES) {
-      return jsonResponse({ error: 'That image is too large (max 10 MB).' }, 413)
+    // Avatars get their own, tighter ceiling. Note this measures what actually
+    // ARRIVED: the web client downscales before uploading, so a browser upload
+    // is already well under it and this is really the backstop for a direct API
+    // caller — the one that is not subject to any storage cap.
+    const sizeLimit = isAvatar ? AVATAR_MAX_BYTES : MAX_BYTES
+    if (bytes.length > sizeLimit) {
+      return jsonResponse(
+        {
+          error: isAvatar
+            ? 'That image is too large for an avatar (max 5 MB).'
+            : 'That image is too large (max 10 MB).',
+        },
+        413,
+      )
     }
     const sniffed = sniffMime(bytes)
     if (!sniffed) {
@@ -275,6 +391,67 @@ Deno.serve(async (req) => {
       )
     }
 
+    // --- 4b. Avatar branch: one output, own path, replaces the previous. ---
+    // Placed here rather than earlier so an avatar goes through every check
+    // above it — magic bytes, size, pixel count — with no way to skip them.
+    if (isAvatar) {
+      let avatar: { bytes: Uint8Array; width: number; height: number }
+      try {
+        avatar = processAvatar(bytes)
+      } catch (_e) {
+        return jsonResponse({ error: 'That image could not be processed.' }, 422)
+      }
+
+      const avatarStatus = await moderate(avatar.bytes)
+      if (avatarStatus === 'blocked') {
+        return jsonResponse({ error: 'This image was blocked by content moderation.' }, 422)
+      }
+
+      // The path is built from the JWT's user id — never from the request body —
+      // so a caller cannot write to somebody else's avatar path. A random
+      // filename each time, because a fixed path overwritten in place keeps
+      // serving the old image from cache.
+      const { data: prior } = await admin
+        .from('profiles')
+        .select('avatar_url')
+        .eq('id', user.id)
+        .maybeSingle()
+      const previousPath = prior?.avatar_url ?? null
+
+      const avatarPath = `avatars/${user.id}/${crypto.randomUUID()}.webp`
+      const upA = await admin.storage.from('media').upload(avatarPath, avatar.bytes, {
+        contentType: 'image/webp',
+        upsert: false,
+      })
+      if (upA.error) {
+        console.error('upload-media: avatar upload failed', upA.error)
+        return jsonResponse({ error: 'Could not store the image.' }, 500)
+      }
+
+      const { error: profErr } = await admin
+        .from('profiles')
+        .update({ avatar_url: avatarPath })
+        .eq('id', user.id)
+      if (profErr) {
+        // Roll the object back: a stored file nothing points at is a leak, and
+        // unlike the reverse it is invisible.
+        await admin.storage.from('media').remove([avatarPath])
+        console.error('upload-media: avatar profile update failed', profErr)
+        return jsonResponse({ error: 'Could not save your avatar.' }, 500)
+      }
+
+      // Delete the OLD object only after the profile points at the new one. The
+      // other order would leave a broken avatar if this failed; this order
+      // leaves an orphaned file, which costs bytes and nothing else.
+      if (previousPath && previousPath !== avatarPath && previousPath.startsWith('avatars/')) {
+        const { error: rmErr } = await admin.storage.from('media').remove([previousPath])
+        if (rmErr) console.error('upload-media: old avatar not removed', previousPath, rmErr)
+      }
+
+      const signed = await admin.storage.from('media').createSignedUrl(avatarPath, 3600)
+      return jsonResponse({ avatarPath, avatarUrl: signed.data?.signedUrl ?? null })
+    }
+
     let processed: Processed
     try {
       processed = processImage(bytes)
@@ -285,7 +462,7 @@ Deno.serve(async (req) => {
 
     // --- 5. Storage cap. ---
     // A null cap means "unlimited". Otherwise used + new must stay within it.
-    if (ent.storage_cap !== null && Number(ent.storage_used) + totalBytes > Number(ent.storage_cap)) {
+    if (ent && ent.storage_cap !== null && Number(ent.storage_used) + totalBytes > Number(ent.storage_cap)) {
       return jsonResponse(
         { error: 'This campaign has reached its image-storage limit.' },
         413,
@@ -300,8 +477,8 @@ Deno.serve(async (req) => {
 
     // --- 7. Store + record. ---
     const assetId = crypto.randomUUID()
-    const originalPath = `${campaignId}/${assetId}/original.webp`
-    const thumbPath = `${campaignId}/${assetId}/thumb.webp`
+    const originalPath = `${campaignId as string}/${assetId}/original.webp`
+    const thumbPath = `${campaignId as string}/${assetId}/thumb.webp`
 
     const up1 = await admin.storage.from('media').upload(originalPath, processed.original, {
       contentType: 'image/webp',
@@ -322,7 +499,7 @@ Deno.serve(async (req) => {
       .from('media_assets')
       .insert({
         id: assetId,
-        campaign_id: campaignId,
+        campaign_id: campaignId as string,
         uploaded_by: user.id,
         storage_path: originalPath,
         thumb_path: thumbPath,

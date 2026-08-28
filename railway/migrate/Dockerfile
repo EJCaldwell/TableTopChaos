@@ -30,6 +30,11 @@ COPY railway/scripts/90_grant_app_privileges.sql /scripts/90_grant_app_privilege
 # resurrect (backups include auth.users). Idempotent; normally a no-op.
 COPY railway/scripts/91_reapply_deletions.sql /scripts/91_reapply_deletions.sql
 
+# The Phase 8.2 access-control matrix. Runs on every invocation, inside a
+# transaction that never commits, and fails the deploy if any policy has been
+# loosened — so a migration cannot ship a regression in the security model.
+COPY railway/scripts/95_rls_matrix.sql /scripts/95_rls_matrix.sql
+
 COPY railway/migrate/migrate.sh /usr/local/bin/migrate.sh
 RUN chmod +x /usr/local/bin/migrate.sh
 

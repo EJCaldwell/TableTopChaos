@@ -9,6 +9,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { authErrorMessage } from './authErrors'
 import { AuthCard, Button, FormError, FormNotice, TextField } from '../../components/ui'
 
 export function RequestPasswordResetPage() {
@@ -34,7 +35,16 @@ export function RequestPasswordResetPage() {
     })
     setBusy(false)
     if (error) {
-      setError(error.message)
+      // This page deliberately reports success even for an unknown address,
+      // so the only errors reaching here are transport-level — precisely the
+      // ones auth-js reduces to "{}".
+      setError(
+        authErrorMessage(
+          error,
+          'We could not send the reset email just now. Please try again in a ' +
+            'moment — your password has not been changed.',
+        ),
+      )
       return
     }
     setNotice('If an account exists for that email, a reset link is on its way.')

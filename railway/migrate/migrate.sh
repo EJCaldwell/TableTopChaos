@@ -44,6 +44,7 @@ set -eu
 MIGRATIONS_DIR=/migrations
 GRANTS_FILE=/scripts/90_grant_app_privileges.sql
 REAPPLY_FILE=/scripts/91_reapply_deletions.sql
+RLS_MATRIX_FILE=/scripts/95_rls_matrix.sql
 
 # All DDL goes through one connection with ON_ERROR_STOP so a failed statement
 # fails the deploy rather than leaving the schema half-applied.
@@ -162,6 +163,32 @@ if [ -n "$LEAKY" ]; then
   exit 1
 fi
 echo "migrate: function privilege check OK — no service-role-only function is public"
+
+# --- RLS ACCESS-CONTROL MATRIX (Phase 8.2) --------------------------------
+# The two checks above are structural: they prove RLS is switched on and that a
+# handful of functions are locked. Neither says anything about what the policies
+# actually ALLOW. This does: it seeds a DM, two players, a non-member and anon,
+# then asserts the full read/write matrix — including the cases that only matter
+# when they break, like a player reading a peer's journal.
+#
+# The whole run happens inside one transaction that never commits, so it is safe
+# against production (currently the only database there is). On failure it raises,
+# which both aborts the transaction and exits non-zero here, so a migration that
+# loosens a policy cannot deploy.
+#
+# Verified to actually catch a regression, not just to pass: granting anon SELECT
+# on campaigns, and disabling RLS on journal_entries, are both detected.
+if [ -f "$RLS_MATRIX_FILE" ]; then
+  if ! psql -v ON_ERROR_STOP=1 -qX "$MIGRATE_DB_URL" -f "$RLS_MATRIX_FILE"; then
+    echo "migrate: FAILED — the RLS access-control matrix did not pass." >&2
+    echo "migrate: a policy has been loosened or removed. The failing assertions" >&2
+    echo "migrate: are printed above, naming persona, table and expected count." >&2
+    exit 1
+  fi
+  echo "migrate: RLS matrix OK — the full access-control matrix holds"
+else
+  echo "migrate: WARNING — $RLS_MATRIX_FILE missing; access-control matrix NOT run" >&2
+fi
 
 # --- Re-apply erasures (ALWAYS) -------------------------------------------
 # Backups include auth.users, so restoring one taken before a deletion brings the

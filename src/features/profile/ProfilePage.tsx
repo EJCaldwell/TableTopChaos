@@ -24,15 +24,28 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../auth/AuthProvider'
 import { Button, FormError, FormNotice, TextField } from '../../components/ui'
+import { AvatarSection } from './AvatarSection'
+import { CredentialsSection } from './CredentialsSection'
 import { DeleteAccountSection } from './DeleteAccountSection'
+import { resetAllLayouts } from '../campaigns/layout'
 import { POLICY_VERSION, isLegalConfigComplete } from '../legal/legalConfig'
+import {
+  USERNAME_MAX,
+  USERNAME_TAKEN_MESSAGE,
+  isUsernameTakenError,
+  validateUsername,
+} from './username'
 
 export function ProfilePage() {
   // Account-level UI preference; browser-local, applied when a workspace mounts.
   const [railSide, setRailSideState] = useState(getRailSide)
 
   const { user } = useAuth()
-  const [displayName, setDisplayName] = useState('')
+  const [username, setUsername] = useState('')
+  // True while the account still carries a name the system generated for it —
+  // either backfilled by 0039 or assigned at signup because the requested name
+  // was taken. Drives the prompt to choose a real one.
+  const [provisional, setProvisional] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -40,6 +53,10 @@ export function ProfilePage() {
   // Recorded policy acceptance (7.2), read alongside the profile.
   const [acceptedVersion, setAcceptedVersion] = useState<string | null>(null)
   const [acceptedAt, setAcceptedAt] = useState<string | null>(null)
+  // Result of the global layout reset, shown inline. Null = not run this visit.
+  const [layoutsReset, setLayoutsReset] = useState<number | null>(null)
+  // profiles.avatar_url — a storage PATH, not a URL (migration 0038).
+  const [avatarPath, setAvatarPath] = useState<string | null>(null)
 
   // Load the profile row once we know the user id.
   useEffect(() => {
@@ -48,12 +65,12 @@ export function ProfilePage() {
     setLoading(true)
 
     // Supabase call: select the caller's own profile.
-    //  - Table/columns: profiles(display_name) filtered by id = user.id.
+    //  - Table/columns: profiles(username, …) filtered by id = user.id.
     //  - RLS: profiles_select_own restricts this to the caller's row anyway;
     //    the explicit .eq is belt-and-suspenders + lets us use .single().
     supabase
       .from('profiles')
-      .select('display_name, legal_version_accepted, legal_accepted_at')
+      .select('username, username_is_provisional, avatar_url, legal_version_accepted, legal_accepted_at')
       .eq('id', user.id)
       .single()
       .then(({ data, error }) => {
@@ -61,7 +78,9 @@ export function ProfilePage() {
         if (error) {
           setError(error.message)
         } else {
-          setDisplayName(data.display_name ?? '')
+          setUsername(data.username)
+          setProvisional(data.username_is_provisional)
+          setAvatarPath(data.avatar_url ?? null)
           setAcceptedVersion(data.legal_version_accepted ?? null)
           setAcceptedAt(data.legal_accepted_at ?? null)
         }
@@ -74,26 +93,44 @@ export function ProfilePage() {
   }, [user])
 
   /**
-   * Persists the edited display name.
-   * Supabase call: `update({ display_name }).eq('id', user.id)`.
+   * Persists the edited username.
+   *
+   * Supabase call: `update({ username, username_is_provisional: false })`.
    *  - RLS: profiles_update_own permits updating only the caller's row.
-   *  - updated_at is stamped server-side by the set_updated_at() trigger.
+   *  - The DB CHECK (`private.is_valid_username`) and the case-insensitive
+   *    unique index are the real rules; the local validate is only to fail fast.
+   *  - **A collision is discovered here, by attempting the write** — there is no
+   *    availability endpoint, deliberately, because one would let anybody
+   *    enumerate who has an account. SQLSTATE 23505 is the answer.
+   *  - Clearing `username_is_provisional` in the same statement is what makes
+   *    the "please choose a username" prompt go away, and why it cannot go away
+   *    without an actual successful rename.
    */
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     if (!user) return
     setError(null)
     setNotice(null)
+
+    const trimmed = username.trim()
+    const localError = validateUsername(trimmed)
+    if (localError) {
+      setError(localError)
+      return
+    }
+
     setBusy(true)
     const { error } = await supabase
       .from('profiles')
-      .update({ display_name: displayName.trim() || null })
+      .update({ username: trimmed, username_is_provisional: false })
       .eq('id', user.id)
     setBusy(false)
     if (error) {
-      setError(error.message)
+      setError(isUsernameTakenError(error) ? USERNAME_TAKEN_MESSAGE : error.message)
       return
     }
+    setUsername(trimmed)
+    setProvisional(false)
     setNotice('Profile saved.')
   }
 
@@ -114,17 +151,26 @@ export function ProfilePage() {
         <form onSubmit={handleSave} style={{ display: 'grid', gap: 'var(--space-4)' }}>
           <TextField label="Email" type="email" value={user?.email ?? ''} disabled readOnly />
           <TextField
-            label="Display name"
+            label="Username"
             type="text"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
+            required
+            maxLength={USERNAME_MAX}
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
           />
-          {/* The media pipeline (1.6) shipped, so avatar upload is unblocked —
-              it just hasn't been wired to this screen yet. Tracked as 7.3. */}
-          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', margin: 0 }}>
-            Avatar upload isn't wired up yet. Your avatar shows here if one is
-            already set.
+          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem', margin: 0 }}>
+            Letters, numbers and underscores. This is how other players see you.
           </p>
+          {/* Only shown when the name was generated, not chosen. Placed next to
+              the field it is about rather than as a page-level banner — the
+              action needed is right here. */}
+          {provisional && (
+            <p style={{ color: 'var(--color-danger)', fontSize: '0.85rem', margin: 0 }}>
+              This username was assigned automatically. Pick one you'd like to
+              keep — it's how you appear to everyone in your campaigns.
+            </p>
+          )}
           <FormError message={error} />
           <FormNotice message={notice} />
           <Button type="submit" busy={busy}>
@@ -133,14 +179,16 @@ export function ProfilePage() {
         </form>
       )}
 
-        {/* Named rather than omitted: a missing control is a gap worth seeing,
-            and "where do I change my password?" is the first thing people look
-            for here. Tracked as 7.3 in PLANNING.md. (Account deletion shipped in
-            7.1 — see the danger zone below.) */}
-        <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', marginTop: 'var(--space-4)' }}>
-          Changing your email and changing your password from here aren't
-          available yet.
-        </p>
+        {/* Avatar upload (7.3.1). Outside the display-name form on purpose: it
+            saves on its own the moment a file is chosen, so putting it inside a
+            form with a Save button would misrepresent when it takes effect. */}
+        <AvatarSection avatarPath={avatarPath} onUploaded={setAvatarPath} />
+
+        {/* Password + email change (7.3.1). Both re-verify the current
+            password: a live session alone is enough for supabase-js to change
+            either, which would let a borrowed session lock the real owner out
+            permanently. */}
+        {user?.email && <CredentialsSection email={user.email} />}
       </section>
 
       {/* ---- Workspace: how the app behaves for you, in every campaign ---- */}
@@ -187,6 +235,38 @@ export function ProfilePage() {
           Takes effect the next time you open a campaign. Reopen any campaign
           you already have on screen to see the change.
         </p>
+
+        {/* Global layout reset (7.3.1). The per-campaign "Reset layout" in
+            campaign Settings only helps if you can still open that campaign;
+            this is the escape hatch for when every campaign is wrong at once,
+            or when a panel has ended up somewhere unreachable. */}
+        <div style={{ marginTop: 'var(--space-6)' }}>
+          <strong style={{ fontSize: '0.9rem' }}>Reset all workspace layouts</strong>
+          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', margin: 'var(--space-2) 0' }}>
+            Puts every campaign's panels back to their default arrangement. Your
+            campaigns and their contents are not touched — only how they're laid
+            out in this browser.
+          </p>
+          <Button
+            variant="secondary"
+            style={{ width: 'auto' }}
+            onClick={() => setLayoutsReset(resetAllLayouts())}
+          >
+            Reset all layouts
+          </Button>
+          {/* Reports the COUNT, including zero. "Nothing to reset" and "the
+              button did nothing" are otherwise indistinguishable. */}
+          {layoutsReset !== null && (
+            <FormNotice
+              message={
+                layoutsReset === 0
+                  ? 'No saved layouts to reset.'
+                  : `Reset ${layoutsReset} campaign layout${layoutsReset === 1 ? '' : 's'}. ` +
+                    'Reopen any campaign you have on screen to see the change.'
+              }
+            />
+          )}
+        </div>
 
         <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', marginTop: 'var(--space-4)' }}>
           A light/dark theme setting will live here too (phase 14).

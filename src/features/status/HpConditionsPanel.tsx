@@ -13,6 +13,7 @@ import { useAutosave, SaveIndicator } from '../dm/autosave'
 import { getMyCharacter, type Character } from '../character/api'
 import { getStatus, saveStatus, type StatusPatch, type CharacterStatus } from './api'
 import { useRealtimeSync } from '../realtime/useRealtimeRefresh'
+import { applyHpDelta, clampDeathSaves } from './hp'
 
 /** The standard D&D 5e conditions, offered as quick-toggle chips. */
 const STANDARD_CONDITIONS = [
@@ -115,33 +116,15 @@ export function HpConditionsPanel({ campaignId, currentUserId }: { campaignId: s
     void runSave(() => saveStatus(character.id, patch), 'status')
   }
 
-  /** Clamp helper for the 0..3 death-save tallies. */
-  function clampSave(n: number) {
-    return Math.max(0, Math.min(3, n))
-  }
-
   /**
-   * Applies damage (negative) or healing (positive) to current HP. Damage eats
-   * temp HP first, mirroring 5e; healing goes straight to current HP.
+   * Applies damage or healing. The arithmetic itself lives in status/hp.ts so it
+   * can be unit-tested (Phase 8.1); this only supplies the current snapshot and
+   * persists the result.
    */
   function applyDelta(sign: 1 | -1) {
-    const amt = Math.abs(Math.trunc(Number(delta) || 0))
-    if (amt === 0) return
-    const cur = status.current_hp ?? 0
-    if (sign === 1) {
-      const next = status.max_hp != null ? Math.min(cur + amt, status.max_hp) : cur + amt
-      apply({ current_hp: next })
-    } else {
-      // Damage: subtract from temp HP first, then current HP.
-      let remaining = amt
-      let temp = status.temp_hp
-      if (temp > 0) {
-        const fromTemp = Math.min(temp, remaining)
-        temp -= fromTemp
-        remaining -= fromTemp
-      }
-      apply({ temp_hp: temp, current_hp: cur - remaining })
-    }
+    const patch = applyHpDelta(status, sign, Number(delta))
+    if (Object.keys(patch).length === 0) return
+    apply(patch)
     setDelta('')
   }
 
@@ -219,9 +202,9 @@ export function HpConditionsPanel({ campaignId, currentUserId }: { campaignId: s
         <h3 style={{ margin: '0 0 var(--space-2)', fontSize: '1rem' }}>Death saves</h3>
         <div style={{ display: 'flex', gap: 'var(--space-6)', flexWrap: 'wrap' }}>
           <DeathSaveRow label="Successes" color="var(--color-success)" value={status.death_save_successes}
-            onSet={(n) => apply({ death_save_successes: clampSave(n) })} />
+            onSet={(n) => apply({ death_save_successes: clampDeathSaves(n) })} />
           <DeathSaveRow label="Failures" color="var(--color-danger)" value={status.death_save_failures}
-            onSet={(n) => apply({ death_save_failures: clampSave(n) })} />
+            onSet={(n) => apply({ death_save_failures: clampDeathSaves(n) })} />
         </div>
       </section>
 

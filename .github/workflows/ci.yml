@@ -1,0 +1,92 @@
+# ---------------------------------------------------------------------------
+# CI — typecheck, build, unit tests, and the workspace-layout harness.
+# Phase 8.3 (the half that is not blocked).
+#
+# WHAT THIS DELIBERATELY DOES NOT DO, and why — so the gaps read as decisions
+# rather than oversights:
+#
+#   * It does NOT run the RLS matrix (Phase 8.2). That harness needs a
+#     connection to the production database, because there is no test database.
+#     Putting those credentials in GitHub secrets would place a superuser path
+#     into the live database inside a third-party service, to duplicate a check
+#     that ALREADY gates every schema change from the `migrate` job. The gating
+#     property is not improved by running it here; only the blast radius is.
+#
+#   * It does NOT run browser end-to-end tests. Those need signup to work, and
+#     signup currently returns 500 for every address because Resend has no
+#     verified sending domain (see PRE_LAUNCH §3). They also write to production
+#     with no way to roll back. Both are worth solving before adding them.
+#
+#   * It does NOT run `npm audit`. There are 4 pre-existing high-severity
+#     advisories (react-router, postcss, nanoid), none introduced by the test
+#     toolchain. A gate that is red on arrival gets ignored, and ignoring a
+#     failing gate is worse than not having one.
+#
+# What it DOES cover is everything hermetic: no database, no network, no
+# browser. That is the part that can block a merge honestly.
+# ---------------------------------------------------------------------------
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+# A second push to the same branch cancels the first. Without this, a quick
+# follow-up commit leaves an obsolete run competing for a runner and reporting a
+# status for code nobody is looking at any more.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Typecheck, build & test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the local development version, so a Node-version difference
+          # can never be the reason CI and a developer's machine disagree.
+          node-version: '24'
+          cache: npm
+
+      # `npm ci` rather than `npm install`: installs exactly what
+      # package-lock.json pins and fails if the lockfile and package.json have
+      # drifted apart. In CI, a silently different dependency tree makes the run
+      # meaningless.
+      - name: Install dependencies
+        run: npm ci
+
+      # The app asserts its Supabase config at module load (src/lib/env.ts), and
+      # the component tests import modules that reach that assertion. These are
+      # PLACEHOLDERS and are never used to talk to anything: no test in this
+      # suite makes a network call. Written as a file rather than passed as env
+      # vars so the values are guaranteed to reach Vite's `import.meta.env`
+      # regardless of how it resolves configuration.
+      - name: Provide placeholder frontend config
+        run: |
+          printf 'VITE_SUPABASE_URL=https://ci.invalid\n' > .env
+          printf 'VITE_SUPABASE_ANON_KEY=ci-placeholder-anon-key\n' >> .env
+
+      # `npm run build` is `tsc -b && vite build`, so this is the typecheck AND
+      # the bundle. It type-checks the test files too — tsconfig.app.json
+      # includes all of src/ — which is what catches a test asserting against a
+      # shape the code no longer has.
+      - name: Typecheck and build
+        run: npm run build
+
+      - name: Unit and component tests
+        run: npm test
+
+      # The purpose-built harness for workspace-layout logic. Predates Vitest and
+      # is kept because it also type-checks itself against the app's types.
+      - name: Workspace layout checks
+        run: npm run qa:checks

@@ -41,5 +41,13 @@ supabase/.temp/
 # Build caches (regenerate locally; committing them just causes noisy diffs)
 *.tsbuildinfo
 
+# Test output (Phase 8.1). `npm run coverage` writes an HTML report here —
+# ~3.4 MB across ~100 generated files, regenerated on every run, and a source of
+# enormous meaningless diffs if tracked. The numbers that matter are recorded in
+# QA/8.1_tests/automated-coverage.md instead.
+coverage/
+# Vitest's on-disk cache, if the default location is ever used.
+.vitest/
+
 # Python virtualenv (used for local QA tooling — exiftool/Pillow, etc.)
 .venv/

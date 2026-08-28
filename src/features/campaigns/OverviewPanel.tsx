@@ -30,6 +30,7 @@ import { SchedulePanel } from '../schedule/SchedulePanel'
 import {
   createInviteCode,
   deleteInviteCode,
+  listCharacterNames,
   listInviteCodes,
   GAME_MODES,
   type Campaign,
@@ -69,6 +70,31 @@ export function OverviewPanel({
   /** Leave the overview page for the campaign workspace / playspace. */
   onEnterWorkspace?: () => void
 }) {
+  // user_id → character name, for the "username (Character)" roster line.
+  //
+  // A separate call rather than part of the roster query: character names are
+  // NOT readable from `characters` by a player (can_read_character is
+  // owner-or-DM), so this goes through the campaign_character_names RPC added
+  // in migration 0041. See campaigns/api.ts.
+  const [characterNames, setCharacterNames] = useState<Map<string, string>>(new Map())
+
+  // Failures are swallowed to an empty map: the roster still renders usernames,
+  // which is the part that must never break. A missing character name degrades
+  // the line, it does not lose it.
+  useEffect(() => {
+    let active = true
+    listCharacterNames(campaign.id)
+      .then((m) => {
+        if (active) setCharacterNames(m)
+      })
+      .catch(() => {
+        if (active) setCharacterNames(new Map())
+      })
+    return () => {
+      active = false
+    }
+  }, [campaign.id])
+
   const [codes, setCodes] = useState<InviteCode[]>([])
   const [error, setError] = useState<string | null>(null)
   const [working, setWorking] = useState(false)
@@ -155,7 +181,18 @@ export function OverviewPanel({
               }}
             >
               <span>
-                {m.displayName || 'Unnamed adventurer'}
+                {m.username}
+                {/* "alexc (Thorin)" — owner decision 2026-08-17. At the table
+                    people are known by both, and this is the one screen where
+                    the whole party is listed together. Omitted entirely for a
+                    member with no character yet, rather than showing an empty
+                    bracket. */}
+                {characterNames.get(m.userId) && (
+                  <span style={{ color: 'var(--color-text-muted)' }}>
+                    {' '}
+                    ({characterNames.get(m.userId)})
+                  </span>
+                )}
                 {m.userId === currentUserId && (
                   <span style={{ color: 'var(--color-text-muted)' }}> (you)</span>
                 )}

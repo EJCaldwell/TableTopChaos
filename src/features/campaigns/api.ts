@@ -76,7 +76,7 @@ export interface CampaignWithRole {
 export interface Member {
   userId: string
   role: CampaignRole
-  displayName: string | null
+  username: string
 }
 
 /**
@@ -265,27 +265,32 @@ export async function listMembers(campaignId: string): Promise<Member[]> {
   if (mErr) throw mErr
 
   const ids = (members ?? []).map((m) => m.user_id)
-  // Map user_id -> display_name. Empty roster short-circuits the profiles query.
-  const names = new Map<string, string | null>()
+  // Map user_id -> username. Empty roster short-circuits the profiles query.
+  //
+  // A member whose profile is missing from this map is not "unnamed" — since
+  // 0039 usernames are NOT NULL, so the only way to be absent is for RLS to have
+  // withheld the row, which cannot happen for a co-member. The fallback below is
+  // therefore a genuine can't-happen, not the common case it used to be.
+  const names = new Map<string, string>()
   if (ids.length > 0) {
     const { data: profiles, error: pErr } = await supabase
       .from('profiles')
-      .select('id, display_name')
+      .select('id, username')
       .in('id', ids)
     if (pErr) throw pErr
-    for (const p of profiles ?? []) names.set(p.id, p.display_name)
+    for (const p of profiles ?? []) names.set(p.id, p.username)
   }
 
   return (members ?? [])
     .map((m) => ({
       userId: m.user_id,
       role: m.role,
-      displayName: names.get(m.user_id) ?? null,
+      username: names.get(m.user_id) ?? 'Unknown',
     }))
     // The DM first, then players by name, for a stable readable roster.
     .sort((a, b) => {
       if (a.role !== b.role) return a.role === 'dm' ? -1 : 1
-      return (a.displayName ?? '').localeCompare(b.displayName ?? '')
+      return a.username.localeCompare(b.username)
     })
 }
 
@@ -337,4 +342,36 @@ export async function createInviteCode(
 export async function deleteInviteCode(codeId: string): Promise<void> {
   const { error } = await supabase.from('invite_codes').delete().eq('id', codeId)
   if (error) throw error
+}
+
+/**
+ * Maps each member of a campaign to their character's name.
+ *
+ * Supabase call: `rpc('campaign_character_names', { p_campaign_id })`.
+ *  - **Not a select on `characters`.** `private.can_read_character` is owner-or-DM
+ *    (migration 0010), so a player querying that table sees only their own row —
+ *    which is why the roster could not show "who plays what" before migration
+ *    0041 added this function.
+ *  - It exposes `owner_id` and the character NAME and nothing else. Sheets,
+ *    inventory, journals, abilities and spells remain exactly as private as they
+ *    were; the QA asserts that directly rather than trusting the description.
+ *  - Non-members get `insufficient_privilege` (42501), so it cannot be used to
+ *    probe which campaigns exist.
+ *
+ * @param campaignId - The campaign whose roster is being rendered.
+ * @returns user_id → character name. A member with no character is simply absent.
+ */
+export async function listCharacterNames(campaignId: string): Promise<Map<string, string>> {
+  const { data, error } = await supabase.rpc('campaign_character_names', {
+    p_campaign_id: campaignId,
+  })
+  if (error) throw error
+  const byUser = new Map<string, string>()
+  // A user with several characters in one campaign keeps the FIRST (the RPC
+  // orders by created_at). The roster is one line per person, so something has
+  // to win; the oldest is the stable choice.
+  for (const row of data ?? []) {
+    if (!byUser.has(row.user_id)) byUser.set(row.user_id, row.character_name)
+  }
+  return byUser
 }

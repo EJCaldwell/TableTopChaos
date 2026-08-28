@@ -296,3 +296,61 @@ export function saveLayout(campaignId: string, layout: CampaignLayout): void {
     /* ignore — view preference only */
   }
 }
+
+/**
+ * Selects the layout keys from a list of localStorage keys (Phase 7.3.1).
+ *
+ * Split out as a pure function so the "reset every campaign's layout" action can
+ * be tested without a browser — see QA/tools/layout-checks.mts. The matching is
+ * the whole risk in that feature: this runs across the user's ENTIRE
+ * localStorage, and a pattern that is one character too greedy would take out
+ * their tab selections, their rail-side preference, or anything else the app (or
+ * another app on the same origin) has stored.
+ *
+ * Deliberately anchored and exact-shaped: `campaign:<id>:layout` and nothing
+ * else. In particular `campaign:<id>:activeTab` and `campaign:<id>:view` must
+ * survive — those are "where was I", not "how was it arranged", and clearing
+ * them would dump the user back on the overview of every campaign for no reason
+ * they asked for.
+ *
+ * @param keys - Every key currently in localStorage.
+ * @returns Just the per-campaign layout keys, in the order given.
+ */
+export function selectLayoutKeys(keys: string[]): string[] {
+  return keys.filter((k) => /^campaign:[^:]+:layout$/.test(k))
+}
+
+/**
+ * Clears the saved workspace arrangement for EVERY campaign.
+ *
+ * The global escape hatch for when something is wrong across all campaigns at
+ * once — the per-campaign "Reset layout" in campaign Settings only helps if you
+ * can still open that campaign. Nothing is lost that is not view state: layouts
+ * are browser-local and never synced.
+ *
+ * Storage failures are swallowed (private browsing, quota) and reported as a
+ * count of zero rather than an exception — a view preference is never worth
+ * breaking the page over.
+ *
+ * @returns How many campaign layouts were removed.
+ */
+export function resetAllLayouts(): number {
+  try {
+    // Enumerate via length/key(i) rather than Object.keys: that is the
+    // Storage API proper, and it behaves identically in a browser and under a
+    // stub, which is what lets QA/tools test this at all.
+    //
+    // Snapshot the keys BEFORE deleting anything: localStorage is a live index,
+    // so removing while iterating by position silently skips entries.
+    const all: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k !== null) all.push(k)
+    }
+    const keys = selectLayoutKeys(all)
+    for (const k of keys) localStorage.removeItem(k)
+    return keys.length
+  } catch {
+    return 0
+  }
+}

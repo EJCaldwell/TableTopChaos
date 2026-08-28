@@ -25,6 +25,7 @@ import {
 import { listNpcs, getNpcSheet, extractNpcHp, type Npc, type NpcSectionWithFields } from './npcsApi'
 import { listCampaignCharacters } from '../character/api'
 import { useRealtimeSync, mergeById } from '../realtime/useRealtimeRefresh'
+import { rollNotation, type RollResult } from './dice'
 
 /** @param campaignId - The campaign whose combat tools these are. */
 export function CombatPanel({ campaignId }: { campaignId: string }) {
@@ -478,63 +479,6 @@ function NpcStatView({ npcId, description }: { npcId: string; description: strin
 // ===========================================================================
 // Dice roller (client-side)
 // ===========================================================================
-
-/** One die term's rolls (for the breakdown display). */
-interface RollResult {
-  /** The notation that was rolled (e.g. "2d6+3"). */
-  notation: string
-  /** The final total. */
-  total: number
-  /** Human-readable breakdown, e.g. "2d6 [4, 2] + 3 = 9". */
-  detail: string
-}
-
-/** Sane caps so a typo like "999d999" can't lock the tab. */
-const MAX_DICE = 100
-const MAX_SIDES = 1000
-
-/**
- * Parses and rolls standard dice notation like `2d6+3`, `d20`, `1d8+1d4+2`
- * (whitespace ignored, case-insensitive). Returns the total and a breakdown, or
- * an Error message string if the notation is invalid / out of bounds.
- *
- * Uses Math.random (fine in the browser); each die is a fresh uniform roll.
- * @param input - The raw notation string.
- */
-function rollNotation(input: string): RollResult | string {
-  const expr = input.replace(/\s+/g, '').toLowerCase()
-  if (!expr) return 'Enter dice notation, e.g. 2d6+3.'
-  // Whole-string shape: a term, then any number of +/- terms.
-  if (!/^[+-]?(\d*d\d+|\d+)([+-](\d*d\d+|\d+))*$/.test(expr)) {
-    return `"${input}" isn't valid notation. Try e.g. 2d6+3.`
-  }
-  // Split into signed terms (each token keeps its leading sign).
-  const tokens = expr.match(/[+-]?[^+-]+/g) ?? []
-  let total = 0
-  const parts: string[] = []
-  for (const token of tokens) {
-    const sign = token.startsWith('-') ? -1 : 1
-    const body = token.replace(/^[+-]/, '')
-    if (body.includes('d')) {
-      const [countStr, sidesStr] = body.split('d')
-      const count = countStr === '' ? 1 : parseInt(countStr, 10)
-      const sides = parseInt(sidesStr, 10)
-      if (count > MAX_DICE || sides > MAX_SIDES || sides < 1) {
-        return `Out of range (max ${MAX_DICE} dice, d${MAX_SIDES}).`
-      }
-      const rolls: number[] = []
-      for (let i = 0; i < count; i++) rolls.push(1 + Math.floor(Math.random() * sides))
-      const sum = rolls.reduce((a, b) => a + b, 0)
-      total += sign * sum
-      parts.push(`${sign < 0 ? '- ' : parts.length ? '+ ' : ''}${count}d${sides} [${rolls.join(', ')}]`)
-    } else {
-      const n = parseInt(body, 10)
-      total += sign * n
-      parts.push(`${sign < 0 ? '- ' : parts.length ? '+ ' : ''}${n}`)
-    }
-  }
-  return { notation: input.trim(), total, detail: `${parts.join(' ')} = ${total}` }
-}
 
 /** Common single-die quick-roll buttons. */
 const QUICK_DICE = ['d20', 'd12', 'd10', 'd8', 'd6', 'd4', 'd100']

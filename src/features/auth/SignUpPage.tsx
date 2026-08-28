@@ -15,12 +15,14 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { authErrorMessage } from './authErrors'
+import { USERNAME_MAX, validateUsername } from '../profile/username'
 import { POLICY_VERSION } from '../legal/legalConfig'
 import { AuthCard, Button, FormError, FormNotice, TextField } from '../../components/ui'
 
 export function SignUpPage() {
   const navigate = useNavigate()
-  const [displayName, setDisplayName] = useState('')
+  const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -30,7 +32,7 @@ export function SignUpPage() {
   /**
    * Handles form submit.
    * Supabase call: `auth.signUp({ email, password, options: { data } })`.
-   *  - `data.display_name` becomes raw_user_meta_data, read by the DB trigger.
+   *  - `data.username` becomes raw_user_meta_data, read by handle_new_user.
    *  - If a session comes back, AuthProvider picks it up and we navigate home.
    *  - If not (confirmation required), we show a notice to check email.
    */
@@ -42,15 +44,33 @@ export function SignUpPage() {
     e.preventDefault()
     setError(null)
     setNotice(null)
+
+    const desiredUsername = username.trim()
+    const usernameError = validateUsername(desiredUsername)
+    if (usernameError) {
+      setError(usernameError)
+      return
+    }
+
     setBusy(true)
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { display_name: displayName.trim() } },
+      options: { data: { username: desiredUsername } },
     })
     setBusy(false)
     if (error) {
-      setError(error.message)
+      // A 5xx from GoTrue reaches us as the literal string "{}" (see
+      // authErrors.ts). At sign-up that is the worst place for it: an empty
+      // error box leaves someone with no idea whether an account was created,
+      // so the fallback answers exactly that.
+      setError(
+        authErrorMessage(
+          error,
+          'We could not create your account just now — no account was created, ' +
+            'and you have not been charged anything. Please try again in a moment.',
+        ),
+      )
       return
     }
     // Record which policy version was accepted (7.2), server-timestamped.
@@ -67,6 +87,35 @@ export function SignUpPage() {
         p_version: POLICY_VERSION,
       })
       if (acceptErr) console.error('signup: could not record acceptance', acceptErr)
+    }
+
+    // Was the requested username actually granted?
+    //
+    // The profile row is created by a trigger on auth.users, so a collision
+    // there cannot be reported as a form error — aborting would fail the whole
+    // signup with GoTrue's opaque "Database error saving new user". Instead
+    // `private.claim_username` always succeeds, handing out a suffixed variant
+    // and flagging it provisional. So the honest place to find out is AFTER the
+    // fact, by reading back what we were given.
+    //
+    // Only possible with a session; with email confirmation on there is none
+    // yet, and the Profile page's provisional prompt covers that case instead.
+    if (data.session) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('username, username_is_provisional')
+        .eq('id', data.session.user.id)
+        .maybeSingle()
+      if (profile?.username_is_provisional) {
+        // Not an error — the account exists and works. Say what happened and
+        // where to fix it, rather than leaving them to notice later that they
+        // are called something else.
+        setNotice(
+          `"${desiredUsername}" was already taken, so your account was created as ` +
+            `"${profile.username}". You can change it any time in your profile.`,
+        )
+        return
+      }
     }
 
     if (data.session) {
@@ -87,13 +136,17 @@ export function SignUpPage() {
     >
       <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 'var(--space-4)' }}>
         <TextField
-          label="Display name"
+          label="Username"
           type="text"
-          autoComplete="nickname"
+          autoComplete="username"
           required
-          value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
+          maxLength={USERNAME_MAX}
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
         />
+        <p style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem', margin: 0 }}>
+          Letters, numbers and underscores. This is how other players see you.
+        </p>
         <TextField
           label="Email"
           type="email"
