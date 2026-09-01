@@ -921,6 +921,53 @@ export type Database = {
           },
         ]
       }
+      // playspace_walls — migrations 0060 + 0061 (Phase 9.2), hand-written for
+      // the same reason as the other playspace tables.
+      //
+      // DM-ONLY in both directions: a player's client never receives wall
+      // geometry, only the visibility polygon computed from it server-side
+      // (0061). `points` is an ordered array of [x, y] pairs in MAP PIXELS,
+      // typed as Json because that is what the column is — use
+      // walls.ts/pointsFromJson to get Points out of it, which also filters
+      // malformed entries.
+      playspace_walls: {
+        Row: {
+          closed: boolean
+          created_at: string
+          id: string
+          kind: string
+          map_id: string
+          points: Json
+          updated_at: string
+        }
+        Insert: {
+          closed?: boolean
+          created_at?: string
+          id?: string
+          kind?: string
+          map_id: string
+          points: Json
+          updated_at?: string
+        }
+        Update: {
+          closed?: boolean
+          created_at?: string
+          id?: string
+          kind?: string
+          map_id?: string
+          points?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "playspace_walls_map_id_fkey"
+            columns: ["map_id"]
+            isOneToOne: false
+            referencedRelation: "playspace_maps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       playspace_tokens: {
         Row: {
           character_id: string | null

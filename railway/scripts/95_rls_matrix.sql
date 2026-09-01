@@ -220,6 +220,10 @@ insert into public.playspace_tokens (id, map_id, owner_user_id, label) values
   ('ffffffff-0000-4000-8000-000000000012', 'ffffffff-0000-4000-8000-000000000001', :p2::uuid, 'P2 token'),
   ('ffffffff-0000-4000-8000-000000000013', 'ffffffff-0000-4000-8000-000000000001', null,      'DM dragon');
 
+-- A wall on the active map, for the 0060 assertions.
+insert into public.playspace_walls (id, map_id, kind, points)
+  values ('aaaabbbb-0000-4000-8000-000000000001', 'ffffffff-0000-4000-8000-000000000001', 'segment', '[[0,0],[100,100]]'::jsonb);
+
 -- ===========================================================================
 -- THE MATRIX
 -- ===========================================================================
@@ -244,6 +248,10 @@ select pg_temp.assert_denied('campaigns','DM','direct DELETE of own campaign mat
 -- assertion that matters most in this file, because it is the one that fails if
 -- the dev-account write clause is ever widened past its allowlist. The positive
 -- case below is a convenience; this one is the boundary.
+select pg_temp.assert_rows('walls','DM','reads the map''s walls','select 1 from public.playspace_walls', 1);
+select pg_temp.assert_allowed('walls','DM','can draw a wall','insert into public.playspace_walls (map_id,kind,points) values (''ffffffff-0000-4000-8000-000000000001'',''freehand'',''[[5,5],[9,9],[20,3]]''::jsonb)');
+select pg_temp.assert_error('walls','DM','cannot store a one-point wall','insert into public.playspace_walls (map_id,points) values (''ffffffff-0000-4000-8000-000000000001'',''[[1,1]]''::jsonb)');
+select pg_temp.assert_error('walls','DM','cannot store a non-numeric point','insert into public.playspace_walls (map_id,points) values (''ffffffff-0000-4000-8000-000000000001'',''[[1,1],["a","b"]]''::jsonb)');
 select pg_temp.assert_allowed('playspace','DM','CAN set the ring on a player''s token (0059)','update public.playspace_tokens set ring=''on'' where id=''ffffffff-0000-4000-8000-000000000011''');
 select pg_temp.assert_allowed('playspace','DM','CAN resize a player''s token (0057)','update public.playspace_tokens set size_cells=3 where id=''ffffffff-0000-4000-8000-000000000011''');
 select pg_temp.assert_denied('characters','DM','cannot edit a player''s character (non-dev DM)','update public.characters set name=''dm-edited'' where owner_id=' || quote_literal(:p1) || '::uuid');
@@ -346,6 +354,15 @@ select pg_temp.assert_allowed('playspace','player','can still MOVE their own tok
 -- 0059: the ring joins size as DM-only appearance. Asserted separately from
 -- size, because they are guarded by one trigger and a change to it could
 -- plausibly free one column while still holding the other.
+-- Walls are DM-ONLY (0061, revising 0060). This assertion INVERTED when the
+-- owner chose the stronger model: a player's client never receives wall
+-- geometry, only the visibility polygon computed from it server-side (9.3).
+-- It is the assertion the whole approach rests on — if it ever reads non-zero,
+-- the map layout is leaking however good the fog looks on screen.
+select pg_temp.assert_rows('walls','player','receives NO wall geometry at all (0061)','select 1 from public.playspace_walls', 0);
+select pg_temp.assert_denied('walls','player','CANNOT draw a wall','insert into public.playspace_walls (map_id,points) values (''ffffffff-0000-4000-8000-000000000001'',''[[1,1],[2,2]]''::jsonb)');
+select pg_temp.assert_denied('walls','player','CANNOT move a wall','update public.playspace_walls set points=''[[9,9],[8,8]]''::jsonb');
+select pg_temp.assert_denied('walls','player','CANNOT delete a wall','delete from public.playspace_walls');
 select pg_temp.assert_denied('playspace','player','CANNOT change the ring on their OWN token (0059)','update public.playspace_tokens set ring=''off'' where id=''ffffffff-0000-4000-8000-000000000011''');
 select pg_temp.assert_denied('playspace','player','CANNOT resize the DM''s monster','update public.playspace_tokens set size_cells=4 where id=''ffffffff-0000-4000-8000-000000000013''');
 select pg_temp.assert_error('playspace','player','CANNOT set a nonsense token size','update public.playspace_tokens set size_cells=2.7 where id=''ffffffff-0000-4000-8000-000000000011''');
@@ -386,6 +403,7 @@ select pg_temp.become_owner();
 
 select pg_temp.become(:out::uuid);
 select pg_temp.assert_rows('playspace','non-member','sees no map','select 1 from public.playspace_maps', 0);
+select pg_temp.assert_rows('walls','non-member','sees no walls','select 1 from public.playspace_walls', 0);
 select pg_temp.assert_rows('playspace','non-member','sees no tokens','select 1 from public.playspace_tokens', 0);
 select pg_temp.become_owner();
 
@@ -430,6 +448,7 @@ set local role anon;
 select set_config('request.jwt.claims', null, true);
 select pg_temp.assert_rows('anon','anon','sees no campaigns','select 1 from public.campaigns', 0);
 select pg_temp.assert_rows('anon','anon','sees no profiles','select 1 from public.profiles', 0);
+select pg_temp.assert_rows('anon','anon','sees no walls','select 1 from public.playspace_walls', 0);
 select pg_temp.assert_rows('anon','anon','sees no characters','select 1 from public.characters', 0);
 select pg_temp.assert_rows('anon','anon','sees no journals','select 1 from public.journal_entries', 0);
 select pg_temp.assert_rows('anon','anon','sees no DM notes','select 1 from public.dm_notes', 0);

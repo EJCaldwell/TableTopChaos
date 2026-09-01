@@ -264,10 +264,10 @@ A **Battlemap** tab existed for one afternoon as a notetaker-only panel and was 
   - [x] 9.1a.2 — Web UI *(view-as toggle + red banner, who-am-I readout, reset-layouts, and — added 2026-08-28 — the **character switcher**. The earlier deferral was wrong about the cost: `getMyCharacter(campaignId, ownerId)` already took the owner as a parameter, so the change was one optional `characterUserId` prop threaded CampaignPage → WorkspaceShell → TabBody, defaulting to `currentUserId`. No panel changed. Panels are `key`ed on the subject so switching remounts instead of showing one sheet's draft over another's data. **Edits are real and permanent** (owner decision 2026-08-28): migration **0052** grants write on party sheets to accounts in `private.dev_accounts` — the one part that could not be client-side, since Postgres never sees `import.meta.env.DEV`. Contained by an allowlist table no client can read or insert into, still scoped to campaigns that account DMs, and still subject to the lapse lock. **0053** blocks owner reassignment (a `with check` cannot compare a row to its previous value — it needed a trigger). **0054** restores the journal exclusion that 0052 broke. An inspected **Journal is empty by design**. Not applied to Overview/Settings, whose `currentUserId` is about the caller (RSVPs, the "(you)" marker), not a character)*
   - [x] 9.1a.3 — Gating *(dev build AND allowlisted account. **The first version leaked into the production bundle** — the RPC was tree-shaken but a static `import { DevToolsBar }` shipped the component anyway. Fixed with a dev-gated lazy import; bundle now greps clean for all four marker strings. HIDDEN vs ABSENT is the whole point of the check)*
   - [~] 9.1a.4 — QA *(server-side + bundle checks PASS — see QA/9.1a_tests/, incl. a re-run of the bundle grep after the switcher landed (all 0, single chunk) and the RLS matrix at **111 assertions**, which caught two real defects in 0052 (see 0053/0054). The **12** browser steps are the user's and are NOT RUN)*
-- [ ] 9.2 — Vision toggle & obstructions (walls + freehand)
-  - [ ] 9.2.1 — Backend
-  - [ ] 9.2.2 — Web UI
-  - [ ] 9.2.3 — QA
+- [~] 9.2 — Vision toggle & obstructions (walls + freehand) *(backend + DM tools done and browser-verified; the vision toggle's visible half lands with 9.3's fog)*
+  - [x] 9.2.1 — Backend *(migrations **0060** + **0061**: `playspace_walls`, one point-list geometry for all three tools, validated by an IMMUTABLE `is_point_list` CHECK. **DM-only in both directions** — the owner chose Roll20's server-side model over Foundry's client-side one, so 9.3 must compute visibility server-side and return only the polygon. Flipped before any UI depended on it. Matrix now **133**)*
+  - [~] 9.2.2 — Web UI *(BUILT 2026-09-01: `walls.ts` (pure geometry, **23 tests**), `WallLayer` (SVG overlay, line/room/freehand/erase, dashed live preview), wall tools + Clear in the DM strip, vision toggle in the Maps tab. Walls render LAST so they sit above tokens, and are click-through unless a tool is armed; arming one suspends token dragging entirely. **Two defects found by the tests before any UI existed**: an infinite loop when the simplifier's tolerance was 0, and a 2.8s freeze on a 12000-point stroke — both invisible to a browser checklist. **Foundation browser subset RUN and PASSED 2026-09-01** — including the mode collision (a tool armed must not drag a token) and, critically, that a player's window renders no walls at all. The rest is deferred to 9.3, which will exercise it anyway — QA/9.2_tests/)*
+  - [~] 9.2.3 — QA *(automated + server-side PASS: matrix **133/133**, 238 tests, `qa:checks` 62/62. The **foundation browser subset was run by the owner 2026-09-01 and PASSED** — drawing, erasing, persistence, the mode collision, two-window sync, and the player seeing no walls. Section C (vision toggle) and four cosmetic steps are deliberately DEFERRED to 9.3, recorded as deferred rather than passed: the toggle stores a boolean and does nothing visible until fog exists)*
 - [ ] 9.3 — Token-based line of sight & sight range
   - [ ] 9.3.1 — Backend
   - [ ] 9.3.2 — Web UI
@@ -1904,9 +1904,51 @@ feature — the design is deliberately production-shaped.
 ### Subphase 9.2: Vision toggle & obstructions (walls + freehand)
 
 #### 9.2.1 — Backend
-- Migration: `playspace_walls` (map_id, kind `'segment' | 'freehand'`, geometry as
-  an ordered point list / JSON). RLS: DM-write, member-read; realtime.
+- Migration: `playspace_walls` (map_id, kind `'segment' | 'rect' | 'freehand'`,
+  geometry as an ordered point list in MAP PIXELS). RLS: **DM-only in both
+  directions**; realtime.
 - The `vision_enabled` toggle already lives on the map (9.1.1).
+
+**Status 2026-09-01 — 9.2.1 DONE.** Migrations
+[0060](supabase/migrations/0060_playspace_walls.sql) +
+[0061](supabase/migrations/0061_walls_dm_only.sql); 10 new assertions in the 8.2
+matrix, now **133**.
+
+**One geometry type for all three tools.** A segment is a two-point list, a
+rectangle a closed four-point list, a freehand stroke a long one. `kind` is kept
+only so the editor can offer the right handles on an existing wall — nothing in
+the sight maths reads it, because that maths only ever wants line segments. The
+2000-point ceiling is a guard against a freehand stroke recorded per mouse event.
+
+**THE VISIBILITY DECISION, and it was reversed the same day.** 0060 made walls
+member-readable, because client-side vision needs the walls client-side. The
+owner chose the stronger model, and 0061 withdrew that read before any UI was
+built on it.
+
+The comparison I offered when raising it was wrong and is corrected here:
+**Roll20's Updated Dynamic Lighting computes server-side** and withholds wall
+data from player clients; **Foundry computes client-side** and is open that
+clients receive walls. They do not agree, so "what the big VTTs do" was not a
+single answer. We are following Roll20.
+
+What that costs, stated plainly so 9.3 is not a surprise: **vision can no longer
+be computed in the player's browser**, because the browser will not have the
+walls. 9.3 must compute each token's visibility server-side and return only the
+resulting polygon — the geometry the player is *allowed* to know. That is a
+materially bigger piece of work, and it is the entire point: what the client
+never receives, it cannot leak.
+
+Flipped now rather than later because widening a read is easy and narrowing one
+after a feature depends on it is not. 9.2's tools are DM-only either way, so the
+change cost nothing today and would have meant rewriting the vision system after
+9.3.
+
+0061 carries an assertion that `playspace_walls` has exactly ONE select policy
+and that it does not mention `is_campaign_member` — a second policy would be
+OR-ed with it and would silently restore the read. The matrix's own assertion
+inverted with the decision: "CAN read walls" became "receives NO wall geometry at
+all", which is the assertion the whole approach rests on. If it ever reads
+non-zero, the map layout is leaking however good the fog looks on screen.
 
 #### 9.2.2 — Web UI
 - DM vision toggle: **off ⇒ no fog, the whole map is visible to everyone**;
@@ -1920,6 +1962,13 @@ feature — the design is deliberately production-shaped.
   only the DM can add/edit walls (verify server-side); walls persist and sync.
 
 ### Subphase 9.3: Token-based line of sight & sight range
+
+> **9.3 is now server-side by decision (0061).** Visibility is computed where the
+> walls are — an Edge Function in TypeScript rather than PL/pgSQL, so the
+> geometry (segment intersection, angular sweep, shadow casting) can be extracted
+> and unit-tested like `grid.ts` was. A sign error in a ray cast is invisible on
+> screen until someone sees through a wall, which is exactly the kind of bug a
+> browser checklist cannot find.
 
 #### 9.3.1 — Backend
 - Add per-token sight config to `playspace_tokens`: a normal **sight range** and a

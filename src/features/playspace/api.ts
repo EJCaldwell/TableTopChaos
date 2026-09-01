@@ -27,6 +27,10 @@ import type { Database } from '../../lib/database.types'
 export type PlayspaceMap = Database['public']['Tables']['playspace_maps']['Row']
 /** A token row as stored. Position is in MAP PIXELS (0048 decision 1). */
 export type PlayspaceToken = Database['public']['Tables']['playspace_tokens']['Row']
+/** A wall row as stored. DM-only: a player's client never receives these. */
+export type PlayspaceWall = Database['public']['Tables']['playspace_walls']['Row']
+/** What tool drew a wall. Display/editing only — the sight maths reads points. */
+export type WallKind = 'segment' | 'rect' | 'freehand'
 
 /** The most maps a campaign may hold. Mirrors the 0050 trigger, for UI copy. */
 export const MAX_MAPS = 5
@@ -345,4 +349,73 @@ export async function signedUrlsForAssets(
     }),
   )
   return out
+}
+
+/**
+ * Lists a map's walls.
+ *
+ * **DM-only by RLS** (migration 0061). A player calling this gets an empty
+ * array, not an error — which is the correct shape for the caller (there are no
+ * walls *they* can see) and is why the wall layer simply does not render for
+ * them rather than needing its own guard.
+ *
+ * @param mapId - The map whose walls to load.
+ */
+export async function listWalls(mapId: string): Promise<PlayspaceWall[]> {
+  const { data, error } = await supabase
+    .from('playspace_walls')
+    .select('*')
+    .eq('map_id', mapId)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return data ?? []
+}
+
+/**
+ * Saves a new wall. DM only.
+ *
+ * @param mapId - Map to draw on.
+ * @param kind - Which tool drew it (editing hint only).
+ * @param points - Ordered [x, y] pairs in MAP PIXELS. Must already be
+ *        simplified — the database refuses more than 2000 points, and
+ *        `simplifyStroke` is what guarantees that.
+ * @param closed - Whether the last point joins back to the first.
+ * @returns The created row.
+ */
+export async function createWall(
+  mapId: string,
+  kind: WallKind,
+  points: [number, number][],
+  closed = false,
+): Promise<PlayspaceWall> {
+  const { data, error } = await supabase
+    .from('playspace_walls')
+    .insert({ map_id: mapId, kind, points, closed })
+    .select('*')
+    .single()
+  if (error) throw error
+  return data
+}
+
+/**
+ * Deletes one wall. DM only.
+ * @param wallId - The wall to remove.
+ */
+export async function deleteWall(wallId: string): Promise<void> {
+  const { error } = await supabase.from('playspace_walls').delete().eq('id', wallId)
+  if (error) throw error
+}
+
+/**
+ * Deletes every wall on a map. DM only.
+ *
+ * Separate from deleteWall rather than a loop of it: clearing a map of fifty
+ * walls should be one statement and one realtime burst, not fifty of each.
+ *
+ * @param mapId - The map to clear.
+ * @returns Nothing; RLS silently matches zero rows for a non-DM.
+ */
+export async function clearWalls(mapId: string): Promise<void> {
+  const { error } = await supabase.from('playspace_walls').delete().eq('map_id', mapId)
+  if (error) throw error
 }

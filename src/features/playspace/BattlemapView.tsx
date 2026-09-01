@@ -21,8 +21,10 @@
 import { useEffect, useState } from 'react'
 import { Button, FormError } from '../../components/ui'
 import { BattlemapCanvas } from './BattlemapCanvas'
+import type { WallTool } from './WallLayer'
 import { useCampaignMaps } from './useCampaignMaps'
 import {
+  clearWalls,
   TOKEN_RINGS,
   TOKEN_SIZES,
   deleteToken,
@@ -58,6 +60,12 @@ export function BattlemapView({
 }) {
   const { active, loading, error: loadError } = useCampaignMaps(campaignId)
   const [selected, setSelected] = useState<PlayspaceToken | null>(null)
+  /**
+   * The active wall tool (9.2). DM-only, and reset whenever the live map
+   * changes: a tool left armed on a map you are no longer looking at is how you
+   * draw a wall across the wrong picture.
+   */
+  const [wallTool, setWallTool] = useState<WallTool>('none')
   const [error, setError] = useState<string | null>(null)
   // No `busy` flag here any more: the only remaining actions in this component
   // are the two token controls, which are instantaneous and already guarded by
@@ -149,6 +157,12 @@ export function BattlemapView({
     await run(async () => setSelected(await updateToken(tokenId, { owner_user_id: userId })))
   }
 
+  // Leaving the map disarms the tool. Also covers the DM switching maps from the
+  // Maps tab while a tool is held.
+  useEffect(() => {
+    setWallTool('none')
+  }, [active?.id])
+
   if (loading) return <Centered>Loading the battlemap…</Centered>
 
   return (
@@ -164,6 +178,63 @@ export function BattlemapView({
           the thing you select it on. The Maps tab owns the maps; this owns
           what is standing on one. Absent until something is selected, rather
           than present-but-disabled. */}
+      {/* Wall tools (9.2). DM-only, and above the token strip because arming a
+          tool changes what every subsequent click does — a mode switch belongs
+          where you cannot miss that you are in it. */}
+      {isDm && active && (
+        <div style={strip}>
+          <strong>Walls</strong>
+          {WALL_TOOLS.map((t) => (
+            <button
+              key={t.value}
+              type="button"
+              onClick={() => setWallTool((cur) => (cur === t.value ? 'none' : t.value))}
+              // Pressed state on the button itself, not just a colour: the
+              // difference between "drawing walls" and "moving tokens" is the
+              // most consequential mode in the app, and colour alone is not
+              // enough to carry it.
+              aria-pressed={wallTool === t.value}
+              style={{
+                font: 'inherit',
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+                borderRadius: 'var(--radius)',
+                padding: '2px 8px',
+                border: '1px solid currentColor',
+                background: wallTool === t.value ? 'var(--color-accent)' : 'transparent',
+                color: wallTool === t.value ? '#fff' : 'inherit',
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+          {wallTool !== 'none' && (
+            <span style={{ color: 'var(--color-danger)' }}>
+              Token dragging is off while a wall tool is active.
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              if (!window.confirm('Remove every wall on this map? This cannot be undone.')) return
+              void run(() => clearWalls(active.id))
+            }}
+            style={{
+              font: 'inherit',
+              fontSize: '0.8rem',
+              cursor: 'pointer',
+              borderRadius: 'var(--radius)',
+              padding: '2px 8px',
+              border: '1px solid currentColor',
+              background: 'transparent',
+              color: 'var(--color-danger)',
+            }}
+          >
+            Clear walls
+          </button>
+        </div>
+      )}
+
       {isDm && active && allowTokens && (
         <div style={strip}>
           {selected ? (
@@ -289,6 +360,7 @@ export function BattlemapView({
             currentUserId={currentUserId}
             onSelectToken={setSelected}
             allowTokens={allowTokens}
+            wallTool={wallTool}
             myCharacter={myCharacter}
           />
         </div>
@@ -302,6 +374,19 @@ export function BattlemapView({
     </div>
   )
 }
+
+/**
+ * The wall tools, in the order they are offered.
+ *
+ * Erase last and separated in the eye by being the only destructive one — the
+ * three drawing tools are interchangeable, the eraser is not.
+ */
+const WALL_TOOLS: { value: WallTool; label: string }[] = [
+  { value: 'segment', label: 'Line' },
+  { value: 'rect', label: 'Room' },
+  { value: 'freehand', label: 'Freehand' },
+  { value: 'erase', label: 'Erase' },
+]
 
 /** Shared toolbar styling, so the strips in both panels line up identically. */
 const strip: React.CSSProperties = {

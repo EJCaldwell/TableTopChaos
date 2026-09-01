@@ -120,6 +120,20 @@ export function MapsPanel({ campaignId, isDm }: { campaignId: string; isDm: bool
   }
 
   /**
+   * The vision toggle (9.2.2). The column has existed since 0048 doing nothing;
+   * this is what turns it on.
+   *
+   * OFF means no fog at all — the whole map is visible to everyone, which is the
+   * default and the behaviour every campaign has had until now. ON hands the map
+   * to the vision system (9.3/9.4). Walls can be drawn either way, so a DM can
+   * prepare a map's obstructions before ever switching fog on.
+   */
+  async function handleVision(mapId: string, next: boolean) {
+    patch((prev) => prev.map((m) => (m.id === mapId ? { ...m, vision_enabled: next } : m)))
+    await run(() => updateMap(mapId, { vision_enabled: next }))
+  }
+
+  /**
    * The DM's switch for player-placed tokens (0055).
    *
    * Per map, not per campaign, so a DM can allow it on the town square and not
@@ -267,6 +281,25 @@ export function MapsPanel({ campaignId, isDm }: { campaignId: string; isDm: bool
                   />
                   Let players put their own character on this map
                 </label>
+
+                {/* Vision (9.2). Says what OFF means as well as what ON does:
+                    "vision" alone reads as a feature you are enabling, when the
+                    consequential half is that turning it on HIDES things from
+                    your players. */}
+                <label style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', fontSize: '0.8rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={m.vision_enabled}
+                    onChange={(e) => void handleVision(m.id, e.target.checked)}
+                  />
+                  Limit what players can see (fog &amp; walls)
+                </label>
+                {m.vision_enabled && (
+                  <p style={{ ...muted, margin: 0, fontSize: '0.75rem' }}>
+                    Draw walls on the map itself. Players never receive the wall
+                    geometry — only what their token can see.
+                  </p>
+                )}
 
                 <p style={{ ...muted, margin: 0, fontSize: '0.75rem' }}>
                   {m.width_px}×{m.height_px}px

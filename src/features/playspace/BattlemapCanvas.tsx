@@ -29,14 +29,20 @@ import { useRealtimeSync, mergeById, type RealtimeEvent } from '../realtime/useR
 import { signedUrlFor } from '../media/api'
 import { supabase } from '../../lib/supabase'
 import { dropPosition, gridLines, snapToken } from './grid'
+import { WallLayer, type WallTool } from './WallLayer'
 import {
   createToken,
   findFreeCellFor,
   listTokens,
   moveToken,
+  createWall,
+  deleteWall,
+  listWalls,
   signedUrlsForAssets,
   type PlayspaceMap,
   type PlayspaceToken,
+  type PlayspaceWall,
+  type WallKind,
 } from './api'
 
 /**
@@ -52,6 +58,9 @@ import {
  *        than as a tactical board (owner decision 2026-08-28). Existing tokens
  *        still render and still drag — turning a map read-only should not make
  *        pieces already on it vanish.
+ * @param wallTool - The active wall tool (9.2). Anything but 'none' puts the
+ *        wall layer in front of the tokens and suspends token dragging — you
+ *        cannot draw a wall and move a piece with the same gesture.
  * @param myCharacter - The caller's character in this campaign, if any. Lets a
  *        player put THEMSELVES on the board when the DM has allowed it; the
  *        token takes the character's name and portrait so the table sees who it
@@ -63,6 +72,7 @@ export function BattlemapCanvas({
   isDm,
   onSelectToken,
   allowTokens = true,
+  wallTool = 'none',
   myCharacter,
 }: {
   map: PlayspaceMap
@@ -70,6 +80,7 @@ export function BattlemapCanvas({
   isDm: boolean
   onSelectToken?: (token: PlayspaceToken | null) => void
   allowTokens?: boolean
+  wallTool?: WallTool
   myCharacter?: { id: string; name: string; portraitAssetId: string | null } | null
 }) {
   const [tokens, setTokens] = useState<PlayspaceToken[]>([])
@@ -338,6 +349,56 @@ export function BattlemapCanvas({
     }
   }, [artKey])
 
+  // --------------------------------------------------------------- walls
+
+  // DM-only by RLS (0061): for anyone else this resolves to an empty array, so
+  // the layer renders nothing without needing its own role check.
+  const [walls, setWalls] = useState<PlayspaceWall[]>([])
+  useEffect(() => {
+    let live = true
+    listWalls(map.id)
+      .then((w) => live && setWalls(w))
+      .catch(() => live && setWalls([]))
+    return () => {
+      live = false
+    }
+  }, [map.id])
+
+  // Live, so a wall drawn mid-session appears on the DM's second window too.
+  // Players receive no events for this table at all — RLS gates realtime as
+  // well as reads, which is what makes 0061 hold end to end.
+  const onWallEvent = useCallback((e: RealtimeEvent<PlayspaceWall>) => {
+    setWalls((prev) =>
+      mergeById(prev, e as RealtimeEvent<{ id: string }>, (raw) => raw as unknown as PlayspaceWall),
+    )
+  }, [])
+  useRealtimeSync<PlayspaceWall>('playspace_walls', onWallEvent, `map_id=eq.${map.id}`)
+
+  /** Persists a finished wall, optimistically. */
+  async function handleCreateWall(kind: WallKind, points: [number, number][], closed: boolean) {
+    try {
+      const row = await createWall(map.id, kind, points, closed)
+      setWalls((prev) => (prev.some((w) => w.id === row.id) ? prev : [...prev, row]))
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save that wall.')
+    }
+  }
+
+  /** Removes a wall the eraser touched. */
+  async function handleEraseWall(wallId: string) {
+    const previous = walls
+    // Optimistic: the wall vanishes under the cursor, which is what an eraser
+    // should feel like. Restored wholesale if the delete is refused.
+    setWalls((prev) => prev.filter((w) => w.id !== wallId))
+    try {
+      await deleteWall(wallId)
+    } catch (e) {
+      setWalls(previous)
+      setError(e instanceof Error ? e.message : 'Could not remove that wall.')
+    }
+  }
+
   // ------------------------------------------------------------- realtime
 
   // Per-ROW merge rather than a re-fetch: a token being dragged by someone else
@@ -366,8 +427,12 @@ export function BattlemapCanvas({
 
   /** May this session drag this token? UI gating; RLS is the real gate. */
   const canDrag = useCallback(
-    (t: PlayspaceToken) => isDm || (!!currentUserId && t.owner_user_id === currentUserId),
-    [isDm, currentUserId],
+    (t: PlayspaceToken) =>
+      // A wall tool takes over the pointer entirely. Without this, starting a
+      // wall on top of a token would drag the token instead — and the DM would
+      // discover it only after letting go somewhere else.
+      wallTool === 'none' && (isDm || (!!currentUserId && t.owner_user_id === currentUserId)),
+    [isDm, currentUserId, wallTool],
   )
 
   /**
@@ -758,6 +823,20 @@ export function BattlemapCanvas({
               </button>
             )
           })}
+
+          {/* LAST in the DOM, deliberately: siblings paint in document order, so
+              rendering this before the tokens would put walls underneath them —
+              which is exactly the wrong way round on a crowded map, where the
+              wall you are checking is the one behind a monster. It is
+              click-through unless a tool is active, so sitting on top costs
+              nothing. */}
+          <WallLayer
+            map={map}
+            walls={walls}
+            tool={wallTool}
+            onCreate={(k, p, c) => void handleCreateWall(k, p, c)}
+            onErase={(id) => void handleEraseWall(id)}
+          />
         </div>
         </div>
       </div>
