@@ -51,6 +51,37 @@ export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 export const MAX_IMAGE_DIM = 2048
 
 /**
+ * The target size for an image that must fit within `max` on its longest side,
+ * or null when it already does.
+ *
+ * Separated from the canvas work (2026-09-01) so the arithmetic can be tested:
+ * this is the maths behind the fix for the Edge worker's OOM on large rasters,
+ * and it had never been exercised outside a browser.
+ *
+ * @param width - Source width in pixels.
+ * @param height - Source height in pixels.
+ * @param max - Longest permitted side.
+ * @returns The fitted size, or null if no resize is needed.
+ */
+export function fittedSize(
+  width: number,
+  height: number,
+  max: number,
+): { width: number; height: number } | null {
+  const longest = Math.max(width, height)
+  if (longest <= max) return null
+  const scale = max / longest
+  // Floored at 1: a very long, thin image (a map banner, a scanned scroll)
+  // scales its short side below half a pixel and rounds to 0, and a canvas of
+  // width 0 throws — so the upload would fail for exactly the images that most
+  // need shrinking.
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  }
+}
+
+/**
  * Downscales an image to fit within MAX_IMAGE_DIM (longest side), preserving
  * aspect ratio, using the browser's native decode + a canvas. Returns the
  * ORIGINAL file untouched when it's already within bounds or can't be decoded
@@ -73,16 +104,12 @@ export async function downscaleIfNeeded(file: File): Promise<File> {
   } catch {
     return file
   }
-  const { width, height } = bitmap
-  const longest = Math.max(width, height)
-  if (longest <= MAX_IMAGE_DIM) {
+  const fitted = fittedSize(bitmap.width, bitmap.height, MAX_IMAGE_DIM)
+  if (!fitted) {
     bitmap.close()
     return file
   }
-  // Compute the fitted target size and draw the scaled image.
-  const scale = MAX_IMAGE_DIM / longest
-  const w = Math.max(1, Math.round(width * scale))
-  const h = Math.max(1, Math.round(height * scale))
+  const { width: w, height: h } = fitted
   const canvas = document.createElement('canvas')
   canvas.width = w
   canvas.height = h

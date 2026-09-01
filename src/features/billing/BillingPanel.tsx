@@ -32,33 +32,8 @@ import {
   type BillingInterval,
   type CampaignSubscription,
 } from './api'
-
-/** Coarse billing state derived from the raw Stripe status. */
-type BillingState = 'none' | 'trialing' | 'active' | 'past_due' | 'lapsed' | 'pending'
-
-/** Maps the raw Stripe status (or no row) to our coarse state. */
-function deriveState(sub: CampaignSubscription | null): BillingState {
-  if (!sub || !sub.status) return 'none'
-  switch (sub.status) {
-    case 'trialing':
-      return 'trialing'
-    case 'active':
-      return 'active'
-    case 'past_due':
-      return 'past_due'
-    case 'incomplete':
-      return 'pending'
-    // canceled | unpaid | incomplete_expired → fully lapsed (read-only).
-    default:
-      return 'lapsed'
-  }
-}
-
-/** Whole days from now until an ISO timestamp (floored at 0). */
-function daysUntil(iso: string | null): number {
-  if (!iso) return 0
-  return Math.max(0, Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000))
-}
+// Pure derivations, extracted 2026-09-01 so they can be unit-tested; see state.ts.
+import { daysUntil, deriveState, type BillingState } from './state'
 
 /**
  * @param campaignId - The campaign whose billing this manages.

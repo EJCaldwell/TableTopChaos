@@ -29,6 +29,50 @@ subscriptions that nobody can actually buy.
       VAT" assumes it is enabled). If you are selling to the EU/UK, this is not
       optional. Enable it in the Stripe dashboard before the first real charge —
       retrofitting tax onto existing subscriptions is painful.
+- [x] ~~**BLOCKER ON THE FLIP — no content table enforces the read-only lock.**~~
+      **FIXED 2026-08-28, migration 0049.** 73 of 78 write policies now consult
+      `campaign_is_active`; the 5 exclusions are deliberate and named below. A
+      lapsed-campaign persona was added to the QA 8.2 matrix (now **96
+      assertions**), and migration 0049 carries an assertion that fails the
+      deploy if a future table adds a write policy without the lock — so this
+      cannot come back. Kept here rather than deleted, because the flip still
+      needs someone to confirm the lock behaves as intended against real
+      subscriptions.
+
+      Original finding, for the record:
+      Found 2026-08-28 while building Phase 9.1. **0 of 69 write policies** call
+      `private.campaign_is_active()`:
+
+      ```sql
+      select count(*) filter (where cmd in ('INSERT','UPDATE','DELETE')) as write_policies,
+             count(*) filter (where cmd in ('INSERT','UPDATE','DELETE')
+               and (coalesce(qual,'') like '%campaign_is_active%'
+                 or coalesce(with_check,'') like '%campaign_is_active%')) as enforce_lock
+      from pg_policies where schemaname='public';
+      -- 69 | 0
+      ```
+
+      [QA/1.5_tests/read-only-lock.md](QA/1.5_tests/read-only-lock.md) explicitly
+      instructed every later phase to add it — *"Each such table must add an RLS
+      write policy that checks `private.campaign_is_active(campaign_id)`, and that
+      phase's QA must re-run this lock against its writes."* Phases 2, 3 and 4
+      built the content tables and did not, and nothing caught it because
+      `enforce_active` is false, so the function returns true for everything.
+
+      **Consequences after the flip, if not fixed first:**
+      - A lapsed campaign stays **fully writable** — sheets, inventory, journals,
+        DM notes, NPCs, quests, everything. The paywall gates joining and uploads
+        and nothing else, so cancelling costs a customer nothing.
+      - The Refunds page states *"everyone can still read everything, and nobody
+        can write"*. That would be **false**, in a document Phase 7.2 exists to
+        keep accurate.
+
+      **Fix:** add `and coalesce(private.campaign_is_active(<campaign>), false)`
+      to the INSERT/UPDATE/DELETE policies on every content table, then extend
+      QA/8.2's matrix with a lapsed-campaign persona so it can never regress.
+      Migration 0048 (playspace) already does this and is the pattern to copy —
+      it is currently the only table pair in the project that does.
+
 - [ ] **Flip the kill-switch.** One-line SQL, deliberately left for launch day:
       ```sql
       update private.billing_config set enforce_active = true;
@@ -387,3 +431,22 @@ it out before real users arrive.
   take money and store other people's writing, this ships first.
 - **Backups.** Confirm what Supabase retains on your plan, and whether that is
   enough for campaigns people have spent a year writing.
+
+## Dev-account write grant (migration 0052) — decide before launch
+
+`private.dev_accounts` now confers **write access to other users' character
+sheets** in campaigns that account DMs. Today it holds one entry (EJ), added for
+the 9.1a testing switcher.
+
+This was fine while the only players were test accounts. Once real people have
+characters, it means the owner can silently edit their sheets. Before launch,
+pick one:
+
+- **Empty the table** (`delete from private.dev_accounts;`) — the switcher stops
+  working, everything else is unaffected, and the grant becomes inert.
+- **Keep it and disclose it** in the privacy policy, since it is a real access
+  path over user data.
+
+Doing nothing leaves an undisclosed access path. The RLS matrix asserts the
+grant is confined to allowlisted accounts, but it cannot decide whether the
+allowlist should have anyone in it at launch.

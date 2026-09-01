@@ -21,59 +21,17 @@ import {
   type ScheduleRsvp,
   type ScheduleSession,
 } from './api'
+import {
+  formatWhen,
+  isoToLocalInput,
+  localInputToIso,
+  nowLocalInput,
+  sortSessions,
+  startOfCurrentMinute,
+} from './when'
 
-/** Sorts sessions soonest-dated first (undated last) — mirrors listSessions. */
-function sortSessions(list: ScheduleSession[]): ScheduleSession[] {
-  return [...list].sort((a, b) => {
-    if (a.proposed_at == null && b.proposed_at == null) return a.created_at.localeCompare(b.created_at)
-    if (a.proposed_at == null) return 1
-    if (b.proposed_at == null) return -1
-    return a.proposed_at.localeCompare(b.proposed_at)
-  })
-}
-
-/** Converts a stored ISO timestamp to a value for <input type="datetime-local">. */
-function isoToLocalInput(iso: string | null): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  // Offset to local time, then trim to "YYYY-MM-DDTHH:mm".
-  const tzMs = d.getTime() - d.getTimezoneOffset() * 60000
-  return new Date(tzMs).toISOString().slice(0, 16)
-}
-/** Converts a datetime-local value back to an ISO timestamp (or null if empty). */
-function localInputToIso(v: string): string | null {
-  return v ? new Date(v).toISOString() : null
-}
-/** The current local moment as a datetime-local input value (for the Now button). */
-function nowLocalInput(): string {
-  return isoToLocalInput(new Date().toISOString())
-}
-
-/**
- * The earliest instant a newly proposed session may be dated: the start of the
- * current minute.
- *
- * It must be the minute, not the exact moment. `<input type="datetime-local">`
- * only expresses minutes, and `nowLocalInput()` truncates to match — so the
- * "Now" button produces HH:MM:00, which is already a second or two in the past
- * by the time anyone clicks Propose. Comparing against the exact moment
- * rejected the app's own shortcut.
- *
- * @returns An ISO timestamp at the start of the current minute.
- */
-function startOfCurrentMinute(): string {
-  const d = new Date()
-  d.setSeconds(0, 0)
-  return d.toISOString()
-}
-/** Human-friendly display of a proposed time (or "Time TBD"). */
-function formatWhen(iso: string | null): string {
-  if (!iso) return 'Time TBD'
-  return new Date(iso).toLocaleString(undefined, {
-    weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-  })
-}
-
+// Date handling lives in ./when.ts, extracted 2026-09-01 so the timezone
+// conversions can be unit-tested rather than trusted.
 const RSVP_LABELS: Record<RsvpStatus, string> = { yes: 'Yes', maybe: 'Maybe', no: 'No' }
 const RSVP_COLORS: Record<RsvpStatus, string> = {
   yes: 'var(--color-success)', maybe: 'var(--color-text-muted)', no: 'var(--color-danger)',

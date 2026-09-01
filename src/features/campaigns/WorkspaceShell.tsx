@@ -47,6 +47,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { FloatingPanel } from './FloatingPanel'
 import { TabBody } from './TabBody'
+import { BattlemapView } from '../playspace/BattlemapView'
 import {
   clampRailWidth,
   clampRect,
@@ -78,6 +79,9 @@ const RAIL_COLLAPSED_W = 44
  *                    persistence meaningful.
  * @param members - Roster, forwarded to Overview.
  * @param isDm / isOwner / currentUserId - Forwarded to TabBody's role guards.
+ * @param characterUserId - Dev-only override for WHOSE character sheet the
+ *        character-scoped panels show (9.1a). Undefined in every normal session;
+ *        forwarded verbatim to TabBody, which defaults it to `currentUserId`.
  * @param onRenamed / onModeChanged - Forwarded so panel edits update the page.
  * @param openRequest - An outside request to open a panel: `{ key, nonce }`.
  *        The shell opens (or raises) that panel whenever `nonce` changes, which
@@ -95,6 +99,7 @@ export function WorkspaceShell({
   isDm,
   isOwner,
   currentUserId,
+  characterUserId,
   onRenamed,
   onModeChanged,
 }: {
@@ -105,6 +110,7 @@ export function WorkspaceShell({
   isDm: boolean
   isOwner: boolean
   currentUserId?: string
+  characterUserId?: string
   onRenamed: (name: string) => void
   onModeChanged: (mode: GameMode) => void
 }) {
@@ -574,42 +580,26 @@ export function WorkspaceShell({
   /** The area the windows float over: the playspace, or an empty-state hint. */
   const workspace = (
     <div ref={areaRef} style={{ position: 'relative', flex: 1, minWidth: 0, overflow: 'hidden' }}>
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 'var(--space-2)',
-          textAlign: 'center',
-          padding: 'var(--space-6)',
-          color: 'var(--color-text-muted)',
-        }}
-      >
-        {hasPlayspace ? (
-          <>
-            {/* Placeholder until Phase 9 ships the battlemap. Deliberately plain:
-                no fake map furniture implying a feature that isn't here. */}
-            <strong style={{ fontSize: '1.05rem' }}>The playspace goes here</strong>
-            <p style={{ margin: 0, fontSize: '0.85rem', maxWidth: 420 }}>
-              This campaign plays as{' '}
-              <strong>{campaign.game_mode === 'rpg' ? 'Full RPG' : 'Playspace'}</strong>, so the
-              shared battlemap will fill this area
-              {campaign.game_mode === 'rpg' ? ', along with the combat tracker.' : '.'} Open any
-              section from the sidebar and drag its window wherever you like.
-            </p>
-          </>
-        ) : (
-          openCount === 0 && (
-            <p style={{ margin: 0, fontSize: '0.9rem', maxWidth: 420 }}>
-              Pick a section from the sidebar to open it. Each one opens in its own window, so you
-              can keep several going at once and drag them wherever you like.
-            </p>
-          )
-        )}
-      </div>
+      {/* The old "pick a section from the sidebar" hint used to live here. It
+          was an absolutely-positioned full-area layer, and now that the map
+          fills that area in every mode it would sit invisibly on top and
+          swallow the first click of every drag. BattlemapView renders its own
+          empty state instead, which says something more useful. */}
+      {/* The map fills the workspace area in EVERY game mode (2026-08-28). It
+          is a sibling of the floating windows, not their background: the windows
+          are absolutely positioned over this area and must stay above it, which
+          is why this renders first and claims no z-index of its own.
+
+          `allowTokens` is the only difference between the modes: a notetaker
+          campaign gets the map as shared reference art, with no tokens to place
+          on it. Same component, same place, one capability fewer. */}
+      <BattlemapView
+        campaignId={campaign.id}
+        members={members}
+        isDm={isDm}
+        currentUserId={currentUserId}
+        allowTokens={hasPlayspace}
+      />
 
       {/* Scrim behind Settings. It is modal in feel — always on top, filling
           most of the area — so dimming everything else makes that explicit
@@ -656,6 +646,7 @@ export function WorkspaceShell({
               isDm={isDm}
               isOwner={isOwner}
               currentUserId={currentUserId}
+              characterUserId={characterUserId}
               onRenamed={onRenamed}
               onModeChanged={onModeChanged}
               workspace={{ onResetLayout: resetLayout }}

@@ -21,12 +21,13 @@
  * The caller's role comes from listMyCampaigns, so a single membership read
  * drives both the header badge and tab gating.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
 import { AppHeader } from '../../components/AppHeader'
 import { FormError } from '../../components/ui'
 import { LapseBanner } from '../billing/LapseBanner'
+import { useDevAccess } from '../dev/useDevAccess'
 import { OverviewPanel } from './OverviewPanel'
 import { WorkspaceShell } from './WorkspaceShell'
 import { tabsForRole } from './tabs'
@@ -39,6 +40,24 @@ import {
   type GameMode,
   type Member,
 } from './api'
+
+/**
+ * The dev-only test toolbar, loaded ONLY in a dev build.
+ *
+ * A plain static import would put the component in the production bundle even
+ * though it can never render there — verified: the first version of this leaked
+ * "View as player" and its banner copy into dist/. `import.meta.env.DEV` is a
+ * compile-time constant, so in a production build this whole expression folds to
+ * `null`, the `import()` becomes unreachable, and Rollup drops the module.
+ *
+ * That is the difference between the control being HIDDEN and being ABSENT, and
+ * it is the one the QA step actually checks for.
+ */
+const DevToolsBar = import.meta.env.DEV
+  ? lazy(() =>
+      import('../dev/DevToolsBar').then((m) => ({ default: m.DevToolsBar })),
+    )
+  : null
 
 /** localStorage key holding the last-selected tab for a given campaign. */
 function tabStorageKey(campaignId: string): string {
@@ -118,6 +137,22 @@ export function CampaignPage() {
   // for THIS campaign's role — the in-workspace campaign switcher was removed in
   // 5.2.1c, so switching now goes via the dashboard. The list is still the
   // cheapest way to learn the caller's role without a separate query.
+  // Dev-only test tooling (9.1a): a dev build, allowlisted account only.
+  const devAccess = useDevAccess()
+
+  // "View as player" — a DM re-rendering their own campaign the way a player
+  // sees it. Deliberately NOT persisted: it is a momentary inspection, and a
+  // mode that survives a reload is one you forget you are in. Also reset when
+  // the campaign changes, below.
+  const [viewAsPlayer, setViewAsPlayer] = useState(false)
+
+  // Dev-only (9.1a): whose character sheet the character-scoped panels show.
+  // `undefined` means "mine", which is the only value outside a dev build.
+  // Reset alongside viewAsPlayer when the campaign changes — a member id from
+  // one campaign is meaningless in the next, and the panels would simply show
+  // an empty sheet with no hint as to why.
+  const [characterUserId, setCharacterUserId] = useState<string | undefined>(undefined)
+
   const [myCampaigns, setMyCampaigns] = useState<CampaignWithRole[]>([])
   const [campaign, setCampaign] = useState<Campaign | null>(null)
   const [members, setMembers] = useState<Member[]>([])
@@ -137,9 +172,15 @@ export function CampaignPage() {
     myCampaigns.find((c) => c.campaign.id === id)?.role ??
     members.find((m) => m.userId === user?.id)?.role ??
     null
-  const isDm = myRole === 'dm'
+  const realIsDm = myRole === 'dm'
+  // What the UI renders as. Everything downstream — tabsForRole, TabBody, every
+  // panel — already keys off `isDm`, so overriding it here is the whole feature;
+  // no panel needs to know the mode exists.
+  const isDm = realIsDm && !(devAccess && viewAsPlayer)
   // Only the owner (the creating DM) may delete; matches campaigns_delete_owner.
-  const isOwner = !!campaign && campaign.owner_id === user?.id
+  // Owner-only controls follow the view override too: a DM inspecting the player
+  // view should not still see the delete-campaign button.
+  const isOwner = !!campaign && campaign.owner_id === user?.id && isDm
 
   // The tabs this role can see. Memoized so the tab bar and the "is the active
   // tab still valid?" guard below agree on the same list.
@@ -169,6 +210,15 @@ export function CampaignPage() {
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  // Leaving a campaign drops the player-view override. Carrying it into the next
+  // campaign would mean opening one and quietly seeing less of it than you have
+  // access to, with the cause two screens back. The inspected-sheet override
+  // goes with it: a member id is scoped to one campaign's roster.
+  useEffect(() => {
+    setViewAsPlayer(false)
+    setCharacterUserId(undefined)
+  }, [id])
 
   // When the campaign changes, restore THAT campaign's last-selected tab (or
   // Overview if it has none saved), so each campaign remembers its own tab.
@@ -276,6 +326,22 @@ export function CampaignPage() {
           something you can scroll a panel past. Renders nothing unless the
           campaign is actually read-only. */}
       {campaign && <LapseBanner campaignId={campaign.id} />}
+      {/* Dev-only (9.1a). Renders nothing outside a dev build on an allowlisted
+          account, and is absent from production bundles entirely. */}
+      {devAccess && DevToolsBar && campaign && (
+        <Suspense fallback={null}>
+          <DevToolsBar
+            isDm={realIsDm}
+            viewAsPlayer={viewAsPlayer}
+            onToggleViewAsPlayer={setViewAsPlayer}
+            currentUserId={user?.id}
+            username={members.find((m) => m.userId === user?.id)?.username}
+            members={members}
+            characterUserId={characterUserId}
+            onChangeCharacterUserId={setCharacterUserId}
+          />
+        </Suspense>
+      )}
       <main style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {loading ? (
           <p style={{ color: 'var(--color-text-muted)', padding: 'var(--space-8)' }}>Loading…</p>
@@ -310,6 +376,10 @@ export function CampaignPage() {
               isDm={isDm}
               isOwner={isOwner}
               currentUserId={user?.id}
+              // Gated on devAccess as well as the state, so that even if the
+              // state were somehow set it could not redirect a real session's
+              // panels at another member.
+              characterUserId={devAccess ? characterUserId : undefined}
               onRenamed={handleRenamed}
               onModeChanged={handleModeChanged}
             />

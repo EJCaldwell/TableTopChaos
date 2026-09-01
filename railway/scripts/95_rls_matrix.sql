@@ -179,6 +179,10 @@ insert into public.characters (id, campaign_id, owner_id, name) values
   ('cccccccc-0000-4000-8000-000000000001', :camp::uuid, :p1::uuid, 'P1 Character'),
   ('cccccccc-0000-4000-8000-000000000002', :camp::uuid, :p2::uuid, 'P2 Character');
 
+-- An approved image in the campaign, for the 0058 token-artwork assertions.
+insert into public.media_assets (id, campaign_id, uploaded_by, storage_path, mime, byte_size, moderation_status)
+  values ('eeeeeeee-0000-4000-8000-000000000001', :camp::uuid, :dm::uuid, 'test/art.webp', 'image/webp', 1024, 'approved');
+
 insert into public.sheet_sections (id, character_id, title, position) values
   ('dddddddd-0000-4000-8000-000000000001', 'cccccccc-0000-4000-8000-000000000001', 'Stats', 0);
 insert into public.sheet_fields (section_id, label, value, position) values
@@ -207,6 +211,15 @@ insert into public.invite_codes (campaign_id, code, created_by) values
 insert into public.campaign_subscriptions (campaign_id, status) values
   (:camp::uuid, 'active');
 
+-- Playspace (Phase 9.1): one active map with three tokens — one owned by each
+-- player, and one DM-controlled monster with no owner.
+insert into public.playspace_maps (id, campaign_id, name, is_active) values
+  ('ffffffff-0000-4000-8000-000000000001', :camp::uuid, 'Matrix Map', true);
+insert into public.playspace_tokens (id, map_id, owner_user_id, label) values
+  ('ffffffff-0000-4000-8000-000000000011', 'ffffffff-0000-4000-8000-000000000001', :p1::uuid, 'P1 token'),
+  ('ffffffff-0000-4000-8000-000000000012', 'ffffffff-0000-4000-8000-000000000001', :p2::uuid, 'P2 token'),
+  ('ffffffff-0000-4000-8000-000000000013', 'ffffffff-0000-4000-8000-000000000001', null,      'DM dragon');
+
 -- ===========================================================================
 -- THE MATRIX
 -- ===========================================================================
@@ -227,6 +240,37 @@ select pg_temp.assert_rows('invites','DM','reads invite codes','select 1 from pu
 select pg_temp.assert_allowed('dm_notes','DM','can write a DM note','insert into public.dm_notes (campaign_id,title,position) values (' || quote_literal(:camp) || '::uuid,''new'',1)');
 select pg_temp.assert_denied('journal','DM','cannot WRITE a player''s journal','update public.journal_entries set title=''hijacked''');
 select pg_temp.assert_denied('campaigns','DM','direct DELETE of own campaign matches nothing (0034)','delete from public.campaigns where id=' || quote_literal(:camp) || '::uuid');
+-- 0052: an ORDINARY DM must NOT be able to edit a player's sheet. This is the
+-- assertion that matters most in this file, because it is the one that fails if
+-- the dev-account write clause is ever widened past its allowlist. The positive
+-- case below is a convenience; this one is the boundary.
+select pg_temp.assert_allowed('playspace','DM','CAN set the ring on a player''s token (0059)','update public.playspace_tokens set ring=''on'' where id=''ffffffff-0000-4000-8000-000000000011''');
+select pg_temp.assert_allowed('playspace','DM','CAN resize a player''s token (0057)','update public.playspace_tokens set size_cells=3 where id=''ffffffff-0000-4000-8000-000000000011''');
+select pg_temp.assert_denied('characters','DM','cannot edit a player''s character (non-dev DM)','update public.characters set name=''dm-edited'' where owner_id=' || quote_literal(:p1) || '::uuid');
+select pg_temp.assert_denied('sheet','DM','cannot edit a player''s sheet section (non-dev DM)','update public.sheet_sections set title=''dm-edited''');
+select pg_temp.become_owner();
+
+-- --- DM who IS an allowlisted dev account (0052) ---------------------------
+-- The fixture DM is temporarily added to private.dev_accounts, exercised, then
+-- removed. Safe against production for the same reason as everything else here:
+-- the whole script runs in a transaction that always rolls back. The removal is
+-- belt-and-braces so the later assertions cannot silently run as a dev account.
+insert into private.dev_accounts (user_id) values (:dm::uuid);
+select pg_temp.become(:dm::uuid);
+select pg_temp.assert_rows('dev','dev DM','is_dev_account() is true once allowlisted','select 1 where public.is_dev_account()', 1);
+select pg_temp.assert_allowed('dev','dev DM','CAN edit a player''s character','update public.characters set name=''dev-edited'' where owner_id=' || quote_literal(:p1) || '::uuid');
+select pg_temp.assert_allowed('dev','dev DM','CAN edit a player''s sheet section','update public.sheet_sections set title=''dev-edited''');
+-- The sheet is editable; ownership is not transferable through that path.
+select pg_temp.assert_denied('dev','dev DM','cannot REASSIGN a character to themselves','update public.characters set owner_id=' || quote_literal(:dm) || '::uuid where owner_id=' || quote_literal(:p1) || '::uuid');
+-- The journal is excluded on purpose: private even from a dev DM.
+select pg_temp.assert_rows('dev','dev DM','still CANNOT read a player''s journal','select 1 from public.journal_entries', 0);
+select pg_temp.assert_denied('dev','dev DM','still cannot WRITE a player''s journal','update public.journal_entries set title=''dev-hijacked''');
+-- Deleting someone's sheet is not a testing need and has no undo.
+select pg_temp.assert_denied('dev','dev DM','cannot DELETE a player''s character','delete from public.characters where owner_id=' || quote_literal(:p1) || '::uuid');
+select pg_temp.become_owner();
+delete from private.dev_accounts where user_id = :dm::uuid;
+select pg_temp.become(:dm::uuid);
+select pg_temp.assert_denied('dev','ex-dev DM','loses sheet write the moment they leave the allowlist','update public.characters set name=''revoked'' where owner_id=' || quote_literal(:p1) || '::uuid');
 select pg_temp.become_owner();
 
 -- --- Player 1 (member, owns a character) ----------------------------------
@@ -279,6 +323,93 @@ select pg_temp.assert_error('names','non-member','character-name RPC RAISES rath
 select pg_temp.assert_denied('roster','non-member','cannot add themselves to the campaign','insert into public.campaign_members (campaign_id,user_id,role) values (' || quote_literal(:camp) || '::uuid,' || quote_literal(:out) || '::uuid,''player'')');
 select pg_temp.become_owner();
 
+-- --- Playspace battlemap (Phase 9.1) --------------------------------------
+-- The headline rule: a player may move ONLY their own token. Everything else on
+-- this map is somebody else's to drag.
+select pg_temp.become(:p1::uuid);
+select pg_temp.assert_rows('playspace','player','sees the active map','select 1 from public.playspace_maps where campaign_id=' || quote_literal(:camp) || '::uuid', 1);
+select pg_temp.assert_rows('playspace','player','sees ALL tokens on it','select 1 from public.playspace_tokens', 3);
+select pg_temp.assert_allowed('playspace','player','can move their OWN token','update public.playspace_tokens set x=120,y=240 where id=''ffffffff-0000-4000-8000-000000000011''');
+-- 0056: size is part of the token row, so it inherits the movement rules. A
+-- player resizing somebody else's monster would be as bad as moving it.
+-- 0057: size is the DM's to set, even on a token the player owns and moves. The
+-- FIRST of these used to assert the opposite (0056) and was changed deliberately
+-- when the owner narrowed the rule.
+-- 0058: token artwork. The point of copying the asset id ONTO the token is that
+-- a player can then see a monster's portrait without being able to read the NPC
+-- row it came from. Both halves are asserted, because either one alone would be
+-- a different (and wrong) feature.
+select pg_temp.assert_rows('playspace','player','CANNOT read the NPC row a token depicts','select 1 from public.npcs', 0);
+select pg_temp.assert_rows('playspace','player','CAN read the campaign media a token points at','select 1 from public.media_assets where campaign_id=' || quote_literal(:camp) || '::uuid and moderation_status=''approved''', 1);
+select pg_temp.assert_denied('playspace','player','CANNOT resize even their OWN token (0057)','update public.playspace_tokens set size_cells=2 where id=''ffffffff-0000-4000-8000-000000000011''');
+select pg_temp.assert_allowed('playspace','player','can still MOVE their own token after 0057','update public.playspace_tokens set x=140,y=140 where id=''ffffffff-0000-4000-8000-000000000011''');
+-- 0059: the ring joins size as DM-only appearance. Asserted separately from
+-- size, because they are guarded by one trigger and a change to it could
+-- plausibly free one column while still holding the other.
+select pg_temp.assert_denied('playspace','player','CANNOT change the ring on their OWN token (0059)','update public.playspace_tokens set ring=''off'' where id=''ffffffff-0000-4000-8000-000000000011''');
+select pg_temp.assert_denied('playspace','player','CANNOT resize the DM''s monster','update public.playspace_tokens set size_cells=4 where id=''ffffffff-0000-4000-8000-000000000013''');
+select pg_temp.assert_error('playspace','player','CANNOT set a nonsense token size','update public.playspace_tokens set size_cells=2.7 where id=''ffffffff-0000-4000-8000-000000000011''');
+select pg_temp.assert_denied('playspace','player','CANNOT move a peer''s token','update public.playspace_tokens set x=999 where id=''ffffffff-0000-4000-8000-000000000012''');
+select pg_temp.assert_denied('playspace','player','CANNOT move the DM''s monster','update public.playspace_tokens set x=999 where id=''ffffffff-0000-4000-8000-000000000013''');
+select pg_temp.assert_denied('playspace','player','CANNOT seize the DM''s monster by claiming it','update public.playspace_tokens set owner_user_id=' || quote_literal(:p1) || '::uuid where id=''ffffffff-0000-4000-8000-000000000013''');
+select pg_temp.assert_denied('playspace','player','CANNOT give their token away','update public.playspace_tokens set owner_user_id=' || quote_literal(:p2) || '::uuid where id=''ffffffff-0000-4000-8000-000000000011''');
+select pg_temp.assert_denied('playspace','player','CANNOT orphan their token to DM control','update public.playspace_tokens set owner_user_id=null where id=''ffffffff-0000-4000-8000-000000000011''');
+-- 0055: the DM's switch. The map fixture leaves players_can_place at its FALSE
+-- default, so a player's own-token insert must now be refused — this is the
+-- assertion that proves the switch is a real gate and not just a hidden button.
+select pg_temp.assert_denied('playspace','player','CANNOT add their own token while the DM switch is off','insert into public.playspace_tokens (map_id,owner_user_id,label) values (''ffffffff-0000-4000-8000-000000000001'',' || quote_literal(:p1) || '::uuid,''mine'')');
+select pg_temp.become_owner();
+update public.playspace_maps set players_can_place = true where id = 'ffffffff-0000-4000-8000-000000000001';
+select pg_temp.become(:p1::uuid);
+select pg_temp.assert_allowed('playspace','player','CAN add their own token once the DM switches it on','insert into public.playspace_tokens (map_id,owner_user_id,label) values (''ffffffff-0000-4000-8000-000000000001'',' || quote_literal(:p1) || '::uuid,''mine'')');
+-- ...but still only for THEIR character, never someone else's name (0055).
+-- The peer's character id is written out LITERALLY, not looked up in a
+-- subquery. A first draft used `(select id from characters where owner_id=p2)`
+-- and the assertion passed for the wrong reason: that subquery runs as the
+-- PLAYER, who cannot read a peer's character, so it returned NULL and the row
+-- inserted as a plain unlinked marker — which the policy rightly allows. The
+-- test proved nothing. Any fixture lookup inside an assertion is subject to the
+-- very RLS being tested.
+select pg_temp.assert_denied('playspace','player','CANNOT put a PEER''s character on a token','insert into public.playspace_tokens (map_id,owner_user_id,character_id,label) values (''ffffffff-0000-4000-8000-000000000001'',' || quote_literal(:p1) || '::uuid,''cccccccc-0000-4000-8000-000000000002'',''borrowed'')');
+select pg_temp.become_owner();
+update public.playspace_maps set players_can_place = false where id = 'ffffffff-0000-4000-8000-000000000001';
+select pg_temp.become(:p1::uuid);
+select pg_temp.assert_denied('playspace','player','CANNOT create a token for somebody else','insert into public.playspace_tokens (map_id,owner_user_id,label) values (''ffffffff-0000-4000-8000-000000000001'',' || quote_literal(:p2) || '::uuid,''forged'')');
+select pg_temp.assert_denied('playspace','player','CANNOT delete a peer''s token','delete from public.playspace_tokens where id=''ffffffff-0000-4000-8000-000000000012''');
+select pg_temp.assert_denied('playspace','player','CANNOT edit the map','update public.playspace_maps set grid_size=10 where campaign_id=' || quote_literal(:camp) || '::uuid');
+select pg_temp.become_owner();
+
+select pg_temp.become(:dm::uuid);
+select pg_temp.assert_allowed('playspace','DM','can move ANY token','update public.playspace_tokens set x=50 where id=''ffffffff-0000-4000-8000-000000000011''');
+select pg_temp.assert_allowed('playspace','DM','can edit the map','update public.playspace_maps set grid_size=100 where campaign_id=' || quote_literal(:camp) || '::uuid');
+select pg_temp.become_owner();
+
+select pg_temp.become(:out::uuid);
+select pg_temp.assert_rows('playspace','non-member','sees no map','select 1 from public.playspace_maps', 0);
+select pg_temp.assert_rows('playspace','non-member','sees no tokens','select 1 from public.playspace_tokens', 0);
+select pg_temp.become_owner();
+
+-- Owner rules from migration 0050. These are triggers rather than policies, but
+-- they belong here: they are invariants a client could otherwise violate, and
+-- this is the file that gets run on every schema change.
+insert into public.playspace_maps (campaign_id, name) values
+  (:camp::uuid, 'Prep 2'), (:camp::uuid, 'Prep 3'),
+  (:camp::uuid, 'Prep 4'), (:camp::uuid, 'Prep 5');
+select pg_temp.assert_rows('playspace','—','five maps per campaign are allowed','select 1 from public.playspace_maps where campaign_id=' || quote_literal(:camp) || '::uuid', 5);
+select pg_temp.assert_error('playspace','—','a SIXTH map is refused','insert into public.playspace_maps (campaign_id,name) values (' || quote_literal(:camp) || '::uuid,''Prep 6'')');
+
+-- Switching the live map is ONE update; the trigger clears the others.
+update public.playspace_maps set is_active = true where campaign_id = :camp::uuid and name = 'Prep 3';
+select pg_temp.assert_rows('playspace','—','switching maps leaves exactly one active','select 1 from public.playspace_maps where campaign_id=' || quote_literal(:camp) || '::uuid and is_active', 1);
+select pg_temp.assert_rows('playspace','—','...and it is the one just chosen','select 1 from public.playspace_maps where campaign_id=' || quote_literal(:camp) || '::uuid and is_active and name=''Prep 3''', 1);
+-- Put the original map back so later assertions see the fixture they expect.
+update public.playspace_maps set is_active = true where id = 'ffffffff-0000-4000-8000-000000000001';
+
+-- Relinquishing an NPC token: only to somebody actually in the campaign.
+select pg_temp.assert_allowed('playspace','DM','can relinquish a token to a MEMBER','update public.playspace_tokens set owner_user_id=' || quote_literal(:p1) || '::uuid where id=''ffffffff-0000-4000-8000-000000000013''');
+select pg_temp.assert_error('playspace','DM','CANNOT relinquish a token to a non-member','update public.playspace_tokens set owner_user_id=' || quote_literal(:out) || '::uuid where id=''ffffffff-0000-4000-8000-000000000013''');
+select pg_temp.assert_allowed('playspace','DM','can reclaim it to DM control','update public.playspace_tokens set owner_user_id=null where id=''ffffffff-0000-4000-8000-000000000013''');
+
 -- --- Locked tables: nobody, ever ------------------------------------------
 -- RLS enabled with NO policies. These hold anti-abuse and erasure records; a
 -- policy appearing on any of them is a bug, not a feature.
@@ -286,6 +417,12 @@ select pg_temp.become(:dm::uuid);
 select pg_temp.assert_rows('locked','DM','trial_redemptions invisible','select 1 from public.trial_redemptions', 0);
 select pg_temp.assert_rows('locked','DM','deleted_accounts invisible','select 1 from public.deleted_accounts', 0);
 select pg_temp.assert_rows('locked','DM','orphaned_subscriptions invisible','select 1 from public.orphaned_subscriptions', 0);
+-- 0051: the dev-account allowlist. Since 0052 this IS a security boundary — an
+-- entry confers write access to other users' character sheets — so "no account
+-- may add itself to it" is the assertion the whole feature rests on.
+select pg_temp.assert_error('locked','DM','dev_accounts is unreadable','select 1 from private.dev_accounts');
+select pg_temp.assert_error('locked','DM','cannot add SELF to dev_accounts','insert into private.dev_accounts (user_id) values (' || quote_literal(:dm) || '::uuid)');
+select pg_temp.assert_rows('locked','DM','is_dev_account() is false for a normal account','select 1 where public.is_dev_account()', 0);
 select pg_temp.become_owner();
 
 -- --- Anonymous ------------------------------------------------------------
@@ -299,6 +436,50 @@ select pg_temp.assert_rows('anon','anon','sees no DM notes','select 1 from publi
 select pg_temp.assert_denied('anon','anon','cannot create a campaign','insert into public.campaigns (name,owner_id) values (''anon camp'',' || quote_literal(:dm) || '::uuid)');
 reset role;
 select set_config('request.jwt.claims', null, true);
+
+-- --- THE READ-ONLY LOCK (Phase 9.1 / migration 0049) ----------------------
+-- "Everyone can still read everything, and nobody can write" is a claim the
+-- Refunds page makes, so it needs a test rather than a comment.
+--
+-- enforce_active is switched ON for this section only; the transaction never
+-- commits, so it is off again the moment this script ends. The seeded campaign
+-- has an `active` subscription and acts as the CONTROL — without it, "all writes
+-- are denied" would pass just as well if the lock were broken in the other
+-- direction and froze everything.
+update private.billing_config set enforce_active = true;
+
+-- A second campaign with NO subscription: lapsed the moment enforcement is on.
+insert into public.campaigns (id, name, owner_id)
+values ('bbbbbbbb-0000-4000-8000-000000000003', 'Lapsed Campaign', :dm::uuid);
+insert into public.characters (id, campaign_id, owner_id, name)
+values ('cccccccc-0000-4000-8000-000000000003', 'bbbbbbbb-0000-4000-8000-000000000003', :dm::uuid, 'Frozen Character');
+insert into public.dm_notes (campaign_id, title, position)
+values ('bbbbbbbb-0000-4000-8000-000000000003', 'Frozen Note', 0);
+
+select pg_temp.become(:dm::uuid);
+
+-- Reads must still work. Data is preserved and exportable while frozen.
+select pg_temp.assert_rows('lock','DM','CAN still read a lapsed campaign','select 1 from public.campaigns where id=''bbbbbbbb-0000-4000-8000-000000000003''', 1);
+select pg_temp.assert_rows('lock','DM','CAN still read its DM notes','select 1 from public.dm_notes where campaign_id=''bbbbbbbb-0000-4000-8000-000000000003''', 1);
+select pg_temp.assert_rows('lock','DM','CAN still read its characters','select 1 from public.characters where campaign_id=''bbbbbbbb-0000-4000-8000-000000000003''', 1);
+
+-- Writes must not.
+select pg_temp.assert_denied('lock','DM','cannot edit a DM note while lapsed','update public.dm_notes set title=''edited'' where campaign_id=''bbbbbbbb-0000-4000-8000-000000000003''');
+select pg_temp.assert_denied('lock','DM','cannot add a DM note while lapsed','insert into public.dm_notes (campaign_id,title,position) values (''bbbbbbbb-0000-4000-8000-000000000003'',''new'',1)');
+select pg_temp.assert_denied('lock','DM','cannot add an NPC while lapsed','insert into public.npcs (campaign_id,name,position) values (''bbbbbbbb-0000-4000-8000-000000000003'',''new npc'',0)');
+select pg_temp.assert_denied('lock','DM','cannot rename their character while lapsed','update public.characters set name=''renamed'' where id=''cccccccc-0000-4000-8000-000000000003''');
+select pg_temp.assert_denied('lock','DM','cannot delete content while lapsed','delete from public.dm_notes where campaign_id=''bbbbbbbb-0000-4000-8000-000000000003''');
+
+-- CONTROL: the paid campaign is unaffected. Without this the section would pass
+-- if the lock froze every campaign regardless of subscription.
+select pg_temp.assert_allowed('lock','DM','CAN still write in a PAID campaign','insert into public.dm_notes (campaign_id,title,position) values (' || quote_literal(:camp) || '::uuid,''still working'',5)');
+
+-- Leaving a campaign must always work, paid or not — see 0049.
+select pg_temp.become(:p1::uuid);
+select pg_temp.assert_allowed('lock','player','CAN still leave a lapsed campaign','delete from public.campaign_members where campaign_id=' || quote_literal(:camp) || '::uuid and user_id=' || quote_literal(:p1) || '::uuid');
+select pg_temp.become_owner();
+
+update private.billing_config set enforce_active = false;
 
 -- --- Structural invariants ------------------------------------------------
 -- Not per-persona: properties of the schema that must hold for the whole model
@@ -322,6 +503,40 @@ where n.nspname='public'
   and p.proname in ('campaign_entitlements','account_deletion_targets',
                     'lapse_sweep_targets','record_lapse_warning','refresh_lapse_state')
   and has_function_privilege('authenticated', p.oid, 'execute');
+
+insert into rls_results
+select 'structural','—','every content write policy consults the read-only lock','0',
+       coalesce(string_agg(tablename || '.' || policyname, ', '), '0'), count(*) = 0
+from pg_policies
+where schemaname='public' and cmd in ('INSERT','UPDATE','DELETE')
+  and coalesce(qual,'') not like '%campaign_is_active%'
+  and coalesce(with_check,'') not like '%campaign_is_active%'
+  and coalesce(qual,'') not like '%_can_write%'
+  and coalesce(with_check,'') not like '%_can_write%'
+  -- The five documented exclusions (migration 0049): creating a campaign,
+  -- managing one, leaving one, revoking an invite, editing your own profile.
+  and (tablename, policyname) not in (
+    ('campaigns','campaigns_insert_own'),
+    ('campaigns','campaigns_update_dm'),
+    ('campaign_members','campaign_members_delete_self_or_dm'),
+    ('invite_codes','invite_codes_delete_dm'),
+    ('profiles','profiles_update_own')
+  );
+
+-- is_dev_account() must take NO argument: a one-arg version could be used to
+-- probe whether any given account is on the list.
+insert into rls_results
+select 'structural','—','is_dev_account() takes no argument (cannot probe others)','0',
+       coalesce(string_agg(pg_get_function_identity_arguments(p.oid), '; '), '0'),
+       count(*) = 0
+from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public' and p.proname = 'is_dev_account'
+  and pg_get_function_identity_arguments(p.oid) <> '';
+
+insert into rls_results
+select 'structural','—','dev_accounts has zero policies','0',
+       coalesce(string_agg(policyname, ', '), '0'), count(*) = 0
+from pg_policies where schemaname = 'private' and tablename = 'dev_accounts';
 
 insert into rls_results
 select 'structural','—','locked tables still have zero policies','0',

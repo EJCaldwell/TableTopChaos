@@ -66,6 +66,17 @@ export const WORKSPACE_TABS: WorkspaceTab[] = [
   // its own until Phase 5.2, when it moved into Settings alongside the rest of
   // campaign administration — it is visited rarely and did not earn a permanent
   // slot in the rail. Do not re-add it here; add to SettingsPanel instead.
+  // NOTE: there is deliberately no 'battlemap' tab. It existed for one
+  // afternoon, as a notetaker-only panel, and was removed on 2026-08-28 when the
+  // map moved into the workspace area for EVERY game mode. A tab would now be a
+  // second, differently-shaped copy of something already on screen. The mode
+  // difference is `allowTokens`, not location — see BattlemapView.
+  {
+    key: 'maps',
+    label: 'Maps',
+    audience: 'dm',
+    blurb: 'Upload battlemaps, set their grid, and choose which one the table sees.',
+  },
   {
     key: 'party',
     label: 'Party',
