@@ -846,6 +846,157 @@ export type Database = {
           },
         ]
       }
+      // playspace_maps / playspace_tokens — migrations 0048 + 0050 (Phase 9.1),
+      // hand-written for the same reason as profiles' legal_* columns: the
+      // generator targets the old hosted project, which is no longer where
+      // migrations are applied.
+      //
+      // Note x/y carry no bounds here and none in the database either (0048
+      // decision 1): position is in MAP PIXELS, and the server deliberately does
+      // not clamp, so a token may legitimately sit outside a map that was
+      // resized under it.
+      playspace_maps: {
+        Row: {
+          background_asset_id: string | null
+          campaign_id: string
+          created_at: string
+          grid_offset_x: number
+          grid_offset_y: number
+          grid_size: number
+          height_px: number
+          id: string
+          is_active: boolean
+          name: string
+          players_can_place: boolean
+          updated_at: string
+          vision_enabled: boolean
+          width_px: number
+        }
+        Insert: {
+          background_asset_id?: string | null
+          campaign_id: string
+          created_at?: string
+          grid_offset_x?: number
+          grid_offset_y?: number
+          grid_size?: number
+          height_px?: number
+          id?: string
+          is_active?: boolean
+          name?: string
+          players_can_place?: boolean
+          updated_at?: string
+          vision_enabled?: boolean
+          width_px?: number
+        }
+        Update: {
+          background_asset_id?: string | null
+          campaign_id?: string
+          created_at?: string
+          grid_offset_x?: number
+          grid_offset_y?: number
+          grid_size?: number
+          height_px?: number
+          id?: string
+          is_active?: boolean
+          name?: string
+          players_can_place?: boolean
+          updated_at?: string
+          vision_enabled?: boolean
+          width_px?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "playspace_maps_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "playspace_maps_background_asset_id_fkey"
+            columns: ["background_asset_id"]
+            isOneToOne: false
+            referencedRelation: "media_assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      playspace_tokens: {
+        Row: {
+          character_id: string | null
+          color: string
+          created_at: string
+          id: string
+          image_asset_id: string | null
+          label: string | null
+          map_id: string
+          npc_id: string | null
+          owner_user_id: string | null
+          ring: string
+          size_cells: number
+          size_px: number
+          updated_at: string
+          x: number
+          y: number
+        }
+        Insert: {
+          character_id?: string | null
+          color?: string
+          created_at?: string
+          id?: string
+          image_asset_id?: string | null
+          label?: string | null
+          map_id: string
+          npc_id?: string | null
+          owner_user_id?: string | null
+          ring?: string
+          size_cells?: number
+          size_px?: number
+          updated_at?: string
+          x?: number
+          y?: number
+        }
+        Update: {
+          character_id?: string | null
+          color?: string
+          created_at?: string
+          id?: string
+          image_asset_id?: string | null
+          label?: string | null
+          map_id?: string
+          npc_id?: string | null
+          owner_user_id?: string | null
+          ring?: string
+          size_cells?: number
+          size_px?: number
+          updated_at?: string
+          x?: number
+          y?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "playspace_tokens_map_id_fkey"
+            columns: ["map_id"]
+            isOneToOne: false
+            referencedRelation: "playspace_maps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "playspace_tokens_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "playspace_tokens_npc_id_fkey"
+            columns: ["npc_id"]
+            isOneToOne: false
+            referencedRelation: "npcs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         // legal_* columns added by migration 0035 (Phase 7.2) and written here
         // by hand — the generator targets the old hosted project, which is no
@@ -1292,6 +1443,13 @@ export type Database = {
       // members of it. Returns owner_id + character NAME only — it does NOT
       // widen private.can_read_character, so sheets, inventory, journals and
       // lore stay owner-or-DM. Raises insufficient_privilege for non-members.
+      // Migration 0051 (Phase 9.1a). True when the CALLER is a dev account.
+      // Takes no argument by design — it cannot be used to probe other users,
+      // and returns a boolean rather than the list.
+      is_dev_account: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
       campaign_character_names: {
         Args: { p_campaign_id: string }
         Returns: {

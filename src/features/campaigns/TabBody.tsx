@@ -31,6 +31,7 @@ import { QuestsPanel } from '../dm/QuestsPanel'
 import { CombatPanel } from '../dm/CombatPanel'
 import { HandoutsPanel, SharedWithUsPanel } from '../shared/SharedPanel'
 import { HpConditionsPanel } from '../status/HpConditionsPanel'
+import { MapsPanel } from '../playspace/MapsPanel'
 import type { WorkspaceTab } from './tabs'
 import type { Campaign, GameMode, Member } from './api'
 
@@ -42,6 +43,17 @@ import type { Campaign, GameMode, Member } from './api'
  * @param isOwner - Whether the caller owns it (gates Settings' danger zone).
  * @param currentUserId - The signed-in user's id; panels keyed to "my" data need
  *                        it, and its absence suppresses those panels entirely.
+ * @param characterUserId - WHOSE character sheet the character-scoped panels
+ *                        should show. Defaults to `currentUserId`, which is the
+ *                        only value it ever takes outside a dev build. The dev
+ *                        character switcher (9.1a) passes another member's id so
+ *                        a DM can inspect a party member's sheet in place; RLS
+ *                        already lets a DM READ every character in their
+ *                        campaign, and still refuses every write, so the
+ *                        inspected sheet is effectively read-only. Deliberately
+ *                        NOT applied to Overview or Settings, whose use of
+ *                        `currentUserId` is about the caller (schedule RSVPs,
+ *                        the "(you)" marker) rather than about a character.
  * @param onRenamed - Called with the new name after a successful rename, so the
  *                    shell's copy of the campaign updates without a refetch.
  * @param onModeChanged - Same, for a game-mode switch. This is what makes the
@@ -56,6 +68,7 @@ export function TabBody({
   isDm,
   isOwner,
   currentUserId,
+  characterUserId,
   onRenamed,
   onModeChanged,
   workspace,
@@ -66,11 +79,15 @@ export function TabBody({
   isDm: boolean
   isOwner: boolean
   currentUserId?: string
+  characterUserId?: string
   onRenamed: (name: string) => void
   onModeChanged: (mode: GameMode) => void
   workspace: WorkspacePrefs
 }) {
   const cid = campaign.id
+  // The subject of the character-scoped panels. `?? currentUserId` is what makes
+  // this a no-op everywhere except the dev switcher.
+  const subjectId = characterUserId ?? currentUserId
 
   return tab.key === 'overview' ? (
     <OverviewPanel campaign={campaign} members={members} isDm={isDm} currentUserId={currentUserId} />
@@ -85,22 +102,42 @@ export function TabBody({
       onRenamed={onRenamed}
       onModeChanged={onModeChanged}
     />
-  ) : tab.key === 'character' && currentUserId ? (
-    <CharacterPanel campaignId={cid} currentUserId={currentUserId} />
-  ) : tab.key === 'inventory' && currentUserId ? (
-    <InventoryPanel campaignId={cid} currentUserId={currentUserId} />
-  ) : tab.key === 'lore' && currentUserId ? (
-    <LorePanel campaignId={cid} currentUserId={currentUserId} />
-  ) : tab.key === 'abilities' && currentUserId ? (
-    <AbilitiesPanel campaignId={cid} currentUserId={currentUserId} />
-  ) : tab.key === 'spells' && currentUserId ? (
-    <SpellsPanel campaignId={cid} currentUserId={currentUserId} />
-  ) : tab.key === 'journal' && currentUserId ? (
-    <JournalPanel campaignId={cid} currentUserId={currentUserId} />
+  ) : tab.key === 'character' && subjectId ? (
+    // `key` forces a remount when the subject changes: these panels load in an
+    // effect and hold edit state, so reusing the instance would show one
+    // character's draft over another's data.
+    <CharacterPanel key={subjectId} campaignId={cid} currentUserId={subjectId} />
+  ) : tab.key === 'inventory' && subjectId ? (
+    // `key` forces a remount when the subject changes: these panels load in an
+    // effect and hold edit state, so reusing the instance would show one
+    // character's draft over another's data.
+    <InventoryPanel key={subjectId} campaignId={cid} currentUserId={subjectId} />
+  ) : tab.key === 'lore' && subjectId ? (
+    // `key` forces a remount when the subject changes: these panels load in an
+    // effect and hold edit state, so reusing the instance would show one
+    // character's draft over another's data.
+    <LorePanel key={subjectId} campaignId={cid} currentUserId={subjectId} />
+  ) : tab.key === 'abilities' && subjectId ? (
+    // `key` forces a remount when the subject changes: these panels load in an
+    // effect and hold edit state, so reusing the instance would show one
+    // character's draft over another's data.
+    <AbilitiesPanel key={subjectId} campaignId={cid} currentUserId={subjectId} />
+  ) : tab.key === 'spells' && subjectId ? (
+    // `key` forces a remount when the subject changes: these panels load in an
+    // effect and hold edit state, so reusing the instance would show one
+    // character's draft over another's data.
+    <SpellsPanel key={subjectId} campaignId={cid} currentUserId={subjectId} />
+  ) : tab.key === 'journal' && subjectId ? (
+    // `key` forces a remount when the subject changes: these panels load in an
+    // effect and hold edit state, so reusing the instance would show one
+    // character's draft over another's data.
+    <JournalPanel key={subjectId} campaignId={cid} currentUserId={subjectId} />
   ) : tab.key === 'secretnotes' && isDm ? (
     <NotesPanel campaignId={cid} />
   ) : tab.key === 'sessionlog' && isDm ? (
     <SessionLogPanel campaignId={cid} />
+  ) : tab.key === 'maps' && isDm ? (
+    <MapsPanel campaignId={cid} isDm={isDm} />
   ) : tab.key === 'party' && isDm ? (
     <PartyPanel campaignId={cid} />
   ) : tab.key === 'npcs' && isDm ? (
@@ -115,8 +152,11 @@ export function TabBody({
     <HandoutsPanel campaignId={cid} />
   ) : tab.key === 'shared' && !isDm ? (
     <SharedWithUsPanel campaignId={cid} />
-  ) : tab.key === 'hp' && currentUserId ? (
-    <HpConditionsPanel campaignId={cid} currentUserId={currentUserId} />
+  ) : tab.key === 'hp' && subjectId ? (
+    // `key` forces a remount when the subject changes: these panels load in an
+    // effect and hold edit state, so reusing the instance would show one
+    // character's draft over another's data.
+    <HpConditionsPanel key={subjectId} campaignId={cid} currentUserId={subjectId} />
   ) : (
     <PlaceholderPanel tab={tab} />
   )

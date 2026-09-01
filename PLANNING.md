@@ -231,14 +231,39 @@ These framed the whole plan and should not be quietly reversed:
 
 ### Phase 8: Automated testing & CI
 - [x] 8.1 — Test infrastructure + unit/component tests (Vitest + RTL) *(**129 tests, 6 files, all passing.** Vitest 3 + jsdom + RTL + v8 coverage; `npm test` / `test:watch` / `coverage`. 100% statements on dice, HP/death-saves, safe-markdown and username rules — three of those EXTRACTED from components to be testable, with dice randomness injected so totals are asserted exactly. Component test for the campaign roster **closes 7.4's rendering gap**: `username (Character)`, identical for player and DM, no "Unnamed adventurer", survives a failed character lookup. Tests are type-checked by `tsc -b`, which caught two unsound casts Vitest ran green. Whole-app coverage 2.48%, reported honestly. **Not done:** `extractNpcHp`, initiative sort, import id-remap; every other panel)*
-- [x] 8.2 — RLS / database policy tests *(**63 assertions, all passing**, in plain SQL — `railway/scripts/95_rls_matrix.sql`, run from the migrate job so a policy regression fails the deploy. Five personas incl. a second player (the peer-leak case); journal stays invisible to the DM; locked tables invisible to all; structural checks for RLS-enabled, no-anon-policies and the service-role-only function list. Runs inside a never-committed transaction — safe against production, which is the only database there is. **Proven to fail** on a deliberately loosened policy. **Not covered:** storage.objects policies, Edge Function authz, realtime filtering)*
+- [x] 8.2 — RLS / database policy tests *(**111 assertions, all passing** (63 at first write; +16 Phase 9.1 battlemap, +11 read-only lock and 0050 invariants), in plain SQL — `railway/scripts/95_rls_matrix.sql`, run from the migrate job so a policy regression fails the deploy. Five personas incl. a second player (the peer-leak case); journal stays invisible to the DM; locked tables invisible to all; structural checks for RLS-enabled, no-anon-policies and the service-role-only function list. Runs inside a never-committed transaction — safe against production, which is the only database there is. **Proven to fail** on a deliberately loosened policy. **Not covered:** storage.objects policies, Edge Function authz, realtime filtering)*
 - [~] 8.3 — End-to-end smoke tests (Playwright) + CI pipeline *(**CI half DONE** — .github/workflows/ci.yml runs install/typecheck/build/129 unit tests/62 layout checks on every push and PR, verified by simulating the CI env locally. RLS matrix and `npm audit` excluded with stated reasons. **Blocked:** Playwright needs working signup (Resend 550) and writes to production with no rollback. **Owed:** branch protection — blocking merge is a repo setting, not a workflow one)*
 
 ### Phase 9: Playspace mode (grid battlemap + dynamic vision & lighting)
-- [ ] 9.1 — Battlemap & tokens
-  - [ ] 9.1.1 — Backend
-  - [ ] 9.1.2 — Web UI
-  - [ ] 9.1.3 — QA
+- [x] 9.1 — Battlemap & tokens *(COMPLETE 2026-09-01 — migrations 0048–0059, matrix 123/123, 175 tests)*
+  - [x] 9.1.1 — Backend *(migration **0048**: `playspace_maps` + `playspace_tokens`, RLS (a player may move ONLY their own token — `using` AND `with check`, verified against seizing, gifting and orphaning), realtime + REPLICA IDENTITY FULL. **0050**: max 5 maps per campaign, one-update map switching, NPC tokens DM-controlled unless relinquished to a campaign member. 16 assertions added to the 8.2 matrix. Position is in PIXELS not grid cells — changing `grid_size` does not re-snap existing tokens)*
+  - [x] 9.1.2 — Web UI *(BUILT 2026-08-28, refined through 2026-09-01: `src/features/playspace/` — `grid.ts` (pure coordinate maths, **28 unit tests**), tab-filtering tests, `BattlemapCanvas` (background + grid overlay, pointer-captured drag, snapping, optimistic move with revert-on-refusal, arrow-key movement, Alt to place off-grid), `BattlemapView` (resolves the live map, DM token tools), `MapsPanel` (the **Maps tab** — upload, rename, grid size + offset, player-placement switch, make-live, delete, 1..5), `useCampaignMaps` (one shared live list, so the switcher and the canvas cannot disagree about which map is live). Mounted in `WorkspaceShell` in place of the placeholder, **in every game mode**.
+
+**Maps tab (owner request 2026-08-28):** DM-only, every mode; holds map administration, which had been a strip of controls competing for space with the map it configures.
+
+A **Battlemap** tab existed for one afternoon as a notetaker-only panel and was then removed: the owner's answer was that notetaker should show the live map *in the same place as the other modes*, just without token placement. That is better — a tab would have been the same thing in a different shape depending on a setting most people never look at. The mode difference is now one prop, `allowTokens`. The `modes` field added for the tab was removed with it rather than left as untested machinery; `tabs.test.ts` keeps a test asserting no battlemap tab exists, so re-adding one is a deliberate act.
+
+**Owner changes after the first QA run (migration 0055, 2026-08-28):**
+
+- **The grid MOVES as well as resizes.** A scanned battlemap's printed grid almost never starts at the top-left pixel, so spacing alone can be exactly right and still half a square out everywhere. Two offsets in map pixels, applied before the modulo; 6 tests, including that the lattice shifts as a whole rather than the cell *boundaries* shifting by a rounding error.
+- **A new token takes the nearest FREE square** to the centre, searched in rings. Stacking every new token on one pixel made three added monsters look like one. Falls back to the centre on a full map rather than refusing to place anything.
+- **Zoom** (0.25×–4×), by buttons and by **trackpad pinch / Ctrl+wheel**. Costs nothing in coordinate maths: positions are map pixels and `clientToMap` divides by the element's *measured* rect, so every drag keeps working at any scale — the payoff for the 0048 decision to store map pixels rather than screen ones. Two implementation notes worth keeping: the wheel listener is registered **non-passively by hand**, because React attaches wheel listeners passively and a passive listener cannot `preventDefault`, so the browser would zoom the page instead of the map; and the map is sized by ONE rule, `fitScale × zoom`, after a first version used `width: 100%` at zoom 1 and `width_px × zoom` elsewhere — two rules that met at zoom 1 and disagreed there, so on a narrow frame zooming *out* made the map bigger.
+- **Typed grid values and sideways scrolling** (2026-09-01). Each grid control now pairs its slider with a number box — the slider is how you *find* an alignment while watching the map, the number is how you set a known one or nudge by a single pixel. The scrolling half was a **bug**: the frame used `display: grid` + `place-items: center`, and centring a child that overflows its scroll container makes the start-side overflow unreachable — `scrollLeft` cannot go below 0 — so the left edge of a zoomed-in map could not be scrolled to. `margin: 0 auto` centres while it fits and scrolls properly when it does not. Shift+wheel pans sideways for a plain wheel mouse, since dragging on the map moves tokens instead. **Both needed a second pass** after QA: a fully controlled number input cannot be cleared at all (deleting the last character re-renders the old digits straight back, so the box looks like it is refusing Backspace) — fixed with a local draft string; and removing the clipping did not make a *zoomed-out* map pannable, because a map smaller than its frame has nothing to scroll. The map now sits on a surface always larger than the frame (`max(map, frame) + 160px`), with centring moved onto that non-scrolling wrapper — keeping "centre it" and "scroll it" as separate concerns, which is what went wrong the first time.
+- **Tokens stop fully on the map** (2026-09-01). Dragging one off the edge left it half outside and saved it there. `clampToMap` bounded the token's CENTRE to `[0, width]`, and a token is drawn centred on its coordinate — the clamp was doing exactly what it said, but what it said was about a point and a token is not a point. Both the drag and arrow-key paths now pass half the token's `size_px` as an inset, through the same helper rather than duplicated arithmetic. 5 tests, including a token larger than the map, where an unguarded inset makes the bounds cross over and snaps the point to a nonsense corner.
+- **Token size in SQUARES, and tokens that follow a re-grid** (migration **0056**, 2026-09-01). Sizes of ½/1/2/3/4 squares, stored as a MULTIPLE rather than in pixels — `size_px` is absolute and becomes wrong the instant the grid changes. This is 0048 decision 1 reaching the *opposite* answer, for a reason worth keeping: position is anchored to the picture (so pixels), size is anchored to the grid (so squares). Size also decides where a token snaps — odd sizes to cell centres, even sizes to cell CORNERS (a 2×2 on a cell centre straddles four half-cells), and halves to cell centres too — they briefly snapped to quarter-cells so four could tile a square, which left a lone small creature reading as standing in a corner rather than in the square. Position does not follow a re-grid on its own, so `resnapTokens` runs when the DM *finishes* adjusting — never per slider event, which would be a write per token per pixel. Matrix +3, then narrowed by **0057**: only the DM may resize a token *at all*, including one a player owns and moves — size is what the creature is, movement is what the player chooses. That is a "column may not change" rule, so it is a **BEFORE UPDATE trigger**, not a policy: a `with check` runs after the update and would read back the new value, the mistake 0052 made and 0053 fixed. One matrix assertion inverted with the decision, kept beside a positive control that player movement still works.
+- **Token artwork** (migration **0058**, 2026-09-01). A player's token carries the portrait they chose; the DM picks which creature an unowned token is, and it takes that NPC's name and picture. **The design is a permissions decision, not a rendering one**: following `npc_id`/`character_id` to a portrait at render time cannot work, because `npcs` is DM-only and `characters` is owner-or-DM — a monster would be a blank circle for precisely the players who need to see it. `media_assets`/`storage.objects` are scoped to campaign MEMBERSHIP (0008), not to the referencing row, so copying the asset id onto the token — which every member already reads — puts the picture on the table without widening one policy. The copy is deliberately not a cache: changing a portrait later does not restyle a token already placed. The Creature picker is offered only for unowned tokens, since overwriting a player's chosen portrait would be the DM redecorating someone else's piece. Matrix +2, and those two ARE the design: a player can read the media a token points at, and cannot read the NPC row it came from. **No colour ring on a token that has art** (owner request): the ring identifies a token with no picture, and art identifies itself — but the ring's *other* job, separating the token from the map, is real, so a soft drop shadow took it over rather than being dropped with it. **0059** then made that a per-token DM setting — `auto`/`on`/`off`, three values rather than a boolean so the automatic behaviour survives as the default for every existing row — because a ring on an illustrated token can mark a side or a condition. DM-only, guarded by *extending* the 0057 trigger rather than adding a second one, so one place answers "which columns may a player not touch?"; the matrix asserts ring and size separately because they now share a guard.
+- **Held arrow keys walk smoothly** (2026-09-01). A held key appeared to skip several squares at once. It never did: the OS repeats far faster than React re-renders, so several repeats each computed their step from the same stale position and the writes landed in whatever order they finished. Fixed by reading the live position from a ref rather than the render closure, pacing steps at one per 120ms, and batching the save until 300ms after the last step — one write per walk, not one per square, or every other client would stutter across the map instead of receiving the destination.
+- **Edge tiles: confined, then unconfined** (2026-09-01). A map edge almost never lands on a cell boundary — 1400px with a 64px grid leaves a 56px sliver — so snapping alone put tokens in a partial square and clamping alone put them off the lattice. `clampToFullCell` clamped to the index range of cells wholly inside the map — and was then **removed the same day** at the owner's request: the partial squares at a map's edge are still places a creature stands. A token may sit in a sliver; it still may not hang off the map, which is a separate rule and stays. The `dropPosition` corner test has moved twice as a result and its comment carries all three expected values with the reason for each, since a bare number tells a future reader nothing about which rule it defends. Tokens are now sized from the map's **current** `grid_size` rather than their stored `size_px`, so changing the grid resizes every token for everyone with **no writes**; `size_px` stays for a later large-creature multiple. One existing test's expected value changed with the rule and the change is recorded in the QA run log rather than quietly edited.
+- **Players may place their own character**, behind a per-map DM checkbox. Note what this actually changed: 0048 *already* permitted it — `playspace_tokens_insert_own` let any member insert a token they owned, and only the UI never offered it. So 0055 makes that policy **stricter**, and a campaign that leaves the box unticked is more locked down than it was before. It also closes a smaller hole found while rewriting it: a member could link a token to *another* player's `character_id`, putting someone else's name on a token they did not control.
+- **Notetaker gets the map too**, in the workspace area, with `allowTokens={false}`.
+
+**The one browser QA failure, and why nothing automated caught it.** Arrow-key movement did nothing. The handler was correct; the focus was not. `handlePointerDown` called `preventDefault()` — right, to stop the browser starting a text selection mid-drag — which also suppresses the focus a click gives a button, so a clicked token never received the keydown. Tabbing to it *would* have worked, which is exactly why a unit test of the handler and a read of the code both looked fine. Fixed with an explicit `focus()`. The general lesson: a keyboard feature can be broken by something that is not in the keyboard code. Live sync via `useRealtimeSync` + `mergeById` on BOTH tables, filtered per map/campaign, so a DM switching maps carries every player's view with it. **Positioned in percent of the map**, so a stored map-pixel coordinate renders identically at any display size. **Confirmed in a browser by the owner over ten rounds** (QA/9.1_tests/), the last on 2026-09-01)*
+  - [x] 9.1.3 — QA *(automated + server-side + browser PASS: build clean, **175** tests, 8.2 matrix 123/123 incl. all playspace assertions and the two new 0055 gate assertions, and both tables confirmed in the realtime publication with REPLICA IDENTITY FULL; `qa:checks` 62/62. **Every browser checklist was run by the owner and passed**, across ten rounds of changes (0055–0059) — the only skips are three sections covered by unit tests, recorded as deliberate rather than left implied. Four defects were found in the browser that no automated check could have caught: arrow keys doing nothing (a `preventDefault` suppressing focus), a number box that could not be cleared (a fully-controlled input), a zoomed-out map that could not be panned (nothing to scroll), and a token dragged half off the edge (the clamp bounded a point, not a token). Deliberately NOT written as browser steps: snapping, clamping and display-size scaling are unit-tested in `grid.test.ts` instead, per the no-console-steps rule. Sections A–D of QA/9.1_tests/battlemap-canvas.md are the user's and are NOT RUN)*
+- [~] 9.1a — DM "view as player" + test conveniences *(added 2026-08-28, revised at the user's request: NOT an account switcher — one session, one identity, two renderings. A DM hides things they are entitled to see, so it grants LESS access and needs no server involvement. Gates: `import.meta.env.DEV` AND `private.dev_accounts` seeded with **EJ only** — not `profiles.is_dev`, which any account could set on itself. **Limit:** it shows what the UI would RENDER for a player, not what RLS would RETURN — only the 8.2 matrix proves that, and this cannot replace a second browser for realtime)*
+  - [x] 9.1a.1 — Backend *(migration **0051**: `private.dev_accounts` (RLS, no policies) + `public.is_dev_account()` taking NO argument so it cannot probe others; seeded with EJ by email. 5 assertions in the 8.2 matrix — now **101**)*
+  - [x] 9.1a.2 — Web UI *(view-as toggle + red banner, who-am-I readout, reset-layouts, and — added 2026-08-28 — the **character switcher**. The earlier deferral was wrong about the cost: `getMyCharacter(campaignId, ownerId)` already took the owner as a parameter, so the change was one optional `characterUserId` prop threaded CampaignPage → WorkspaceShell → TabBody, defaulting to `currentUserId`. No panel changed. Panels are `key`ed on the subject so switching remounts instead of showing one sheet's draft over another's data. **Edits are real and permanent** (owner decision 2026-08-28): migration **0052** grants write on party sheets to accounts in `private.dev_accounts` — the one part that could not be client-side, since Postgres never sees `import.meta.env.DEV`. Contained by an allowlist table no client can read or insert into, still scoped to campaigns that account DMs, and still subject to the lapse lock. **0053** blocks owner reassignment (a `with check` cannot compare a row to its previous value — it needed a trigger). **0054** restores the journal exclusion that 0052 broke. An inspected **Journal is empty by design**. Not applied to Overview/Settings, whose `currentUserId` is about the caller (RSVPs, the "(you)" marker), not a character)*
+  - [x] 9.1a.3 — Gating *(dev build AND allowlisted account. **The first version leaked into the production bundle** — the RPC was tree-shaken but a static `import { DevToolsBar }` shipped the component anyway. Fixed with a dev-gated lazy import; bundle now greps clean for all four marker strings. HIDDEN vs ABSENT is the whole point of the check)*
+  - [~] 9.1a.4 — QA *(server-side + bundle checks PASS — see QA/9.1a_tests/, incl. a re-run of the bundle grep after the switcher landed (all 0, single chunk) and the RLS matrix at **111 assertions**, which caught two real defects in 0052 (see 0053/0054). The **12** browser steps are the user's and are NOT RUN)*
 - [ ] 9.2 — Vision toggle & obstructions (walls + freehand)
   - [ ] 9.2.1 — Backend
   - [ ] 9.2.2 — Web UI
@@ -251,6 +276,12 @@ These framed the whole plan and should not be quietly reversed:
   - [ ] 9.4.1 — Backend
   - [ ] 9.4.2 — Web UI
   - [ ] 9.4.3 — QA
+- [ ] 9.5 — Drawing & effects *(added 2026-08-28 at the owner's request: freehand
+  drawing, shapes, measurement and transient effects on the map, for **players as
+  well as the DM** — the first map feature that is not DM-authored)*
+  - [ ] 9.5.1 — Backend
+  - [ ] 9.5.2 — Web UI
+  - [ ] 9.5.3 — QA
 
 ### Phase 10: Full RPG mode (round-based combat)
 - [ ] 10.1 — Side-based round combat engine
@@ -1692,10 +1723,183 @@ post-launch hardening item (PL.5). Builds directly on Phase 4.4 Realtime.
   `useRealtimeSync` + `mergeById` (optimistic local move; realtime drives other
   viewers). DM can add/place any token; a player can move only their own.
 
+**Status 2026-08-28 — 9.1.1 and 9.1.2 BUILT; browser QA outstanding.** See
+[QA/9.1_tests/](QA/9.1_tests/). Migration
+[0048_playspace_maps_tokens.sql](supabase/migrations/0048_playspace_maps_tokens.sql);
+16 new assertions in the 8.2 matrix, now **79/79** and running on every schema
+change (now 111 with 9.1a's).
+
+**The canvas (9.1.2), and the three decisions it forced.**
+
+1. **Divs, not `<canvas>`.** Tokens must be focusable, keyboard-movable and
+   announceable, and there are tens of them, not thousands. A real canvas would
+   mean reimplementing hit-testing and focus for no gain at this scale. "Canvas"
+   is the domain's word, not the element's.
+2. **Everything inside the map is positioned in PERCENT.** Stored coordinates
+   are map pixels and are independent of display size; laying the element out at
+   the map's aspect ratio and positioning in percent is what makes one stored row
+   render identically on a phone and a 4K monitor. All conversion lives in
+   `grid.ts` and the component does no arithmetic of its own.
+3. **Snap, THEN clamp.** The order is not interchangeable: a drop past the right
+   edge snaps to a cell centre BEYOND the map, and only a clamp running afterwards
+   brings it back. Clamp-then-snap returns an out-of-bounds coordinate. There is a
+   unit test whose whole job is this ordering.
+
+**One write per drag, not one per frame** — moves persist on release, so a drag
+emits a single realtime event and other clients stay smooth. A refused write
+(RLS, or a lapsed campaign) reverts the token to exactly where it started and
+says so: silence would leave a player believing they had moved something the DM
+cannot see, which at a table means arguing about a position that does not exist.
+The realtime handler ignores echoes of the token this session is dragging, or the
+token would jump backwards under the pointer.
+
+Snapping, clamping and display-size scaling are covered by **16 unit tests** in
+`grid.test.ts` rather than browser steps, per the project's no-console-steps
+rule — repeatable, and they re-run on every future change.
+
+Four design decisions, recorded because each is cheap now and expensive after a
+canvas sits on them:
+
+1. **Token position is in PIXELS, not grid cells.** A battlemap image usually has
+   its own grid drawn on it, so `grid_size` aligns the overlay to the picture
+   rather than defining the coordinate system; off-grid placement is common.
+   *Consequence: changing `grid_size` does not re-snap existing tokens.*
+2. **`owner_user_id` is the sole permission authority**; `character_id`/`npc_id`
+   are display links. NULL owner = DM-controlled.
+3. **Map dimensions are explicit**, not read from the image — the server never
+   decodes the file.
+4. **One active map per campaign**, as a partial unique index rather than a
+   convention.
+
+**Owner revisions (0050):** at most **five maps** per campaign (trigger — a CHECK
+cannot count siblings); switching the live map is **one update**, with a trigger
+clearing the others so the DM never has to deactivate first; and an NPC token is
+DM-controlled (NULL owner) unless **relinquished to a specific campaign member**,
+with a membership check so it cannot be handed to a stranger. Reclaiming is
+setting the owner back to NULL and is never blocked. Grid size needed no schema
+change — upload the picture, then adjust the overlay (9.1.2 UI work).
+
+The UPDATE policy carries **both** `using` and `with check` deliberately: `using`
+stops a player touching the DM's dragon, `with check` stops them giving their own
+token away or orphaning it to DM control. Each hole is invisible to the other
+clause, and all three cases are asserted.
+
+**This subphase exposed — and then fixed — a launch blocker unrelated to itself:** 0048's write
+policies are the FIRST in the project to enforce the read-only lock, and writing
+them revealed that **0 of 69 existing write policies do**. See PRE_LAUNCH — after
+the `enforce_active` flip a lapsed campaign would stay fully writable, and the
+Refunds page's "nobody can write" would be false.
+
+**Fixed in migration 0049**: 73 of 78 write policies now consult the lock through
+new write-only predicates, with five deliberate exclusions (creating a campaign —
+a new one has no subscription; managing one; leaving one; revoking an invite;
+editing your own profile). Reads were untouched, deliberately: the lock could not
+go into `is_campaign_dm`/`can_write_character` because those are shared with
+SELECT policies, and locking them would HIDE a lapsed campaign instead of
+freezing it. 0049 carries an assertion that fails the deploy if a future table
+adds an unlocked write policy, and it caught 0048's own token DELETE policies on
+its first run. The 8.2 matrix gained a lapsed persona and is now **96
+assertions**.
+
 #### 9.1.3 — QA
 - A token drag persists and appears on other clients live (~1–2 s, per-row);
   a player can move only their own token and is blocked from moving others
   (verify RLS server-side); grid snapping works; the map loads for all members.
+
+### Subphase 9.1a: DM "view as player" + test conveniences
+
+**What this is.** Stay signed in as your own account and **switch the VIEW** — a
+DM looking at their campaign the way a player sees it, then switching back. Not
+an account switcher, not impersonation: one session, one identity, two renderings.
+
+**Why it is safe, and why that is not obvious.** Every other "act as someone
+else" feature is dangerous because it grants MORE access. This grants **less**:
+the DM voluntarily hides things they are entitled to see. Choosing to see less of
+your own data needs no permission and cannot escalate anything, which is why it
+can live entirely in the client with no server involvement at all.
+
+**THE LIMIT, stated plainly because it is easy to over-trust.** This shows what
+the UI would RENDER for a player. It does **not** show what RLS would RETURN for
+one. As the DM your queries still come back with everything; the view simply
+declines to draw some of it. So:
+
+  * it is a good check that tabs, panels and controls are gated correctly;
+  * it is **not** evidence that a player cannot reach the data. Only the
+    server-side matrix (`railway/scripts/95_rls_matrix.sql`, Phase 8.2) is that,
+    and it already asserts the same ground far more rigorously;
+  * a bug where the UI hides something RLS would have allowed — or vice versa —
+    is exactly the bug this mode CANNOT see.
+
+It also cannot replace a second browser for **realtime** testing: one session
+cannot receive its own broadcast as another participant.
+
+Numbered `9.1a` rather than renumbering 9.2–9.4, which are referenced by name in
+several QA files and migration comments. Thematically it belongs with Phase 8; it
+sits here because this is when it is wanted.
+
+#### 9.1a.1 — Backend
+- Migration: `private.dev_accounts` (RLS enabled, **no policies** — service-role
+  only, same shape as `trial_redemptions`) and `public.is_dev_account()`
+  returning a boolean **for the caller alone** (no argument, so it cannot be
+  asked about anybody else).
+- **Seeded with EXACTLY ONE account** (owner, 2026-08-28): `EJ` —
+  `ejcaldwell06@gmail.com`. Seeded by EMAIL rather than a hardcoded uuid, so the
+  migration still means something on a restored database and matches nothing
+  where that account does not exist.
+- Adding or removing an account is an INSERT/DELETE, never a deploy.
+- **Not `profiles.is_dev`**: `profiles_update_own` lets a user update their own
+  row, so any account could set that flag on itself. A self-service admin flag is
+  worse than none, because it looks like a control.
+
+#### 9.1a.2 — Web UI
+- **View-as toggle** in the campaign shell: *DM* ⇄ *Player*. Re-derives
+  `tabsForRole()` and the `isDm` prop everything already keys off, so no panel
+  needs to know the mode exists. A **persistent, obvious banner** while it is
+  active — a DM who forgets they are in player view and reports a missing tab as
+  a bug has been actively misled by the tool.
+- **Character switcher.** Within your own account, choose which of your
+  characters the character tabs show. No security dimension — you own all of
+  them — and useful outside testing for anyone running two characters.
+- **A "who am I" readout**: current `auth.uid()`, username, real role, view mode,
+  and whether `enforce_active` is on. Several confusing moments this project has
+  had began with not knowing which account a window held, and the project rules
+  out handing the user console snippets, so this belongs on screen.
+- **Reset this browser's view state** — layouts, tab selections, rail side — in
+  one action, without touching the account.
+
+#### 9.1a.3 — Gating (owner requirement: EJ only)
+Two independent gates, both required:
+
+1. **Dev builds only** — `import.meta.env.DEV`, so the code is *absent* from a
+   production bundle rather than hidden in it. Absent code cannot be re-enabled
+   from a console.
+2. **An allowlisted account** — `EJ` alone, via `is_dev_account()`.
+
+Because the mode only ever *removes* the caller's own view, neither gate is
+load-bearing for security; they exist to keep the control out of the way. Worth
+recording so nobody later treats the allowlist as a boundary it is not.
+
+**Possible future**: "preview as player" is a legitimate product feature a paying
+DM would want. Shipping it later means removing the gates, not rewriting the
+feature — the design is deliberately production-shaped.
+
+#### 9.1a.4 — QA
+- **Absent from a production build** — grep the built bundle for its strings, not
+  just "the button is hidden".
+- **A non-allowlisted account sees nothing**, even in a dev build (sign in as
+  `QA` in a fresh profile).
+- **`private.dev_accounts` is invisible to every client role**, and
+  `is_dev_account()` cannot be asked about another user. Assert both in the 8.2
+  matrix alongside the other locked tables.
+- **No account can grant itself dev access** — the flag does not live on any
+  client-writable table.
+- In player view: DM-only tabs disappear, the banner is visible, and **leaving
+  the campaign and returning does not silently keep the mode on**.
+- The character switcher only ever lists characters the caller owns.
+- **Explicitly NOT claimed by this QA**: that a real player cannot reach the
+  hidden data. That is the 8.2 matrix's job and must not be marked off here.
+
+---
 
 ### Subphase 9.2: Vision toggle & obstructions (walls + freehand)
 
@@ -1750,6 +1954,61 @@ post-launch hardening item (PL.5). Builds directly on Phase 4.4 Realtime.
 - Darkness shortens effective sight; a light source illuminates its bright/dim
   radii; darkvision lets a token see a set distance in the dark; changes persist
   and sync live.
+
+### Subphase 9.5: Drawing & effects
+
+**Added 2026-08-28** at the owner's request. The first map feature where a
+**player** is an author rather than a viewer, which is what makes it interesting
+and what most of the design below is about.
+
+#### 9.5.1 — Backend
+- A `playspace_drawings` table: `map_id`, `author_user_id`, a `kind`
+  (`freehand` | `line` | `rect` | `circle` | `cone` | `text`), a geometry blob in
+  **map pixels** (the same coordinate space as tokens — 0048 decision 1, so a
+  drawing and the token it circles stay together at any zoom), colour, width, an
+  optional `expires_at`, and a `layer` (`table` | `dm`).
+- RLS, mirroring the token rules that are already proven: any member READS the
+  `table` layer; only the DM reads the `dm` layer; an author writes **only their
+  own** drawing (`using` AND `with check`, so a player can neither edit someone
+  else's arrow nor reassign their own); the DM may delete anything, because
+  somebody has to be able to clear the board. Realtime + `REPLICA IDENTITY FULL`.
+- A per-map **`players_can_draw`** switch, exactly like `players_can_place`
+  (0055). Same reasoning: a DM running a table decides who may mark it up, and
+  the default is off.
+
+#### 9.5.2 — Web UI
+- A small tool palette on the map: pen, line, arrow, rectangle, circle, cone,
+  text, eraser (own drawings), and **clear** (DM: all; player: mine).
+- **Measurement** is the one that earns its place first — drag from A to B and
+  see the distance in grid squares and in feet, using the map's `grid_size`.
+  Every table asks "can I get there?" before anything else.
+- **Transient effects**: a drawing may be given a lifetime (this turn / this
+  round / until cleared), so a spell area does not have to be manually tidied up.
+  `expires_at` is the column; the client hides what has expired, and a periodic
+  sweep deletes it — the row is not authoritative for display, so a client with
+  a slow clock cannot leave a stale shape on someone else's screen.
+- Drawing is **optimistic and batched like token movement**: a freehand stroke is
+  ONE insert on pointer-up, not one per point. This is the lesson from 9.1.2 —
+  a write per frame would flood realtime and make everyone else's map stutter.
+
+#### 9.5.3 — QA
+- A player draws only when the DM has enabled it (assert server-side, both
+  ways); a player cannot erase or edit another person's drawing; the DM can clear
+  everything; the DM layer is invisible to players; drawings land in the right
+  place at any zoom and any grid offset; expiry removes a shape on every client,
+  not just the one that made it.
+
+**Three things to decide before building, recorded now while they are cheap:**
+
+1. **Whether a freehand stroke is one row or many.** One row with a point array
+   is far fewer writes and far less realtime traffic; many rows make partial
+   erase easy. 9.1.2 says traffic is the thing that hurts — one row, and erase is
+   whole-stroke.
+2. **Whether drawings survive a map switch.** They are `map_id`-scoped, so yes,
+   automatically — and that is probably right: you return to the ambush map and
+   your markings are still on it.
+3. **Whether the DM can draw on the `dm` layer while players see nothing.** Yes,
+   and it is the cheap half of 9.2's fog: planning marks that are not spoilers.
 
 ---
 

@@ -1,6 +1,9 @@
 # Automated coverage — Phase 8.2 (RLS / policy tests)
 
-**63 assertions, all passing, run automatically on every schema change.**
+**96 assertions, all passing, run automatically on every schema change.**
+
+*(63 at first write; +16 for the Phase 9.1 battlemap, +11 for the read-only lock
+and the 0050 map/token invariants.)*
 
 Harness: [railway/scripts/95_rls_matrix.sql](../../railway/scripts/95_rls_matrix.sql).
 Wired into [railway/migrate/migrate.sh](../../railway/migrate/migrate.sh), so

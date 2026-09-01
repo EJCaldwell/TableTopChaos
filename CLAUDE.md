@@ -40,6 +40,29 @@ In short (the skill has the full detail):
 - **High-signal only:** skip cosmetic/label/wiring checks the build already
   guarantees.
 
+## Keep PLANNING.md current AS YOU GO
+
+Update [PLANNING.md](PLANNING.md) at the end of **every** unit of work, not at the
+end of a phase — including when the step is only partly done. Two places, and
+both matter:
+
+1. **The Progress Tracker checkbox.** `[x]` done, `[~]` in progress, `[ ]` not
+   started. A `[~]` must carry a short note saying what is done and what is not.
+2. **The phase section body**, for decisions and status.
+
+**The tracker is the part that drifts**, because the section body is where the
+interesting writing happens and the checkbox is easy to forget. It has drifted
+twice: 9.1.1 stayed `[ ]` after the backend shipped, and 8.2 read "63 assertions"
+after it had grown to 96. Both were caught by the user, not by me.
+
+Two rules that prevent the failure modes seen so far:
+
+- **Never tick a box for work the user has not confirmed.** Browser/manual steps
+  are theirs; a server-side pass is not evidence the UI behaves. If the automated
+  half is done and the manual half is not, that is `[~]` with both halves named.
+- **Update the note when scope changes**, not just when status changes. A count
+  or a claim in a tracker note is a fact that can go stale.
+
 ## Workflow constraints
 
 - **Never run git** — the user runs all git operations themselves.
