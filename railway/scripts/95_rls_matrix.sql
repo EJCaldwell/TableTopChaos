@@ -215,10 +215,17 @@ insert into public.campaign_subscriptions (campaign_id, status) values
 -- player, and one DM-controlled monster with no owner.
 insert into public.playspace_maps (id, campaign_id, name, is_active) values
   ('ffffffff-0000-4000-8000-000000000001', :camp::uuid, 'Matrix Map', true);
-insert into public.playspace_tokens (id, map_id, owner_user_id, label) values
-  ('ffffffff-0000-4000-8000-000000000011', 'ffffffff-0000-4000-8000-000000000001', :p1::uuid, 'P1 token'),
-  ('ffffffff-0000-4000-8000-000000000012', 'ffffffff-0000-4000-8000-000000000001', :p2::uuid, 'P2 token'),
-  ('ffffffff-0000-4000-8000-000000000013', 'ffffffff-0000-4000-8000-000000000001', null,      'DM dragon');
+-- COORDINATES ARE EXPLICIT AND SPREAD OUT because of 0068. All three used to
+-- default to (0,0); with the occupancy trigger in place the second insert would
+-- fail and take a dozen unrelated assertions down with it. The owner role
+-- bypasses RLS but NOT triggers — the fixture trap that has now bitten three
+-- times. Kept far enough apart (grid 70, so a 1x1 footprint is 70px) that the
+-- wall assertions below can walk P1 around the origin without ever bumping into
+-- anything.
+insert into public.playspace_tokens (id, map_id, owner_user_id, label, x, y) values
+  ('ffffffff-0000-4000-8000-000000000011', 'ffffffff-0000-4000-8000-000000000001', :p1::uuid, 'P1 token',   80,   20),
+  ('ffffffff-0000-4000-8000-000000000012', 'ffffffff-0000-4000-8000-000000000001', :p2::uuid, 'P2 token',  1000,  700),
+  ('ffffffff-0000-4000-8000-000000000013', 'ffffffff-0000-4000-8000-000000000001', null,      'DM dragon', 1200,  800);
 
 -- A wall on the active map, for the 0060 assertions.
 insert into public.playspace_walls (id, map_id, kind, points)
@@ -389,8 +396,49 @@ select pg_temp.assert_denied('walls','player','CANNOT land exactly ON a wall (00
 -- a rule that froze players entirely would pass the two assertions above.
 select pg_temp.assert_allowed('walls','player','CAN still move where no wall is in the way','update public.playspace_tokens set x=90,y=10 where id=''ffffffff-0000-4000-8000-000000000011''');
 
+-- 0067: a SIGHT-ONLY wall does not stop movement. Asserted next to the normal
+-- case above, because the whole feature is the difference between them.
+select pg_temp.become_owner();
+update public.playspace_walls set blocks_movement = false
+  where id = 'aaaabbbb-0000-4000-8000-000000000001';
+update public.playspace_tokens set x = 80, y = 20 where id = 'ffffffff-0000-4000-8000-000000000011';
+select pg_temp.become(:p1::uuid);
+select pg_temp.assert_allowed('walls','player','CAN walk through a sight-only wall (0067)','update public.playspace_tokens set x=20,y=80 where id=''ffffffff-0000-4000-8000-000000000011''');
+select pg_temp.become_owner();
+-- ORDER MATTERS, and this is the second time it has bitten in this file: the
+-- token is moved back BEFORE the wall is re-armed. Doing it the other way round
+-- makes the setup UPDATE itself cross a live wall, and the owner role bypasses
+-- RLS but NOT triggers — so the fixture restore is refused exactly like a
+-- player's move would be, and the run dies in setup rather than in an assertion.
+update public.playspace_tokens set x = 80, y = 20 where id = 'ffffffff-0000-4000-8000-000000000011';
+update public.playspace_walls set blocks_movement = true
+  where id = 'aaaabbbb-0000-4000-8000-000000000001';
+select pg_temp.become(:p1::uuid);
+select pg_temp.assert_denied('walls','player','still blocked by a normal wall after the sight-only test','update public.playspace_tokens set x=20,y=80 where id=''ffffffff-0000-4000-8000-000000000011''');
+
 select pg_temp.become(:dm::uuid);
+-- Stage the crossing properly. The dragon starts BELOW the diagonal wall and
+-- ends ABOVE it, so the move genuinely intersects [[0,0],[100,100]] at (50,50)
+-- — the same crossing the player is refused three assertions above, which is
+-- the whole point: same move, different role.
+--
+-- It used to start whereever the fixture left it, and after 0068 forced explicit
+-- coordinates that start was (1200,800) — from which the straight line to (20,80)
+-- meets y=x at x=174, well past the end of a wall that stops at 100. The
+-- assertion would have kept passing while testing nothing, because the DM is
+-- exempt either way. Worth stating: a green assertion that no longer exercises
+-- its rule is worse than a red one.
+--
+-- P1 is moved aside first because it is standing at (80,20), which is where the
+-- dragon now needs to start.
+update public.playspace_tokens set x = 700, y = 700 where id = 'ffffffff-0000-4000-8000-000000000011';
+update public.playspace_tokens set x = 80, y = 20 where id = 'ffffffff-0000-4000-8000-000000000013';
 select pg_temp.assert_allowed('walls','DM','CAN move through their own wall','update public.playspace_tokens set x=20,y=80 where id=''ffffffff-0000-4000-8000-000000000013''');
+-- Park the dragon back in its corner. It is now sitting near the origin, and
+-- every later assertion that places a token there would collide with it under
+-- 0068 — a failure that would look like an occupancy bug rather than a fixture
+-- left where the previous test dropped it.
+update public.playspace_tokens set x = 1200, y = 800 where id = 'ffffffff-0000-4000-8000-000000000013';
 
 select pg_temp.become_owner();
 update public.playspace_maps set vision_enabled = false where id = 'ffffffff-0000-4000-8000-000000000001';
@@ -409,6 +457,19 @@ select pg_temp.assert_denied('playspace','player','CANNOT widen their OWN sight 
 select pg_temp.assert_denied('playspace','player','CANNOT give themselves darkvision (0062)','update public.playspace_tokens set dark_sight_squares=60 where id=''ffffffff-0000-4000-8000-000000000011''');
 select pg_temp.assert_error('playspace','player','CANNOT set a nonsense token size','update public.playspace_tokens set size_cells=2.7 where id=''ffffffff-0000-4000-8000-000000000011''');
 select pg_temp.assert_allowed('playspace','player','can still MOVE their own token despite all of the above','update public.playspace_tokens set x=125,y=245 where id=''ffffffff-0000-4000-8000-000000000011''');
+-- Occupancy applies to a player exactly as it does to the DM (0068). This is
+-- the common case at a table — two characters reaching for the same square —
+-- and the one a player could otherwise force with a direct PostgREST call even
+-- though the UI stops them.
+select pg_temp.assert_error('occupy','player','CANNOT move onto a peer''s token','update public.playspace_tokens set x=1000,y=700 where id=''ffffffff-0000-4000-8000-000000000011''');
+-- 140px away, and on the FAR side of P2. P1 was resized to 3x3 by the DM at the top of this matrix and
+-- a player cannot resize it back (0057), so "the next square along" for THIS
+-- token is half of 210 plus half of P2's 70. Getting this wrong is how the
+-- assertion first failed, and the failure looked like a tolerance bug rather
+-- than a token that was simply bigger than assumed. Approaching from the right
+-- put P1's 210px body over the parked dragon at (1200,800) instead — the same
+-- mistake twice, which is what a big token does to a fixture layout.
+select pg_temp.assert_allowed('occupy','player','CAN stand in the square next to a peer','update public.playspace_tokens set x=860,y=700 where id=''ffffffff-0000-4000-8000-000000000011''');
 select pg_temp.assert_denied('playspace','player','CANNOT move a peer''s token','update public.playspace_tokens set x=999 where id=''ffffffff-0000-4000-8000-000000000012''');
 select pg_temp.assert_denied('playspace','player','CANNOT move the DM''s monster','update public.playspace_tokens set x=999 where id=''ffffffff-0000-4000-8000-000000000013''');
 select pg_temp.assert_denied('playspace','player','CANNOT seize the DM''s monster by claiming it','update public.playspace_tokens set owner_user_id=' || quote_literal(:p1) || '::uuid where id=''ffffffff-0000-4000-8000-000000000013''');
@@ -441,6 +502,46 @@ select pg_temp.become_owner();
 
 select pg_temp.become(:dm::uuid);
 select pg_temp.assert_allowed('playspace','DM','can move ANY token','update public.playspace_tokens set x=50 where id=''ffffffff-0000-4000-8000-000000000011''');
+
+-- --- occupancy (0068) -----------------------------------------------------
+-- Two tokens may not stand in the same space. The client refuses the move too,
+-- which is what makes it FEEL right, but the client binds only this app — these
+-- assertions are the actual rule.
+--
+-- Staged deliberately: P1 is parked somewhere known, then the dragon is aimed at
+-- it. Reusing wherever the previous assertion happened to leave things is how
+-- the fixture drift above started.
+update public.playspace_tokens set x = 500, y = 500, size_cells = 1 where id = 'ffffffff-0000-4000-8000-000000000011';
+update public.playspace_tokens set x = 1200, y = 800, size_cells = 1 where id = 'ffffffff-0000-4000-8000-000000000013';
+
+select pg_temp.assert_error('occupy','DM','cannot move a token ONTO another','update public.playspace_tokens set x=500,y=500 where id=''ffffffff-0000-4000-8000-000000000013''');
+-- The DM is exempt from WALLS (0063) and deliberately NOT from occupancy. If
+-- this ever starts passing as allowed, someone has copied the wall exemption
+-- across without noticing they are different rules.
+select pg_temp.assert_error('occupy','DM','is NOT exempt, unlike with walls','update public.playspace_tokens set x=530,y=520 where id=''ffffffff-0000-4000-8000-000000000013''');
+-- Adjacent is the case the tolerance exists for: footprints share an edge
+-- exactly, and a strict overlap test would refuse legal side-by-side placement.
+select pg_temp.assert_allowed('occupy','DM','CAN stand in the NEXT square along','update public.playspace_tokens set x=570,y=500 where id=''ffffffff-0000-4000-8000-000000000013''');
+-- Footprint, not centre. A 4x4 dragon covers sixteen squares; a check written
+-- against centres alone would let a character stand inside it.
+select pg_temp.assert_allowed('occupy','DM','can grow the dragon to 4x4 in free space','update public.playspace_tokens set x=900,y=500,size_cells=4 where id=''ffffffff-0000-4000-8000-000000000013''');
+select pg_temp.assert_error('occupy','DM','cannot move a big token so its BODY covers another','update public.playspace_tokens set x=600,y=500 where id=''ffffffff-0000-4000-8000-000000000013''');
+-- Resizing is a move: growing into an occupied square must be refused, or a
+-- 1x1 beside a wall could become 4x4 and swallow its neighbours.
+update public.playspace_tokens set x = 640, y = 500, size_cells = 1 where id = 'ffffffff-0000-4000-8000-000000000013';
+select pg_temp.assert_error('occupy','DM','cannot GROW a token into an occupied square','update public.playspace_tokens set size_cells=4 where id=''ffffffff-0000-4000-8000-000000000013''');
+-- An edit that does not change the footprint must not be re-checked. Otherwise
+-- renaming a token that is legally adjacent to another could fail, and the
+-- error would make no sense at all.
+select pg_temp.assert_allowed('occupy','DM','CAN still rename a token without moving it','update public.playspace_tokens set label=''renamed'' where id=''ffffffff-0000-4000-8000-000000000013''');
+-- An insert is a placement like any other.
+select pg_temp.assert_error('occupy','DM','cannot CREATE a token on top of one','insert into public.playspace_tokens (map_id,label,x,y) values (''ffffffff-0000-4000-8000-000000000001'',''stacked'',500,500)');
+select pg_temp.assert_allowed('occupy','DM','can create one in free space','insert into public.playspace_tokens (map_id,label,x,y) values (''ffffffff-0000-4000-8000-000000000001'',''roomy'',200,600)');
+
+-- Put P1 back where the later assertions expect it.
+update public.playspace_tokens set x = 120, y = 240 where id = 'ffffffff-0000-4000-8000-000000000011';
+update public.playspace_tokens set x = 1200, y = 800, size_cells = 1 where id = 'ffffffff-0000-4000-8000-000000000013';
+delete from public.playspace_tokens where label in ('stacked','roomy');
 select pg_temp.assert_allowed('playspace','DM','can edit the map','update public.playspace_maps set grid_size=100 where campaign_id=' || quote_literal(:camp) || '::uuid');
 select pg_temp.become_owner();
 

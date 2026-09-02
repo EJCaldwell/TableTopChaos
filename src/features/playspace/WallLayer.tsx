@@ -204,6 +204,11 @@ export function WallLayer({
               strokeWidth={w.visible_to_players ? 4 : 3}
               strokeLinecap="round"
               strokeLinejoin="round"
+              // A sight-only wall (0067) is drawn DASHED, so a DM can tell at a
+              // glance which of their obstructions a player can walk through.
+              // Two independent properties, two independent visual cues: colour
+              // says who can see it, dashes say whether it stops anyone.
+              strokeDasharray={w.blocks_movement ? undefined : '10 6'}
               vectorEffect="non-scaling-stroke"
               style={{ pointerEvents: 'none' }}
               opacity={0.85}

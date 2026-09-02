@@ -382,6 +382,9 @@ export async function listWalls(mapId: string): Promise<PlayspaceWall[]> {
  * @param closed - Whether the last point joins back to the first.
  * @param visibleToPlayers - Whether players may see this wall (0066). Defaults
  *        to false, matching the column: a wall is secret unless said otherwise.
+ * @param blocksMovement - Whether it stops a player walking through (0067).
+ *        False makes a sight-only obstruction — a curtain, a hedge, a bank of
+ *        fog. Sight is always blocked; that is what a wall is here.
  * @returns The created row.
  */
 export async function createWall(
@@ -390,10 +393,18 @@ export async function createWall(
   points: [number, number][],
   closed = false,
   visibleToPlayers = false,
+  blocksMovement = true,
 ): Promise<PlayspaceWall> {
   const { data, error } = await supabase
     .from('playspace_walls')
-    .insert({ map_id: mapId, kind, points, closed, visible_to_players: visibleToPlayers })
+    .insert({
+      map_id: mapId,
+      kind,
+      points,
+      closed,
+      visible_to_players: visibleToPlayers,
+      blocks_movement: blocksMovement,
+    })
     .select('*')
     .single()
   if (error) throw error
@@ -456,10 +467,18 @@ export type VisionResult =
  * is the bug.
  *
  * @param mapId - The map to compute for.
+ * @param at - Optional SPECULATIVE viewpoint: compute as if the caller's token
+ *        were here. Used during a drag and on each keyboard step so the fog
+ *        opens WITH the move rather than a round trip after it. Grants nothing
+ *        — the sweep is still bounded by the real walls and the token's real
+ *        sight range, and nothing is persisted. See the Edge Function's header.
  */
-export async function fetchVision(mapId: string): Promise<VisionResult> {
+export async function fetchVision(
+  mapId: string,
+  at?: { x: number; y: number },
+): Promise<VisionResult> {
   const { data, error } = await supabase.functions.invoke<VisionResult>('vision', {
-    body: { mapId },
+    body: at ? { mapId, at } : { mapId },
   })
   if (error || !data) {
     console.error('vision: falling back to fully fogged', error)

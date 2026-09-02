@@ -2,7 +2,22 @@
  * vision — computes what a player may see, where the walls are (Phase 9.3).
  *
  * Contract:
- *   POST { mapId: string }
+ *   POST { mapId: string, at?: { x: number, y: number } }
+ *
+ * `at` is a SPECULATIVE viewpoint: "compute as if my token were here". It exists
+ * because fog visibly trailed a player's own movement while a DM's client — which
+ * computes its sight preview locally from walls it already has — updated
+ * instantly. The gap was never computation, it was the round trip, so the client
+ * now asks BEFORE the move lands (during a drag, and on each keyboard step)
+ * instead of after.
+ *
+ * IT GRANTS NOTHING. `at` chooses where to sweep FROM, and the sweep is still
+ * bounded by the real walls and the token's real sight range, so a crafted
+ * position reveals exactly what standing there would reveal — and a player can
+ * simply walk there. It cannot see through a wall, cannot exceed sight range,
+ * and cannot be used on someone else's token: the query below is filtered to the
+ * caller's own tokens and `at` never touches that filter. It is also never
+ * PERSISTED — no token moves because of this parameter.
  *   header  Authorization: Bearer <user JWT>
  *   → 200 { visionEnabled: false }                       — no fog on this map
  *   → 200 { visionEnabled: true, isDm: true }            — the DM sees everything
@@ -77,8 +92,21 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   try {
     const authHeader = req.headers.get('Authorization') ?? ''
-    const body = (await req.json().catch(() => ({}))) as { mapId?: string }
+    const body = (await req.json().catch(() => ({}))) as {
+      mapId?: string
+      at?: { x?: unknown; y?: unknown }
+    }
     const mapId = body.mapId
+    // Optional speculative viewpoint — see `at` in the contract above. Coerced
+    // and finiteness-checked here rather than trusted: it reaches the geometry
+    // directly, and a NaN would produce a polygon of NaNs and fog the map.
+    const at =
+      typeof body.at?.x === 'number' &&
+      typeof body.at?.y === 'number' &&
+      Number.isFinite(body.at.x) &&
+      Number.isFinite(body.at.y)
+        ? { x: body.at.x, y: body.at.y }
+        : null
     if (!mapId) return jsonResponse({ error: 'mapId is required' }, 400)
 
     const svc = serviceClient()
@@ -132,7 +160,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
         .select('x, y, sight_squares')
         .eq('map_id', mapId)
         .eq('owner_user_id', user.id),
-      svc.from('playspace_walls').select('points, closed').eq('map_id', mapId),
+      svc
+        .from('playspace_walls')
+        .select('points, closed, blocks_movement')
+        .eq('map_id', mapId),
     ])
 
     // A player with no token on this map sees nothing. An empty polygon list is
@@ -146,9 +177,19 @@ Deno.serve(async (req: Request): Promise<Response> => {
       )
     }
 
+    // EVERY wall blocks sight — that is what a wall is here, including a
+    // sight-only one (0067).
     const segments = (walls ?? []).flatMap((w) =>
       segmentsOf(pointsFromJson(w.points), w.closed),
     )
+    // Movement is the narrower set. This filter was MISSING, so `movePolygons`
+    // was swept against every wall and the client refused to walk through the
+    // very curtains 0067 exists to allow — the database permitted the move and
+    // the client never sent it, which is why the server-side matrix could not
+    // see the bug (owner report 2026-09-02).
+    const moveSegments = (walls ?? [])
+      .filter((w) => w.blocks_movement)
+      .flatMap((w) => segmentsOf(pointsFromJson(w.points), w.closed))
     const bounds = { width: map.width_px, height: map.height_px }
 
     // One polygon per token the caller owns; the client unions them by drawing
@@ -157,10 +198,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const toWire = (poly: { x: number; y: number }[]) =>
       poly.map((p) => [Math.round(p.x), Math.round(p.y)] as [number, number])
 
+    // The speculative position applies to EVERY one of the caller's tokens,
+    // because the request does not say which one moved. In practice a player has
+    // one token on a map; if they have several, the extra polygons are drawn
+    // from a position one of them is not at — which opens slightly MORE fog for
+    // an instant and is corrected by the authoritative refresh a moment later.
+    // Recorded because it is a real, if small, imprecision.
+    const viewpoint = (t: { x: number; y: number }) => (at ? at : { x: t.x, y: t.y })
+
     const polygons = tokens.map((t) =>
       toWire(
         visibilityPolygon(
-          { x: t.x, y: t.y },
+          viewpoint(t),
           segments,
           sightRadiusPx(t.sight_squares, map.grid_size),
           bounds,
@@ -172,7 +221,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // derived, because a sight-limited polygon cannot be widened back out —
     // information the range removed is gone.
     const movePolygons = tokens.map((t) =>
-      toWire(visibilityPolygon({ x: t.x, y: t.y }, segments, Infinity, bounds)),
+      toWire(visibilityPolygon(viewpoint(t), moveSegments, Infinity, bounds)),
     )
 
     return jsonResponse(

@@ -935,6 +935,7 @@ export type Database = {
       // malformed entries.
       playspace_walls: {
         Row: {
+          blocks_movement: boolean
           closed: boolean
           created_at: string
           id: string
@@ -945,6 +946,7 @@ export type Database = {
           visible_to_players: boolean
         }
         Insert: {
+          blocks_movement?: boolean
           closed?: boolean
           created_at?: string
           id?: string
@@ -955,6 +957,7 @@ export type Database = {
           visible_to_players?: boolean
         }
         Update: {
+          blocks_movement?: boolean
           closed?: boolean
           created_at?: string
           id?: string

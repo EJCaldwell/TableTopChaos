@@ -14,8 +14,11 @@ import {
   findFreeCell,
   gridLines,
   movementDelta,
+  isSpaceFree,
   snapToGrid,
   snapToken,
+  tokenFootprint,
+  tokensOverlap,
 } from './grid'
 
 const MAP = { width_px: 1400, height_px: 900, grid_size: 70 }
@@ -420,5 +423,65 @@ describe('combinedDelta (two-key diagonals, 2026-09-02)', () => {
   it('returns null when nothing held is movement', () => {
     expect(combinedDelta([k('a', 'KeyA')])).toBeNull()
     expect(combinedDelta([])).toBeNull()
+  })
+})
+
+describe('token occupancy (2026-09-02)', () => {
+  const G = 50
+
+  it('a token does not collide with one in the next square along', () => {
+    // The case the epsilon exists for. Two 1x1 tokens in adjacent cells share an
+    // edge EXACTLY; a naive overlap test calls that a collision and standing
+    // side by side becomes impossible.
+    expect(tokensOverlap({ x: 25, y: 25 }, 1, { x: 75, y: 25 }, 1, G)).toBe(false)
+  })
+
+  it('still allows adjacency when snapping leaves a sub-pixel error', () => {
+    // Snapped coordinates are rounded, and arriving from the left vs the right
+    // put the shared edge a fraction either side of the boundary. Without the
+    // epsilon this passed or failed depending on approach direction — the
+    // "sometimes" shape of an intermittent bug.
+    expect(tokensOverlap({ x: 25, y: 25 }, 1, { x: 74.9, y: 25 }, 1, G)).toBe(false)
+  })
+
+  it('two tokens on the same square collide', () => {
+    expect(tokensOverlap({ x: 25, y: 25 }, 1, { x: 25, y: 25 }, 1, G)).toBe(true)
+  })
+
+  it('a large token collides with anything under its footprint, not just its centre', () => {
+    // A 4x4 monster centred on a corner covers sixteen cells. A check written
+    // against centres alone would let a player stand inside the dragon.
+    expect(tokensOverlap({ x: 100, y: 100 }, 4, { x: 175, y: 175 }, 1, G)).toBe(true)
+  })
+
+  it('a half-size token still blocks its own square', () => {
+    // 0.5 tokens are centred in the cell (not tucked in a corner), so two of
+    // them cannot share a square even though together they would fit.
+    expect(tokensOverlap({ x: 25, y: 25 }, 0.5, { x: 25, y: 25 }, 0.5, G)).toBe(true)
+  })
+
+  it('a half-size token does not block the neighbouring square', () => {
+    expect(tokensOverlap({ x: 25, y: 25 }, 0.5, { x: 75, y: 25 }, 1, G)).toBe(false)
+  })
+
+  it('isSpaceFree ignores an empty map', () => {
+    expect(isSpaceFree({ x: 25, y: 25 }, 1, [], G)).toBe(true)
+  })
+
+  it('isSpaceFree reports the square taken when any one token overlaps', () => {
+    const others = [
+      { x: 500, y: 500, size_cells: 1 },
+      { x: 25, y: 25, size_cells: 1 },
+    ]
+    expect(isSpaceFree({ x: 25, y: 25 }, 1, others, G)).toBe(false)
+  })
+
+  it('tokenFootprint measures from the centre outward', () => {
+    // Guards the convention every other check here depends on: the stored
+    // coordinate is the CENTRE, not the top-left. Reading it as a corner would
+    // shift every footprint half a token and the errors would look random.
+    expect(tokenFootprint({ x: 100, y: 100 }, 2, G)).toEqual({
+      left: 50, top: 50, right: 150, bottom: 150,
+    })
   })
 })

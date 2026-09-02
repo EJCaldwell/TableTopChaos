@@ -398,3 +398,93 @@ export function combinedDelta(
   const clamp = (v: number) => Math.max(-1, Math.min(1, v))
   return { dx: clamp(dx), dy: clamp(dy) }
 }
+
+/**
+ * A token's footprint on the map, in map pixels.
+ *
+ * A token is drawn centred on its coordinate and is `sizeCells` squares across,
+ * so its footprint is a square of side `sizeCells * grid_size` centred on that
+ * point. This is the ONE definition of "the space a token takes up"; both the
+ * client's move check and the server's trigger are written against it, and if
+ * they ever disagree the server wins.
+ *
+ * @param p - The token's centre, in map pixels.
+ * @param sizeCells - Its size in squares (0.5, 1, 2, 3, 4).
+ * @param gridSize - The map's current grid size in pixels.
+ * @returns Left/top/right/bottom edges in map pixels.
+ */
+export function tokenFootprint(
+  p: Point,
+  sizeCells: number,
+  gridSize: number,
+): { left: number; top: number; right: number; bottom: number } {
+  const half = (sizeCells * gridSize) / 2
+  return { left: p.x - half, top: p.y - half, right: p.x + half, bottom: p.y + half }
+}
+
+/**
+ * How much two footprints may overlap before they count as occupying the same
+ * space, in map pixels.
+ *
+ * NOT zero, and this is the whole subtlety of the feature. Two tokens in
+ * ADJACENT squares share an edge exactly, so their footprints touch at a single
+ * coordinate — and floating-point snapping puts that coordinate a fraction of a
+ * pixel either side of the boundary depending on which direction the token
+ * arrived from. A strict `>` test therefore rejects perfectly legal
+ * side-by-side placement, intermittently, which reads as "sometimes I can't
+ * stand next to someone".
+ *
+ * A quarter of a pixel is far below anything a player can see or aim at, and far
+ * above the snapping error.
+ */
+const OCCUPANCY_EPSILON = 0.25
+
+/**
+ * Do two tokens occupy the same space?
+ *
+ * Axis-aligned rectangle overlap, with the epsilon above so that merely TOUCHING
+ * — which is what standing side by side means — is not an overlap.
+ *
+ * @param a - First token's centre.
+ * @param aSize - First token's size in squares.
+ * @param b - Second token's centre.
+ * @param bSize - Second token's size in squares.
+ * @param gridSize - The map's grid size in pixels.
+ */
+export function tokensOverlap(
+  a: Point,
+  aSize: number,
+  b: Point,
+  bSize: number,
+  gridSize: number,
+): boolean {
+  const ra = tokenFootprint(a, aSize, gridSize)
+  const rb = tokenFootprint(b, bSize, gridSize)
+  return (
+    ra.left < rb.right - OCCUPANCY_EPSILON &&
+    ra.right > rb.left + OCCUPANCY_EPSILON &&
+    ra.top < rb.bottom - OCCUPANCY_EPSILON &&
+    ra.bottom > rb.top + OCCUPANCY_EPSILON
+  )
+}
+
+/**
+ * Is a square free for a token of a given size?
+ *
+ * @param p - The candidate centre, in map pixels.
+ * @param sizeCells - The moving token's size in squares.
+ * @param others - Every OTHER token on the map: `{x, y, size_cells}`. The moving
+ *        token must be excluded by the caller, or it will collide with itself
+ *        and nothing will ever be able to move.
+ * @param gridSize - The map's grid size in pixels.
+ */
+export function isSpaceFree(
+  p: Point,
+  sizeCells: number,
+  others: { x: number; y: number; size_cells: number }[],
+  gridSize: number,
+): boolean {
+  return !others.some((o) =>
+    tokensOverlap(p, sizeCells, { x: o.x, y: o.y }, o.size_cells, gridSize),
+  )
+}

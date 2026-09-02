@@ -96,6 +96,19 @@ export function BattlemapView({
    * hidden one is a landmark that silently vanishes for the party.
    */
   const [wallVisible, setWallVisible] = useState(true)
+  /**
+   * Draw the selected token's line of sight (DM only).
+   *
+   * ON by default: a DM who selects a monster is usually asking what it can see,
+   * and the overlay disappears the moment nothing is selected — so it is not
+   * clutter you have to remember to turn off.
+   */
+  const [showSight, setShowSight] = useState(true)
+  /**
+   * Whether newly drawn walls stop movement (0067). On by default, matching the
+   * column and the overwhelmingly common case — most walls are walls.
+   */
+  const [wallBlocks, setWallBlocks] = useState(true)
   const [error, setError] = useState<string | null>(null)
   // No `busy` flag here any more: the only remaining actions in this component
   // are the two token controls, which are instantaneous and already guarded by
@@ -260,6 +273,21 @@ export function BattlemapView({
               Players can see this wall
             </label>
           )}
+          {wallTool !== 'none' && wallTool !== 'erase' && (
+            <label style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+              <input
+                type="checkbox"
+                checked={wallBlocks}
+                onChange={(e) => setWallBlocks(e.target.checked)}
+              />
+              Blocks movement
+              {!wallBlocks && (
+                <span style={{ color: 'var(--color-text-muted)' }}>
+                  — blocks sight only (a curtain, a hedge, fog)
+                </span>
+              )}
+            </label>
+          )}
           {wallTool !== 'none' && (
             <span style={{ color: 'var(--color-danger)' }}>
               Token dragging is off while a wall tool is active.
@@ -292,6 +320,17 @@ export function BattlemapView({
           {selected ? (
             <>
               <strong>{selected.label ?? 'Token'}</strong>
+              {/* Answers the question a DM actually has mid-encounter — "can the
+                  goblin see them from there?" — which previously needed signing
+                  in as somebody else. */}
+              <label style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={showSight}
+                  onChange={(e) => setShowSight(e.target.checked)}
+                />
+                Show its line of sight
+              </label>
               {/* Size in SQUARES, not pixels (0056), so it survives a re-grid.
                   Offered on the selected token rather than in the Maps tab
                   because it is a property of the creature, not of the map.
@@ -445,6 +484,8 @@ export function BattlemapView({
             wallTool={wallTool}
             wallSnap={wallSnap}
             wallVisible={wallVisible}
+            wallBlocks={wallBlocks}
+            showSight={showSight}
             myCharacter={myCharacter}
           />
         </div>

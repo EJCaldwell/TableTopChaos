@@ -28,11 +28,12 @@ import { FormError } from '../../components/ui'
 import { useRealtimeSync, mergeById, type RealtimeEvent } from '../realtime/useRealtimeRefresh'
 import { signedUrlFor } from '../media/api'
 import { supabase } from '../../lib/supabase'
-import { combinedDelta, dropPosition, gridLines, movementDelta, snapToken } from './grid'
+import { combinedDelta, dropPosition, gridLines, isSpaceFree, movementDelta, snapToken } from './grid'
 import { pointInPolygon, tokenTouchesVision } from './vision'
 import { tokenBackground } from './tokenStyle'
 import { WallLayer, type WallTool } from './WallLayer'
 import { FogLayer } from './FogLayer'
+import { SightPreview } from './SightPreview'
 import {
   createToken,
   findFreeCellFor,
@@ -65,6 +66,8 @@ import {
  *        pieces already on it vanish.
  * @param wallSnap - Whether Line and Room snap to grid intersections.
  * @param wallVisible - Whether newly drawn walls are visible to players (0066).
+ * @param wallBlocks - Whether newly drawn walls stop movement (0067).
+ * @param showSight - DM only: draw the selected token's line of sight.
  * @param wallTool - The active wall tool (9.2). Anything but 'none' puts the
  *        wall layer in front of the tokens and suspends token dragging — you
  *        cannot draw a wall and move a piece with the same gesture.
@@ -82,6 +85,8 @@ export function BattlemapCanvas({
   wallTool = 'none',
   wallSnap = true,
   wallVisible = false,
+  wallBlocks = true,
+  showSight = false,
   myCharacter,
 }: {
   map: PlayspaceMap
@@ -92,6 +97,8 @@ export function BattlemapCanvas({
   wallTool?: WallTool
   wallSnap?: boolean
   wallVisible?: boolean
+  wallBlocks?: boolean
+  showSight?: boolean
   myCharacter?: { id: string; name: string; portraitAssetId: string | null } | null
 }) {
   const [tokens, setTokens] = useState<PlayspaceToken[]>([])
@@ -150,7 +157,21 @@ export function BattlemapCanvas({
 
   // The token currently under the pointer, and where it started. The start is
   // kept so a refused write can put it back exactly, rather than approximately.
-  const dragRef = useRef<{ id: string; from: { x: number; y: number } } | null>(null)
+  /**
+   * The drag in progress, if any.
+   *
+   * `origin` is where the pointer went down, in SCREEN coordinates, and `armed`
+   * says whether it has travelled far enough to count as a drag rather than a
+   * click (DRAG_THRESHOLD_PX). Until it is armed the token does not move at all,
+   * which is what makes clicking the edge of a token select it instead of
+   * nudging it.
+   */
+  const dragRef = useRef<{
+    id: string
+    from: { x: number; y: number }
+    origin: { x: number; y: number }
+    armed: boolean
+  } | null>(null)
 
   /**
    * Held-key movement state.
@@ -407,7 +428,7 @@ export function BattlemapCanvas({
   /** Persists a finished wall, optimistically. */
   async function handleCreateWall(kind: WallKind, points: [number, number][], closed: boolean) {
     try {
-      const row = await createWall(map.id, kind, points, closed, wallVisible)
+      const row = await createWall(map.id, kind, points, closed, wallVisible, wallBlocks)
       setWalls((prev) => (prev.some((w) => w.id === row.id) ? prev : [...prev, row]))
       setError(null)
     } catch (e) {
@@ -448,10 +469,40 @@ export function BattlemapCanvas({
    * moves. It is a network round trip per call, so it is deliberately NOT called
    * per drag frame; `commitVision` below is the debounce.
    */
-  const refreshVision = useCallback(async () => {
-    const result = await fetchVision(map.id)
+  const refreshVision = useCallback(async (at?: { x: number; y: number }) => {
+    const result = await fetchVision(map.id, at)
     setVision(result)
   }, [map.id])
+
+  /**
+   * Asks the server what the caller would see FROM a position, before the move
+   * that puts them there has been written.
+   *
+   * WHY THIS EXISTS. Fog visibly trailed a player's own movement while the DM's
+   * sight preview updated instantly, and the difference was never the maths —
+   * the DM computes locally from walls they already hold, whereas a player must
+   * ask the server, because they are deliberately never sent the walls (0061).
+   * The old own-move path could not be made faster in principle: it waited for
+   * the WRITE, then asked, because the server computes from the stored position.
+   * Two sequential round trips, by construction.
+   *
+   * Sending the intended position removes the first one. It is speculative — the
+   * write may still be refused — but a refusal already reverts the token, and the
+   * authoritative refresh that follows every commit corrects the fog with it.
+   *
+   * Throttled rather than debounced: a debounce would deliver nothing until the
+   * drag STOPPED, which is exactly the moment this exists to pre-empt.
+   */
+  const previewTimer = useRef(0)
+  const previewVision = useCallback(
+    (at: { x: number; y: number }) => {
+      const now = performance.now()
+      if (now - previewTimer.current < VISION_PREVIEW_MS) return
+      previewTimer.current = now
+      void refreshVision(at)
+    },
+    [refreshVision],
+  )
 
   useEffect(() => {
     void refreshVision()
@@ -510,6 +561,38 @@ export function BattlemapCanvas({
     return () => clearInterval(id)
   }, [vision?.visionEnabled, vision && 'isDm' in vision && vision.isDm, refreshVision])
 
+  /**
+   * A fast poll so a player sees a wall appear or disappear as the DM draws it.
+   *
+   * WHY A POLL AND NOT REALTIME, which is what everything else here uses. Walls
+   * are DM-only (0061) and realtime enforces RLS, so a player's socket receives
+   * NO wall events at all — not the hidden ones, which is correct, and not the
+   * visible ones either, which is the problem. Subscribing a player to
+   * `playspace_walls` would mean granting them a read over the table, undoing
+   * the decision the whole vision Edge Function exists to protect. Polling costs
+   * two requests a second per player and leaks nothing; the alternative is
+   * cheaper and wrong.
+   *
+   * Paused while the tab is hidden — a backgrounded player is not watching the
+   * DM draw, and a table with six players in six tabs should not spend the whole
+   * session polling.
+   *
+   * Also skipped while this session is MOVING something, hence the ref check:
+   * a poll landing mid-drag would overwrite the speculative polygon with one
+   * computed from the token's old stored position, and the fog would flicker
+   * backwards under the player's hand.
+   */
+  useEffect(() => {
+    if (!vision?.visionEnabled) return
+    if ('isDm' in vision && vision.isDm) return
+    const id = setInterval(() => {
+      if (document.hidden) return
+      if (dragRef.current || heldKeysRef.current.size > 0) return
+      void refreshVision()
+    }, WALL_POLL_MS)
+    return () => clearInterval(id)
+  }, [vision?.visionEnabled, vision && 'isDm' in vision && vision.isDm, refreshVision])
+
   // ------------------------------------------------------------- realtime
 
   // Per-ROW merge rather than a re-fetch: a token being dragged by someone else
@@ -564,7 +647,12 @@ export function BattlemapCanvas({
     e.preventDefault()
     e.currentTarget.focus()
     e.currentTarget.setPointerCapture(e.pointerId)
-    dragRef.current = { id: token.id, from: { x: token.x, y: token.y } }
+    dragRef.current = {
+      id: token.id,
+      from: { x: token.x, y: token.y },
+      origin: { x: e.clientX, y: e.clientY },
+      armed: false,
+    }
   }
 
   /** Pointer move: optimistic local update only. Nothing is written mid-drag. */
@@ -572,6 +660,16 @@ export function BattlemapCanvas({
     const drag = dragRef.current
     const rect = areaRef.current?.getBoundingClientRect()
     if (!drag || !rect) return
+    // Below the threshold this is still a click, and a click must not move
+    // anything. Once armed it STAYS armed for the rest of the press — otherwise
+    // dragging back towards the start would disarm mid-gesture and strand the
+    // token.
+    if (!drag.armed) {
+      const dx = e.clientX - drag.origin.x
+      const dy = e.clientY - drag.origin.y
+      if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return
+      drag.armed = true
+    }
     // The token's own half-width, so it stops fully on the map instead of
     // hanging half over the edge and staying there (reported 2026-09-01).
     const size = tokens.find((t) => t.id === drag.id)?.size_cells ?? 1
@@ -589,8 +687,11 @@ export function BattlemapCanvas({
     // which is what dragging a piece across a table feels like — the earlier
     // behaviour let it through and yanked it back, which reads as a glitch even
     // though the server was right.
-    if (!isMoveAllowed(p)) return
+    if (!isMoveAllowed(p, drag.id, size)) return
     setTokens((prev) => prev.map((t) => (t.id === drag.id ? { ...t, x: p.x, y: p.y } : t)))
+    // Ask what this square looks like BEFORE the move is written, so the fog
+    // opens with the token rather than a round trip behind it.
+    previewVision(p)
   }
 
   /**
@@ -601,6 +702,9 @@ export function BattlemapCanvas({
     const drag = dragRef.current
     dragRef.current = null
     if (!drag) return
+    // An unarmed press was a click: it selected the token and moved nothing, so
+    // there is nothing to write.
+    if (!drag.armed) return
     const moved = tokens.find((t) => t.id === drag.id)
     if (!moved) return
     if (moved.x === drag.from.x && moved.y === drag.from.y) return
@@ -637,8 +741,26 @@ export function BattlemapCanvas({
    * This is a CONVENIENCE, not the rule. The rule is the database trigger, which
    * also binds a request this client never made. If the two ever disagree, the
    * server wins and the revert path below still exists to handle it.
+   *
+   * @param p - The candidate centre, in map pixels.
+   * @param movingId - The token being moved. Excluded from the occupancy check,
+   *        or it would collide with its own current position and nothing could
+   *        ever move.
+   * @param sizeCells - Its size in squares, so a 4x4 monster is refused a square
+   *        that something is standing anywhere inside — not merely one whose
+   *        centre is taken.
    */
-  function isMoveAllowed(p: { x: number; y: number }): boolean {
+  function isMoveAllowed(p: { x: number; y: number }, movingId: string, sizeCells: number): boolean {
+    // Occupancy applies to EVERYONE, DM included. Vision does not: a DM is
+    // exempt from walls (0063) and has no movement polygons at all. The two
+    // rules are independent and this is the only place that is obvious.
+    //
+    // The DM is deliberately NOT exempt from occupancy. Walls are a fiction the
+    // DM authors and may cross; two creatures in one square is not a fiction,
+    // it is a mistake, and one nobody notices until initiative order stops
+    // making sense.
+    const others = tokensRef.current.filter((t) => t.id !== movingId)
+    if (!isSpaceFree(p, sizeCells, others, map.grid_size)) return false
     if (!movePolys) return true
     return movePolys.some((poly) => pointInPolygon(p, poly))
   }
@@ -687,8 +809,11 @@ export function BattlemapCanvas({
     if (next.x === live.x && next.y === live.y) return
     // Same rule as a drag: the key press simply does nothing against a wall,
     // rather than moving and rebounding.
-    if (!isMoveAllowed(next)) return
+    if (!isMoveAllowed(next, token.id, live.size_cells)) return
     setTokens((prev) => prev.map((t) => (t.id === token.id ? { ...t, ...next } : t)))
+    // Same speculative refresh as a drag — a keyboard walk should not be the
+    // slow way to move.
+    previewVision(next)
 
     // One write when the movement settles. Writing per square would emit a
     // realtime event per square, and everyone else's token would stutter across
@@ -915,6 +1040,24 @@ export function BattlemapCanvas({
     )
   }, [tokens, visionPolys, currentUserId, map.grid_size])
 
+  /**
+   * Painting order: biggest first, so the SMALLEST token is on top.
+   *
+   * A large token is a large hit area, and DOM order decides which element a
+   * click lands on when two overlap. With tokens in arbitrary order, a 4x4
+   * monster drawn after a 1x1 character sat over it and swallowed every click —
+   * "you are unable to select things without selecting something else" (owner
+   * report 2026-09-02). Sorting by size puts the small, hard-to-hit token above
+   * the big, easy-to-hit one, which is the order that makes both reachable.
+   *
+   * Sorted on a COPY: `visibleTokens` is a memo other code reads, and sorting in
+   * place would mutate it.
+   */
+  const paintedTokens = useMemo(
+    () => [...visibleTokens].sort((a, b) => b.size_cells - a.size_cells),
+    [visibleTokens],
+  )
+
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       {error && (
@@ -1047,7 +1190,7 @@ export function BattlemapCanvas({
               clipPath: visionPolys ? `url(#${tokenClipId})` : undefined,
             }}
           >
-          {visibleTokens.map((t) => {
+          {paintedTokens.map((t) => {
             const draggable = canDrag(t)
             // Resolved once per token per render: it decides the ring, the
             // background and whether the initials are drawn, and those three
@@ -1090,6 +1233,13 @@ export function BattlemapCanvas({
                   // assumes when it snaps to cell centres.
                   transform: 'translate(-50%, -50%)',
                   borderRadius: '50%',
+                  // The hit area must match what is DRAWN. A token is a circle
+                  // inside a square button, and the corners of that square are
+                  // ~21% of it — empty map that nonetheless answered clicks, and
+                  // on a large token those corners reach well into neighbouring
+                  // squares. Clipping the element clips its hit-testing too, so
+                  // one line fixes both the stray selection and the stray drag.
+                  clipPath: 'circle(50%)',
                   // The colour ring identifies a token that has no picture. Art
                   // identifies itself, so ringing it just puts a coloured band
                   // over the edges of the face.
@@ -1144,6 +1294,14 @@ export function BattlemapCanvas({
               
               Fog is absent entirely when vision is off or the viewer is the DM,
               so for a DM this is just grid → tokens → walls. */}
+          {/* The selected token's sight, for the DM. Under the walls so the
+              wall that BLOCKS the sight stays legible on top of the shape it is
+              cutting — that pairing is the whole point of looking. */}
+          {isDm && showSight && selectedId && (() => {
+            const t = tokens.find((x) => x.id === selectedId)
+            return t ? <SightPreview map={map} walls={walls} token={t} /> : null
+          })()}
+
           {/* Fog, above the tokens, so it covers them too — a monster standing
               in the dark must be hidden by the same sheet that hides the floor
               it is on. Rendering it under the tokens would show every enemy
@@ -1158,30 +1316,68 @@ export function BattlemapCanvas({
               opacity={map.fog_opacity}
             />
           )}
-          {/* ABOVE the fog, deliberately (owner, 2026-09-02: "you can see walls
-              constantly").
-
-              A wall a player can see is scenery they KNOW about — the edge of a
-              chasm, the side of a building, a portcullis. You do not forget a
-              cliff is there because you walked away from it, so drawing these
-              under the fog and letting them disappear was the wrong model: it
-              made known terrain behave like a secret.
-
-              Nothing is revealed by this that RLS did not already send: a player
-              only ever receives walls the DM marked visible (0066), so a secret
-              wall cannot be drawn here whatever the layering. The fog still
-              covers the FLOOR and every token; it just no longer erases the
-              landmarks.
-
-              For a DM this changes nothing — they have no fog to be above. */}
-          <WallLayer
-            map={map}
-            walls={walls}
-            tool={isDm ? wallTool : 'none'}
-            snapToGrid={wallSnap}
-            onCreate={(k, p, c) => void handleCreateWall(k, p, c)}
-            onErase={(id) => void handleEraseWall(id)}
-          />
+          {/* ABOVE the fog, and CLIPPED to what the viewer can see.
+              
+              Two owner decisions that sound contradictory and are not:
+              
+                "you can see walls constantly"   -> above the fog, not under it;
+                "only see walls in line of sight" -> clipped to the lit area.
+              
+              Together they mean: a wall is not a secret you forget, but you only
+              see the stretch of it you can actually look at. Walk along a cliff
+              edge and it reveals itself as you go, instead of the whole outline
+              appearing the moment one corner of it is lit. Under the fog it
+              would vanish behind you, which was the first wrong model; unclipped
+              it draws the full extent of a wall from one glimpse, which was the
+              second.
+              
+              The clip is the SAME path the tokens use — one definition, so a
+              wall and the creature standing against it can never disagree about
+              where the light stops.
+              
+              A DM has no visionPolys and is never clipped: they are drawing
+              these, and half a wall is not much use to draw with. */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              // NOT CLIPPED. Visible walls are drawn in full, always (owner,
+              // 2026-09-02: "make walls permanently visible").
+              //
+              // Two earlier models were tried and both were worse. Under the
+              // fog, a wall vanished the moment you looked away — known terrain
+              // behaving like a secret. Clipped to line of sight, only the
+              // stretch you were looking at was drawn, which needed remembering
+              // to be usable, and remembering brought its own boundary bugs.
+              // Drawing a visible wall in full is the simplest rule that is
+              // never wrong: the DM marked it visible, so it is visible.
+              //
+              // Nothing is leaked by this — RLS sends a player only the walls
+              // marked visible (0066), so there is nothing here to clip FOR
+              // safety, only for atmosphere.
+              //
+              // INERT, and it must stay that way. This wrapper covers the whole
+              // map and sits ABOVE the tokens, so an interactive one swallows
+              // every click meant for a token — which is exactly what it did
+              // when first written: the DM could no longer select any token at
+              // all (owner, 2026-09-02).
+              //
+              // `pointer-events: none` here does not disable the layer below it:
+              // a CHILD may set `auto` and still be hit-tested, which is what
+              // WallLayer does while a drawing tool is armed. So the drawing
+              // surface works and nothing else is blocked.
+              pointerEvents: 'none',
+            }}
+          >
+              <WallLayer
+                map={map}
+                walls={walls}
+                tool={isDm ? wallTool : 'none'}
+                snapToGrid={wallSnap}
+                onCreate={(k, p, c) => void handleCreateWall(k, p, c)}
+                onErase={(id) => void handleEraseWall(id)}
+              />
+          </div>
         </div>
         </div>
       </div>
@@ -1327,6 +1523,39 @@ const VISION_OWN_MOVE_MS = 0
  * changes are what actually drive the fog.
  */
 const VISION_HEARTBEAT_MS = 60_000
+
+/**
+ * Minimum gap between two SPECULATIVE vision requests during a drag, in ms.
+ *
+ * Throttle, not debounce — see previewVision. Roughly ten a second: fast enough
+ * that the fog reads as following the hand, slow enough that a five-second drag
+ * is fifty cheap requests rather than one per animation frame.
+ */
+const VISION_PREVIEW_MS = 100
+
+/**
+ * How often a player re-asks the server for walls, in milliseconds.
+ *
+ * Twice a second, at the owner's request, so a wall the DM draws mid-session
+ * appears without anyone having to move. See the effect that uses it for why
+ * this is a poll rather than a realtime subscription.
+ */
+const WALL_POLL_MS = 500
+
+/**
+ * How far the pointer must travel before a press becomes a DRAG, in CSS pixels.
+ *
+ * A click is never perfectly still — a few pixels of travel between down and up
+ * is normal, and more so on a trackpad. Without a threshold, clicking a token
+ * near its edge nudged it a square: the press snapped to a different cell than
+ * the one it started in, and selecting a token to look at it moved it instead
+ * (owner report 2026-09-02).
+ *
+ * Measured in SCREEN pixels deliberately, not map pixels, because it is
+ * describing the steadiness of a human hand — which does not change when you
+ * zoom in.
+ */
+const DRAG_THRESHOLD_PX = 5
 
 /**
  * Minimum time between two steps of a HELD arrow key, in milliseconds.
