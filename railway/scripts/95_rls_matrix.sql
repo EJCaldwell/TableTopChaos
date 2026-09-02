@@ -252,6 +252,7 @@ select pg_temp.assert_rows('walls','DM','reads the map''s walls','select 1 from 
 select pg_temp.assert_allowed('walls','DM','can draw a wall','insert into public.playspace_walls (map_id,kind,points) values (''ffffffff-0000-4000-8000-000000000001'',''freehand'',''[[5,5],[9,9],[20,3]]''::jsonb)');
 select pg_temp.assert_error('walls','DM','cannot store a one-point wall','insert into public.playspace_walls (map_id,points) values (''ffffffff-0000-4000-8000-000000000001'',''[[1,1]]''::jsonb)');
 select pg_temp.assert_error('walls','DM','cannot store a non-numeric point','insert into public.playspace_walls (map_id,points) values (''ffffffff-0000-4000-8000-000000000001'',''[[1,1],["a","b"]]''::jsonb)');
+select pg_temp.assert_allowed('playspace','DM','CAN set sight on a player''s token (0062)','update public.playspace_tokens set sight_squares=12 where id=''ffffffff-0000-4000-8000-000000000011''');
 select pg_temp.assert_allowed('playspace','DM','CAN set the ring on a player''s token (0059)','update public.playspace_tokens set ring=''on'' where id=''ffffffff-0000-4000-8000-000000000011''');
 select pg_temp.assert_allowed('playspace','DM','CAN resize a player''s token (0057)','update public.playspace_tokens set size_cells=3 where id=''ffffffff-0000-4000-8000-000000000011''');
 select pg_temp.assert_denied('characters','DM','cannot edit a player''s character (non-dev DM)','update public.characters set name=''dm-edited'' where owner_id=' || quote_literal(:p1) || '::uuid');
@@ -338,34 +339,76 @@ select pg_temp.become(:p1::uuid);
 select pg_temp.assert_rows('playspace','player','sees the active map','select 1 from public.playspace_maps where campaign_id=' || quote_literal(:camp) || '::uuid', 1);
 select pg_temp.assert_rows('playspace','player','sees ALL tokens on it','select 1 from public.playspace_tokens', 3);
 select pg_temp.assert_allowed('playspace','player','can move their OWN token','update public.playspace_tokens set x=120,y=240 where id=''ffffffff-0000-4000-8000-000000000011''');
--- 0056: size is part of the token row, so it inherits the movement rules. A
--- player resizing somebody else's monster would be as bad as moving it.
--- 0057: size is the DM's to set, even on a token the player owns and moves. The
--- FIRST of these used to assert the opposite (0056) and was changed deliberately
--- when the owner narrowed the rule.
--- 0058: token artwork. The point of copying the asset id ONTO the token is that
--- a player can then see a monster's portrait without being able to read the NPC
--- row it came from. Both halves are asserted, because either one alone would be
--- a different (and wrong) feature.
-select pg_temp.assert_rows('playspace','player','CANNOT read the NPC row a token depicts','select 1 from public.npcs', 0);
-select pg_temp.assert_rows('playspace','player','CAN read the campaign media a token points at','select 1 from public.media_assets where campaign_id=' || quote_literal(:camp) || '::uuid and moderation_status=''approved''', 1);
-select pg_temp.assert_denied('playspace','player','CANNOT resize even their OWN token (0057)','update public.playspace_tokens set size_cells=2 where id=''ffffffff-0000-4000-8000-000000000011''');
-select pg_temp.assert_allowed('playspace','player','can still MOVE their own token after 0057','update public.playspace_tokens set x=140,y=140 where id=''ffffffff-0000-4000-8000-000000000011''');
--- 0059: the ring joins size as DM-only appearance. Asserted separately from
--- size, because they are guarded by one trigger and a change to it could
--- plausibly free one column while still holding the other.
--- Walls are DM-ONLY (0061, revising 0060). This assertion INVERTED when the
--- owner chose the stronger model: a player's client never receives wall
--- geometry, only the visibility polygon computed from it server-side (9.3).
--- It is the assertion the whole approach rests on — if it ever reads non-zero,
--- the map layout is leaking however good the fog looks on screen.
-select pg_temp.assert_rows('walls','player','receives NO wall geometry at all (0061)','select 1 from public.playspace_walls', 0);
+-- WALL VISIBILITY. Restored 2026-09-02: an earlier careless splice in this file
+-- deleted these along with the appearance assertions, and the matrix went on
+-- reporting "all assertions passed" both times. Assertions that no longer exist
+-- cannot fail; the only signal is the total, which is why it is quoted in
+-- PLANNING on every change. I noticed the first set and missed this one.
+select pg_temp.assert_rows('walls','player','receives NO geometry for HIDDEN walls (0061)','select 1 from public.playspace_walls', 0);
 select pg_temp.assert_denied('walls','player','CANNOT draw a wall','insert into public.playspace_walls (map_id,points) values (''ffffffff-0000-4000-8000-000000000001'',''[[1,1],[2,2]]''::jsonb)');
 select pg_temp.assert_denied('walls','player','CANNOT move a wall','update public.playspace_walls set points=''[[9,9],[8,8]]''::jsonb');
 select pg_temp.assert_denied('walls','player','CANNOT delete a wall','delete from public.playspace_walls');
+
+-- 0066: the per-wall opt-in. Both halves matter — the feature is only safe if
+-- the DEFAULT holds, so "can read a visible one" is asserted next to "receives
+-- nothing for a hidden one" above.
+select pg_temp.become_owner();
+update public.playspace_walls set visible_to_players = true where id = 'aaaabbbb-0000-4000-8000-000000000001';
+select pg_temp.become(:p1::uuid);
+select pg_temp.assert_rows('walls','player','CAN read a wall the DM marked visible (0066)','select 1 from public.playspace_walls', 1);
+select pg_temp.assert_denied('walls','player','still cannot EDIT a visible wall','update public.playspace_walls set points=''[[9,9],[8,8]]''::jsonb');
+select pg_temp.assert_denied('walls','player','cannot mark a wall visible themselves','update public.playspace_walls set visible_to_players=true');
+select pg_temp.become_owner();
+update public.playspace_walls set visible_to_players = false where id = 'aaaabbbb-0000-4000-8000-000000000001';
+select pg_temp.become(:p1::uuid);
+
+-- 0063/0064: walls block a player's movement, but ONLY where the map uses
+-- vision. Three states, because each is a different rule:
+--   * vision OFF  -> allowed  (a campaign using walls as scenery is unchanged)
+--   * vision ON   -> refused  (the feature)
+--   * as the DM   -> allowed  (they stage what is behind their own walls)
+--
+-- NOTE ON ORDERING: the fixture is repositioned BEFORE vision is switched on and
+-- AFTER it is switched off. The owner role bypasses RLS but NOT triggers, so a
+-- setup UPDATE that happens to cross the wall is refused exactly like a player's
+-- would be — which is correct behaviour and a confusing way to fail a test run.
+select pg_temp.assert_allowed('walls','player','CAN cross a wall while vision is OFF','update public.playspace_tokens set x=20,y=80 where id=''ffffffff-0000-4000-8000-000000000011''');
+
+select pg_temp.become_owner();
+update public.playspace_tokens set x = 80, y = 20 where id = 'ffffffff-0000-4000-8000-000000000011';
+update public.playspace_maps set vision_enabled = true where id = 'ffffffff-0000-4000-8000-000000000001';
+
+select pg_temp.become(:p1::uuid);
+-- (80,20) -> (20,80) straddles the fixture wall (0,0)-(100,100).
+select pg_temp.assert_denied('walls','player','CANNOT move THROUGH a wall (0063)','update public.playspace_tokens set x=20,y=80 where id=''ffffffff-0000-4000-8000-000000000011''');
+-- ...and cannot LAND on it either, which is what stops the two-step crossing
+-- (0064). This exact case was written badly in the first draft of the matrix and
+-- reported ALLOWED — the bad test case turned out to be a working exploit.
+select pg_temp.assert_denied('walls','player','CANNOT land exactly ON a wall (0064)','update public.playspace_tokens set x=50,y=50 where id=''ffffffff-0000-4000-8000-000000000011''');
+-- The control: movement that does not meet a wall is still free. Without this,
+-- a rule that froze players entirely would pass the two assertions above.
+select pg_temp.assert_allowed('walls','player','CAN still move where no wall is in the way','update public.playspace_tokens set x=90,y=10 where id=''ffffffff-0000-4000-8000-000000000011''');
+
+select pg_temp.become(:dm::uuid);
+select pg_temp.assert_allowed('walls','DM','CAN move through their own wall','update public.playspace_tokens set x=20,y=80 where id=''ffffffff-0000-4000-8000-000000000013''');
+
+select pg_temp.become_owner();
+update public.playspace_maps set vision_enabled = false where id = 'ffffffff-0000-4000-8000-000000000001';
+update public.playspace_tokens set x = 120, y = 240 where id = 'ffffffff-0000-4000-8000-000000000011';
+select pg_temp.become(:p1::uuid);
+-- APPEARANCE AND CAPABILITY ARE THE DM'S (0057 size, 0059 ring, 0062 sight).
+-- Restored 2026-09-01 after a careless splice in this file deleted all three —
+-- the matrix still reported "all assertions passed", because assertions that no
+-- longer exist cannot fail. A dropping total is the only signal, which is why
+-- the count is quoted in PLANNING on every change.
+select pg_temp.assert_denied('playspace','player','CANNOT resize even their OWN token (0057)','update public.playspace_tokens set size_cells=2 where id=''ffffffff-0000-4000-8000-000000000011''');
 select pg_temp.assert_denied('playspace','player','CANNOT change the ring on their OWN token (0059)','update public.playspace_tokens set ring=''off'' where id=''ffffffff-0000-4000-8000-000000000011''');
-select pg_temp.assert_denied('playspace','player','CANNOT resize the DM''s monster','update public.playspace_tokens set size_cells=4 where id=''ffffffff-0000-4000-8000-000000000013''');
+-- The sharpest of the three: a player who could widen their own sight would see
+-- the whole map, and the fog would be self-service.
+select pg_temp.assert_denied('playspace','player','CANNOT widen their OWN sight range (0062)','update public.playspace_tokens set sight_squares=999 where id=''ffffffff-0000-4000-8000-000000000011''');
+select pg_temp.assert_denied('playspace','player','CANNOT give themselves darkvision (0062)','update public.playspace_tokens set dark_sight_squares=60 where id=''ffffffff-0000-4000-8000-000000000011''');
 select pg_temp.assert_error('playspace','player','CANNOT set a nonsense token size','update public.playspace_tokens set size_cells=2.7 where id=''ffffffff-0000-4000-8000-000000000011''');
+select pg_temp.assert_allowed('playspace','player','can still MOVE their own token despite all of the above','update public.playspace_tokens set x=125,y=245 where id=''ffffffff-0000-4000-8000-000000000011''');
 select pg_temp.assert_denied('playspace','player','CANNOT move a peer''s token','update public.playspace_tokens set x=999 where id=''ffffffff-0000-4000-8000-000000000012''');
 select pg_temp.assert_denied('playspace','player','CANNOT move the DM''s monster','update public.playspace_tokens set x=999 where id=''ffffffff-0000-4000-8000-000000000013''');
 select pg_temp.assert_denied('playspace','player','CANNOT seize the DM''s monster by claiming it','update public.playspace_tokens set owner_user_id=' || quote_literal(:p1) || '::uuid where id=''ffffffff-0000-4000-8000-000000000013''');

@@ -9,9 +9,11 @@ import { describe, expect, it } from 'vitest'
 import {
   clampToMap,
   clientToMap,
+  combinedDelta,
   dropPosition,
   findFreeCell,
   gridLines,
+  movementDelta,
   snapToGrid,
   snapToken,
 } from './grid'
@@ -314,5 +316,109 @@ describe('snapToken — size decides where a token snaps to', () => {
   it('is what dropPosition uses when snapping', () => {
     const rect = { left: 0, top: 0, width: 1400, height: 900 }
     expect(dropPosition(62, 62, rect, M, true, 70, 2)).toEqual({ x: 70, y: 70 })
+  })
+})
+
+describe('movementDelta (diagonals, 2026-09-02)', () => {
+  it('maps the four arrows', () => {
+    expect(movementDelta('ArrowLeft', '')).toEqual({ dx: -1, dy: 0 })
+    expect(movementDelta('ArrowRight', '')).toEqual({ dx: 1, dy: 0 })
+    expect(movementDelta('ArrowUp', '')).toEqual({ dx: 0, dy: -1 })
+    expect(movementDelta('ArrowDown', '')).toEqual({ dx: 0, dy: 1 })
+  })
+
+  it('maps the numpad, including all four diagonals', () => {
+    expect(movementDelta('7', 'Numpad7')).toEqual({ dx: -1, dy: -1 })
+    expect(movementDelta('9', 'Numpad9')).toEqual({ dx: 1, dy: -1 })
+    expect(movementDelta('1', 'Numpad1')).toEqual({ dx: -1, dy: 1 })
+    expect(movementDelta('3', 'Numpad3')).toEqual({ dx: 1, dy: 1 })
+  })
+
+  it('gives laptops without a numpad a way to move diagonally', () => {
+    // Otherwise diagonal movement is unavailable to most people using the app,
+    // which is not a feature.
+    expect(movementDelta('Home', '')).toEqual({ dx: -1, dy: -1 })
+    expect(movementDelta('PageUp', '')).toEqual({ dx: 1, dy: -1 })
+    expect(movementDelta('End', '')).toEqual({ dx: -1, dy: 1 })
+    expect(movementDelta('PageDown', '')).toEqual({ dx: 1, dy: 1 })
+  })
+
+  it('agrees with itself when NumLock is off', () => {
+    // With NumLock off the physical Numpad7 reports key 'Home'. Both paths must
+    // mean the same direction, or the same key moves differently depending on a
+    // lock light.
+    expect(movementDelta('Home', 'Numpad7')).toEqual(movementDelta('Home', ''))
+  })
+
+  it('treats numpad 5 as a no-op, not as nothing', () => {
+    // It is the centre of the pad. Returning a zero step consumes the key so it
+    // does not fall through to the browser; returning null would let it scroll
+    // the page.
+    expect(movementDelta('5', 'Numpad5')).toEqual({ dx: 0, dy: 0 })
+  })
+
+  it('ignores keys that are not movement', () => {
+    for (const [k, c] of [['a', 'KeyA'], ['Enter', 'Enter'], [' ', 'Space'], ['Tab', 'Tab']]) {
+      expect(movementDelta(k, c)).toBeNull()
+    }
+  })
+
+  it('never returns a step larger than one cell', () => {
+    // A diagonal is one square across and one down — not a knight's move.
+    for (const c of ['Numpad1', 'Numpad3', 'Numpad7', 'Numpad9']) {
+      const d = movementDelta('', c)!
+      expect(Math.abs(d.dx)).toBeLessThanOrEqual(1)
+      expect(Math.abs(d.dy)).toBeLessThanOrEqual(1)
+    }
+  })
+})
+
+describe('combinedDelta (two-key diagonals, 2026-09-02)', () => {
+  const k = (key: string, code = '') => ({ key, code })
+
+  it('turns two arrows into a diagonal', () => {
+    // The reason this exists: diagonals were only reachable on keys a compact
+    // laptop keyboard may not have.
+    expect(combinedDelta([k('ArrowLeft'), k('ArrowUp')])).toEqual({ dx: -1, dy: -1 })
+    expect(combinedDelta([k('ArrowRight'), k('ArrowDown')])).toEqual({ dx: 1, dy: 1 })
+  })
+
+  it('is order-independent', () => {
+    expect(combinedDelta([k('ArrowUp'), k('ArrowLeft')])).toEqual(
+      combinedDelta([k('ArrowLeft'), k('ArrowUp')]),
+    )
+  })
+
+  it('still handles a single key', () => {
+    expect(combinedDelta([k('ArrowLeft')])).toEqual({ dx: -1, dy: 0 })
+  })
+
+  it('cancels opposite keys to no movement on that axis', () => {
+    // Correct, not a bug: holding Left and Right means no horizontal intent.
+    expect(combinedDelta([k('ArrowLeft'), k('ArrowRight')])).toEqual({ dx: 0, dy: 0 })
+    expect(combinedDelta([k('ArrowLeft'), k('ArrowRight'), k('ArrowUp')])).toEqual({
+      dx: 0,
+      dy: -1,
+    })
+  })
+
+  it('never produces a step larger than one cell', () => {
+    // Three keys on one axis must not become a three-square leap.
+    const d = combinedDelta([k('ArrowLeft'), k('ArrowLeft'), k('ArrowLeft')])!
+    expect(d).toEqual({ dx: -1, dy: 0 })
+  })
+
+  it('combines an arrow with a numpad key without exceeding one cell', () => {
+    const d = combinedDelta([k('ArrowLeft'), k('7', 'Numpad7')])!
+    expect(d).toEqual({ dx: -1, dy: -1 })
+  })
+
+  it('ignores non-movement keys mixed in', () => {
+    expect(combinedDelta([k('Shift', 'ShiftLeft'), k('ArrowUp')])).toEqual({ dx: 0, dy: -1 })
+  })
+
+  it('returns null when nothing held is movement', () => {
+    expect(combinedDelta([k('a', 'KeyA')])).toBeNull()
+    expect(combinedDelta([])).toBeNull()
   })
 })

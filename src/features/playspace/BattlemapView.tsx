@@ -66,6 +66,36 @@ export function BattlemapView({
    * draw a wall across the wrong picture.
    */
   const [wallTool, setWallTool] = useState<WallTool>('none')
+  /**
+   * Snap Line and Room endpoints to grid intersections. On by default: a DM
+   * drawing a dungeon almost always wants walls on the grid, and the ones who do
+   * not are drawing freehand anyway, which never snaps.
+   */
+  const [wallSnap, setWallSnap] = useState(true)
+  /**
+   * Whether newly drawn walls are visible to players (0066).
+   *
+   * Applies to walls drawn from now on, not retroactively — a setting that
+   * silently restyled every wall already on the map would be a nasty surprise
+   * for a DM who had carefully hidden them.
+   *
+   * ON by default (owner, 2026-09-02), which is the opposite of the COLUMN's
+   * default, and both are right for where they sit:
+   *
+   *   * the column defaults to false, so anything written without an explicit
+   *     choice — a script, an import, a future feature — is secret. That is the
+   *     safe default for data, and 0066's assertion depends on it.
+   *   * this control defaults to true, because most walls a DM draws are the
+   *     outline of the room the party is standing in. Making the common case
+   *     require a tick meant either ticking it constantly or accidentally
+   *     hiding scenery the players can see in the picture anyway.
+   *
+   * The consequence to be honest about: a DM who does not look at this will
+   * draw walls their players can see. That is the right way round — a visible
+   * wall is at worst redundant with the map image, whereas an accidentally
+   * hidden one is a landmark that silently vanishes for the party.
+   */
+  const [wallVisible, setWallVisible] = useState(true)
   const [error, setError] = useState<string | null>(null)
   // No `busy` flag here any more: the only remaining actions in this component
   // are the two token controls, which are instantaneous and already guarded by
@@ -208,6 +238,28 @@ export function BattlemapView({
               {t.label}
             </button>
           ))}
+          {/* Only offered while a drawing tool is armed — a snap setting with
+              nothing to snap is clutter. */}
+          {(wallTool === 'segment' || wallTool === 'rect') && (
+            <label style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+              <input
+                type="checkbox"
+                checked={wallSnap}
+                onChange={(e) => setWallSnap(e.target.checked)}
+              />
+              Snap to grid (hold <kbd>Alt</kbd> to override)
+            </label>
+          )}
+          {wallTool !== 'none' && wallTool !== 'erase' && (
+            <label style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+              <input
+                type="checkbox"
+                checked={wallVisible}
+                onChange={(e) => setWallVisible(e.target.checked)}
+              />
+              Players can see this wall
+            </label>
+          )}
           {wallTool !== 'none' && (
             <span style={{ color: 'var(--color-danger)' }}>
               Token dragging is off while a wall tool is active.
@@ -292,6 +344,36 @@ export function BattlemapView({
               {/* Ring (0059). DM-only like size, and enforced by the same
                   trigger: how a piece looks is the DM's call, where it stands is
                   the player's. */}
+              {/* Sight range (0062). In SQUARES, so it survives a re-grid — and
+                  shown as squares rather than feet because this app has no
+                  feet-per-square setting; every table's answer is already baked
+                  into how they drew the grid.
+
+                  Blank means unlimited, which is NOT the same as a large number:
+                  it is what an unconfigured token has, and it is bounded by
+                  walls alone. */}
+              <label style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+                Sight:
+                <input
+                  type="number"
+                  min={0}
+                  max={999}
+                  step={1}
+                  placeholder="∞"
+                  value={selected.sight_squares ?? ''}
+                  onChange={(e) => {
+                    const raw = e.target.value.trim()
+                    const next = raw === '' ? null : Math.min(Math.max(Number(raw), 0), 999)
+                    if (next !== null && !Number.isFinite(next)) return
+                    void run(async () =>
+                      setSelected(await updateToken(selected.id, { sight_squares: next })),
+                    )
+                  }}
+                  style={{ font: 'inherit', fontSize: '0.8rem', width: '4.5rem' }}
+                  aria-label="Sight range in grid squares; blank for unlimited"
+                />
+                <span style={{ color: 'var(--color-text-muted)' }}>squares</span>
+              </label>
               <label style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
                 Ring:
                 <select
@@ -361,6 +443,8 @@ export function BattlemapView({
             onSelectToken={setSelected}
             allowTokens={allowTokens}
             wallTool={wallTool}
+            wallSnap={wallSnap}
+            wallVisible={wallVisible}
             myCharacter={myCharacter}
           />
         </div>

@@ -860,6 +860,7 @@ export type Database = {
           background_asset_id: string | null
           campaign_id: string
           created_at: string
+          fog_opacity: number
           grid_offset_x: number
           grid_offset_y: number
           grid_size: number
@@ -876,6 +877,7 @@ export type Database = {
           background_asset_id?: string | null
           campaign_id: string
           created_at?: string
+          fog_opacity?: number
           grid_offset_x?: number
           grid_offset_y?: number
           grid_size?: number
@@ -892,6 +894,7 @@ export type Database = {
           background_asset_id?: string | null
           campaign_id?: string
           created_at?: string
+          fog_opacity?: number
           grid_offset_x?: number
           grid_offset_y?: number
           grid_size?: number
@@ -939,6 +942,7 @@ export type Database = {
           map_id: string
           points: Json
           updated_at: string
+          visible_to_players: boolean
         }
         Insert: {
           closed?: boolean
@@ -948,6 +952,7 @@ export type Database = {
           map_id: string
           points: Json
           updated_at?: string
+          visible_to_players?: boolean
         }
         Update: {
           closed?: boolean
@@ -957,6 +962,7 @@ export type Database = {
           map_id?: string
           points?: Json
           updated_at?: string
+          visible_to_players?: boolean
         }
         Relationships: [
           {
@@ -973,6 +979,7 @@ export type Database = {
           character_id: string | null
           color: string
           created_at: string
+          dark_sight_squares: number
           id: string
           image_asset_id: string | null
           label: string | null
@@ -980,6 +987,7 @@ export type Database = {
           npc_id: string | null
           owner_user_id: string | null
           ring: string
+          sight_squares: number | null
           size_cells: number
           size_px: number
           updated_at: string
@@ -990,6 +998,7 @@ export type Database = {
           character_id?: string | null
           color?: string
           created_at?: string
+          dark_sight_squares?: number
           id?: string
           image_asset_id?: string | null
           label?: string | null
@@ -997,6 +1006,7 @@ export type Database = {
           npc_id?: string | null
           owner_user_id?: string | null
           ring?: string
+          sight_squares?: number | null
           size_cells?: number
           size_px?: number
           updated_at?: string
@@ -1007,6 +1017,7 @@ export type Database = {
           character_id?: string | null
           color?: string
           created_at?: string
+          dark_sight_squares?: number
           id?: string
           image_asset_id?: string | null
           label?: string | null
@@ -1014,6 +1025,7 @@ export type Database = {
           npc_id?: string | null
           owner_user_id?: string | null
           ring?: string
+          sight_squares?: number | null
           size_cells?: number
           size_px?: number
           updated_at?: string

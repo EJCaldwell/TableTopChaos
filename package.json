@@ -12,7 +12,8 @@
     "qa:checks": "tsc -p tsconfig.qa.json && tsx QA/tools/layout-checks.mts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "coverage": "vitest run --coverage"
+    "coverage": "vitest run --coverage",
+    "sync:geometry": "tsx QA/tools/sync-geometry.mts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.10",

@@ -17,6 +17,30 @@ import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.4
 import { requireEnv } from './config.ts'
 
 /**
+ * The base URL these functions use to reach Supabase's own services.
+ *
+ * WHY THIS IS NOT SIMPLY SUPABASE_URL. That variable holds the PUBLIC gateway
+ * hostname, so every query a function made went out to the internet, back in
+ * through Railway's edge, and only then to the gateway — a full public round
+ * trip per query, from a container sitting a few milliseconds away from the
+ * database on the internal network.
+ *
+ * Found while asking why the fog took so long to update after a move: the
+ * `vision` function makes several queries per request, and each was paying that
+ * toll. Setting SUPABASE_INTERNAL_URL to `http://gateway.railway.internal:8000`
+ * keeps the traffic inside Railway.
+ *
+ * Falls back to the public URL when unset, so nothing breaks if the variable is
+ * missing — it is a performance setting, not a correctness one. Public URLs used
+ * in EMAILS or redirects must keep using APP_URL/SUPABASE_URL: this is only for
+ * server-to-server calls, where a hostname nobody outside the network can
+ * resolve is exactly what you want.
+ */
+function supabaseBaseUrl(): string {
+  return Deno.env.get('SUPABASE_INTERNAL_URL') ?? requireEnv('SUPABASE_URL')
+}
+
+/**
  * A Stripe client wired for Deno. `constructEventAsync` (used in the webhook)
  * needs the SubtleCrypto provider; all HTTP calls use fetch.
  */
@@ -34,7 +58,7 @@ export const cryptoProvider = Stripe.createSubtleCryptoProvider()
  */
 export function serviceClient(): SupabaseClient {
   return createClient(
-    requireEnv('SUPABASE_URL'),
+    supabaseBaseUrl(),
     requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
     { auth: { persistSession: false } },
   )
@@ -47,7 +71,7 @@ export function serviceClient(): SupabaseClient {
  */
 export function userClient(authHeader: string): SupabaseClient {
   return createClient(
-    requireEnv('SUPABASE_URL'),
+    supabaseBaseUrl(),
     requireEnv('SUPABASE_ANON_KEY'),
     {
       auth: { persistSession: false },

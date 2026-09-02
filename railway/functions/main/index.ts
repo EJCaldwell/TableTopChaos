@@ -54,6 +54,7 @@ const ALLOWED = new Set([
   'import-campaign',
   'stripe-webhook',
   'upload-media',
+  'vision',
 ])
 
 Deno.serve({ port: 8000 }, async (req: Request) => {

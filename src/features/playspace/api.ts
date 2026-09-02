@@ -354,10 +354,10 @@ export async function signedUrlsForAssets(
 /**
  * Lists a map's walls.
  *
- * **DM-only by RLS** (migration 0061). A player calling this gets an empty
- * array, not an error — which is the correct shape for the caller (there are no
- * walls *they* can see) and is why the wall layer simply does not render for
- * them rather than needing its own guard.
+ * A DM gets every wall; a player gets only those the DM marked
+ * `visible_to_players` (0061 + 0066). Neither needs a role check here — RLS
+ * returns the right rows to each, so the wall layer renders whatever it is
+ * given and cannot accidentally draw a secret wall for the wrong person.
  *
  * @param mapId - The map whose walls to load.
  */
@@ -380,6 +380,8 @@ export async function listWalls(mapId: string): Promise<PlayspaceWall[]> {
  *        simplified — the database refuses more than 2000 points, and
  *        `simplifyStroke` is what guarantees that.
  * @param closed - Whether the last point joins back to the first.
+ * @param visibleToPlayers - Whether players may see this wall (0066). Defaults
+ *        to false, matching the column: a wall is secret unless said otherwise.
  * @returns The created row.
  */
 export async function createWall(
@@ -387,10 +389,11 @@ export async function createWall(
   kind: WallKind,
   points: [number, number][],
   closed = false,
+  visibleToPlayers = false,
 ): Promise<PlayspaceWall> {
   const { data, error } = await supabase
     .from('playspace_walls')
-    .insert({ map_id: mapId, kind, points, closed })
+    .insert({ map_id: mapId, kind, points, closed, visible_to_players: visibleToPlayers })
     .select('*')
     .single()
   if (error) throw error
@@ -418,4 +421,49 @@ export async function deleteWall(wallId: string): Promise<void> {
 export async function clearWalls(mapId: string): Promise<void> {
   const { error } = await supabase.from('playspace_walls').delete().eq('map_id', mapId)
   if (error) throw error
+}
+
+/** What the `vision` Edge Function returns. Polygons only — never walls. */
+export type VisionResult =
+  | { visionEnabled: false }
+  | { visionEnabled: true; isDm: true }
+  | {
+      visionEnabled: true
+      isDm: false
+      /** What may be SEEN: sight range and walls. Drives the fog. */
+      polygons: [number, number][][]
+      /** Where a token may MOVE: walls only. Stops a drag at a wall. */
+      movePolygons: [number, number][][]
+    }
+
+/**
+ * Asks the server what this player may see on a map.
+ *
+ * Edge Function: `vision`, POST { mapId }, caller's JWT in the Authorization
+ * header (supabase-js attaches it).
+ *  - 200 with one of the three shapes above.
+ *  - 403 if the caller is not a member; 401 if not signed in.
+ *
+ * WHY A ROUND TRIP RATHER THAN LOCAL MATHS: walls are DM-only (migration 0061),
+ * so the browser has nothing to compute from. The function returns the polygon
+ * and never the geometry that produced it — see supabase/functions/vision.
+ *
+ * A failure returns `{ visionEnabled: true, isDm: false, polygons: [] }` — fog
+ * everything — rather than throwing. **Failing CLOSED is deliberate**: the
+ * alternative, treating an error as "no fog", would reveal the whole map the
+ * moment the network hiccuped, which is the one outcome the feature exists to
+ * prevent. A player seeing too little is a complaint; a player seeing too much
+ * is the bug.
+ *
+ * @param mapId - The map to compute for.
+ */
+export async function fetchVision(mapId: string): Promise<VisionResult> {
+  const { data, error } = await supabase.functions.invoke<VisionResult>('vision', {
+    body: { mapId },
+  })
+  if (error || !data) {
+    console.error('vision: falling back to fully fogged', error)
+    return { visionEnabled: true, isDm: false, polygons: [], movePolygons: [] }
+  }
+  return data
 }

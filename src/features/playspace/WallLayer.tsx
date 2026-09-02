@@ -25,6 +25,7 @@ import {
   pointsToJson,
   rectPoints,
   simplifyStroke,
+  snapToGridCorner,
   toSvgPath,
   type Point,
 } from './walls'
@@ -40,6 +41,9 @@ export type WallTool = 'none' | 'segment' | 'rect' | 'freehand' | 'erase'
  *        never steals a token drag.
  * @param onCreate - Called with a finished wall. The caller persists it.
  * @param onErase - Called with a wall id when the erase tool hits one.
+ * @param snapToGrid - Snap Line and Room endpoints to grid INTERSECTIONS.
+ *        Freehand is never snapped: a stroke dragged through the lattice would
+ *        collapse into a staircase, and "freehand" would stop meaning anything.
  */
 export function WallLayer({
   map,
@@ -47,12 +51,14 @@ export function WallLayer({
   tool,
   onCreate,
   onErase,
+  snapToGrid = true,
 }: {
   map: PlayspaceMap
   walls: PlayspaceWall[]
   tool: WallTool
   onCreate: (kind: WallKind, points: [number, number][], closed: boolean) => void
   onErase: (wallId: string) => void
+  snapToGrid?: boolean
 }) {
   const svgRef = useRef<SVGSVGElement>(null)
   /** The stroke in progress, in map pixels. Empty when not drawing. */
@@ -69,10 +75,18 @@ export function WallLayer({
   function toMap(e: React.PointerEvent): Point | null {
     const rect = svgRef.current?.getBoundingClientRect()
     if (!rect || rect.width <= 0 || rect.height <= 0) return null
-    return {
+    const raw = {
       x: ((e.clientX - rect.left) / rect.width) * map.width_px,
       y: ((e.clientY - rect.top) / rect.height) * map.height_px,
     }
+    // Freehand is never snapped — see the prop's doc comment. Holding Alt
+    // suspends snapping for the other two, matching the token drag's modifier so
+    // there is one "place it exactly where I say" key in the whole app.
+    if (!snapToGrid || tool === 'freehand' || e.altKey) return raw
+    return snapToGridCorner(raw, map.grid_size, {
+      x: map.grid_offset_x,
+      y: map.grid_offset_y,
+    })
   }
 
   function handleDown(e: React.PointerEvent) {
@@ -179,11 +193,15 @@ export function WallLayer({
                 onErase(w.id)
               }}
             />
+            {/* A wall the players can see is drawn differently FROM THE DM's
+                side too, and that is the point: a DM needs to know at a glance
+                which of their walls are secret. Red is "only you can see this";
+                the muted solid line is "the party can see this as scenery". */}
             <path
               d={d}
               fill="none"
-              stroke="var(--color-danger)"
-              strokeWidth={3}
+              stroke={w.visible_to_players ? 'var(--color-text-muted)' : 'var(--color-danger)'}
+              strokeWidth={w.visible_to_players ? 4 : 3}
               strokeLinecap="round"
               strokeLinejoin="round"
               vectorEffect="non-scaling-stroke"

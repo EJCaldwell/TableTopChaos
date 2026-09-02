@@ -31,3 +31,10 @@ verify_jwt = true
 
 [functions.stripe-webhook]
 verify_jwt = false
+
+# Vision (9.3). Requires a JWT: the function's whole job is to answer "what may
+# THIS caller see?", so an anonymous request has no meaningful answer. It then
+# re-checks campaign membership itself before reading anything, because
+# verify_jwt only proves the caller is signed in — not that they belong here.
+[functions.vision]
+verify_jwt = true

@@ -23,13 +23,16 @@
  * player believing they had moved something they had not, which at a table
  * means arguing about a position the DM cannot see.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { FormError } from '../../components/ui'
 import { useRealtimeSync, mergeById, type RealtimeEvent } from '../realtime/useRealtimeRefresh'
 import { signedUrlFor } from '../media/api'
 import { supabase } from '../../lib/supabase'
-import { dropPosition, gridLines, snapToken } from './grid'
+import { combinedDelta, dropPosition, gridLines, movementDelta, snapToken } from './grid'
+import { pointInPolygon, tokenTouchesVision } from './vision'
+import { tokenBackground } from './tokenStyle'
 import { WallLayer, type WallTool } from './WallLayer'
+import { FogLayer } from './FogLayer'
 import {
   createToken,
   findFreeCellFor,
@@ -37,11 +40,13 @@ import {
   moveToken,
   createWall,
   deleteWall,
+  fetchVision,
   listWalls,
   signedUrlsForAssets,
   type PlayspaceMap,
   type PlayspaceToken,
   type PlayspaceWall,
+  type VisionResult,
   type WallKind,
 } from './api'
 
@@ -58,6 +63,8 @@ import {
  *        than as a tactical board (owner decision 2026-08-28). Existing tokens
  *        still render and still drag — turning a map read-only should not make
  *        pieces already on it vanish.
+ * @param wallSnap - Whether Line and Room snap to grid intersections.
+ * @param wallVisible - Whether newly drawn walls are visible to players (0066).
  * @param wallTool - The active wall tool (9.2). Anything but 'none' puts the
  *        wall layer in front of the tokens and suspends token dragging — you
  *        cannot draw a wall and move a piece with the same gesture.
@@ -73,6 +80,8 @@ export function BattlemapCanvas({
   onSelectToken,
   allowTokens = true,
   wallTool = 'none',
+  wallSnap = true,
+  wallVisible = false,
   myCharacter,
 }: {
   map: PlayspaceMap
@@ -81,6 +90,8 @@ export function BattlemapCanvas({
   onSelectToken?: (token: PlayspaceToken | null) => void
   allowTokens?: boolean
   wallTool?: WallTool
+  wallSnap?: boolean
+  wallVisible?: boolean
   myCharacter?: { id: string; name: string; portraitAssetId: string | null } | null
 }) {
   const [tokens, setTokens] = useState<PlayspaceToken[]>([])
@@ -124,6 +135,9 @@ export function BattlemapCanvas({
   const [frameSize, setFrameSize] = useState({ w: 0, h: 0 })
 
   const areaRef = useRef<HTMLDivElement>(null)
+  // Unique per instance: two maps mounted at once would otherwise share a
+  // clipPath id, and the second would silently use the first one's shape.
+  const tokenClipId = `tokclip-${useId().replace(/:/g, '')}`
   /** The scrolling frame around the map — what wheel-zoom listens on. */
   const frameRef = useRef<HTMLDivElement>(null)
   /**
@@ -162,6 +176,22 @@ export function BattlemapCanvas({
     id: string | null
     from: { x: number; y: number } | null
   }>({ lastStepAt: 0, timer: null, id: null, from: null })
+
+  /**
+   * Movement keys currently held, so Left+Up walks diagonally.
+   *
+   * A ref rather than state: it changes on every key event and nothing renders
+   * from it, so making it state would re-render the whole map twice per
+   * keystroke for no visible difference.
+   *
+   * Keyed by `code` where there is one and `key` otherwise, so the same physical
+   * key cannot be counted twice — and so a keyup can reliably remove what its
+   * keydown added, which `key` alone cannot guarantee when a modifier changes
+   * mid-press.
+   */
+  const heldKeysRef = useRef<Map<string, { key: string; code: string }>>(new Map())
+  /** Pending first step of a fresh key press — see the grace window below. */
+  const graceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ------------------------------------------------------------------ zoom
 
@@ -377,7 +407,7 @@ export function BattlemapCanvas({
   /** Persists a finished wall, optimistically. */
   async function handleCreateWall(kind: WallKind, points: [number, number][], closed: boolean) {
     try {
-      const row = await createWall(map.id, kind, points, closed)
+      const row = await createWall(map.id, kind, points, closed, wallVisible)
       setWalls((prev) => (prev.some((w) => w.id === row.id) ? prev : [...prev, row]))
       setError(null)
     } catch (e) {
@@ -399,6 +429,87 @@ export function BattlemapCanvas({
     }
   }
 
+  // ----------------------------------------------------------------- fog
+
+  /**
+   * What this session may see, as returned by the server.
+   *
+   * `null` means "not asked yet". Distinguished from "asked, sees nothing"
+   * because the two must render differently: the second fogs the map, the first
+   * must not — flashing a fully black map for a moment on every load would be
+   * both ugly and, on a map with vision OFF, wrong.
+   */
+  const [vision, setVision] = useState<VisionResult | null>(null)
+
+  /**
+   * Recomputes vision.
+   *
+   * Called on load, when the map changes, and — debounced — whenever a token
+   * moves. It is a network round trip per call, so it is deliberately NOT called
+   * per drag frame; `commitVision` below is the debounce.
+   */
+  const refreshVision = useCallback(async () => {
+    const result = await fetchVision(map.id)
+    setVision(result)
+  }, [map.id])
+
+  useEffect(() => {
+    void refreshVision()
+  }, [refreshVision])
+
+  // Any token movement can change what is visible — a player's own token moves
+  // their viewpoint, and the DM moving a monster does not, but the client cannot
+  // tell which without knowing the walls. Recomputing on any token change is the
+  // honest and cheap-to-reason-about rule.
+  //
+  // Debounced hard: a drag ends in one write, but a held arrow key or another
+  // player's drag can produce several in quick succession, and each would
+  // otherwise be a round trip.
+  const visionTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /**
+   * Queues a vision recompute.
+   *
+   * @param own - True when THIS session caused the change. Own moves use a much
+   *        shorter delay: the fog opening is part of the move you just made, and
+   *        a quarter-second lag reads as the app being slow. Somebody else's
+   *        move has no such expectation, and their moves arrive in bursts, so
+   *        those stay collapsed into one round trip.
+   */
+  const scheduleVision = useCallback(
+    (own = false) => {
+      const wait = own ? VISION_OWN_MOVE_MS : VISION_DEBOUNCE_MS
+      if (visionTimer.current) clearTimeout(visionTimer.current)
+      visionTimer.current = setTimeout(() => void refreshVision(), wait)
+    },
+    [refreshVision],
+  )
+  useEffect(() => () => {
+    if (visionTimer.current) clearTimeout(visionTimer.current)
+  }, [])
+
+  /**
+   * A slow heartbeat while a player is looking at a fogged map.
+   *
+   * Two jobs, and the second is the one that shows:
+   *
+   *  1. A safety net. Vision is recomputed on token changes; if a realtime event
+   *     is ever missed — a dropped socket, a tab asleep — the fog would stay
+   *     stale indefinitely. A minute is far too slow to be a mechanism and
+   *     exactly right as a backstop.
+   *  2. It keeps the Edge Function's isolate warm. A cold start measured over a
+   *     second, against ~100ms warm, and that cost lands precisely on the first
+   *     move after a lull — which at a table is the start of everyone's turn.
+   *
+   * Only for a player on a fogged map: a DM never calls this function, and a map
+   * without vision has nothing to recompute.
+   */
+  useEffect(() => {
+    if (!vision?.visionEnabled) return
+    if ('isDm' in vision && vision.isDm) return
+    const id = setInterval(() => void refreshVision(), VISION_HEARTBEAT_MS)
+    return () => clearInterval(id)
+  }, [vision?.visionEnabled, vision && 'isDm' in vision && vision.isDm, refreshVision])
+
   // ------------------------------------------------------------- realtime
 
   // Per-ROW merge rather than a re-fetch: a token being dragged by someone else
@@ -406,6 +517,8 @@ export function BattlemapCanvas({
   // session had in flight. Filtered server-side to this map so a campaign with
   // five maps does not push four maps' worth of noise at every client.
   const onRealtime = useCallback((e: RealtimeEvent<PlayspaceToken>) => {
+    // Somebody moved something: what this session can see may have changed.
+    scheduleVision()
     setTokens((prev) => {
       // Ignore an echo of the token THIS session is dragging: our optimistic
       // position is newer than the row we are being told about, and applying it
@@ -414,7 +527,7 @@ export function BattlemapCanvas({
       if (dragging && (e.new as { id?: string })?.id === dragging.id) return prev
       return mergeById(prev, e as RealtimeEvent<{ id: string }>, (raw) => raw as unknown as PlayspaceToken)
     })
-  }, [])
+  }, [scheduleVision])
 
   useRealtimeSync<PlayspaceToken>('playspace_tokens', onRealtime, `map_id=eq.${map.id}`)
 
@@ -471,6 +584,12 @@ export function BattlemapCanvas({
       (size * map.grid_size) / 2,
       size,
     )
+    // Refuse the step rather than taking it and springing back. The token simply
+    // stops against the wall and stays under the pointer's last legal square,
+    // which is what dragging a piece across a table feels like — the earlier
+    // behaviour let it through and yanked it back, which reads as a glitch even
+    // though the server was right.
+    if (!isMoveAllowed(p)) return
     setTokens((prev) => prev.map((t) => (t.id === drag.id ? { ...t, x: p.x, y: p.y } : t)))
   }
 
@@ -488,6 +607,10 @@ export function BattlemapCanvas({
 
     try {
       const row = await moveToken(drag.id, moved.x, moved.y)
+      // Our own move: recompute on the short delay rather than waiting for the
+      // realtime echo, so the fog opens as the token lands rather than a beat
+      // later.
+      scheduleVision(true)
       if (!row) {
         // Zero rows matched: RLS refused, or the campaign has lapsed to
         // read-only. Both are silent at the API level, so say so here.
@@ -504,6 +627,22 @@ export function BattlemapCanvas({
     }
   }
 
+  /**
+   * May this session move a token to this point?
+   *
+   * True whenever there is no fog, or the caller is the DM (exempt from wall
+   * collision by 0063). Otherwise the point must lie in one of the caller's own
+   * movement polygons.
+   *
+   * This is a CONVENIENCE, not the rule. The rule is the database trigger, which
+   * also binds a request this client never made. If the two ever disagree, the
+   * server wins and the revert path below still exists to handle it.
+   */
+  function isMoveAllowed(p: { x: number; y: number }): boolean {
+    if (!movePolys) return true
+    return movePolys.some((poly) => pointInPolygon(p, poly))
+  }
+
   /** Puts a token back where a refused drag started. */
   function revert(id: string, from: { x: number; y: number }) {
     setTokens((prev) => prev.map((t) => (t.id === id ? { ...t, ...from } : t)))
@@ -513,25 +652,28 @@ export function BattlemapCanvas({
    * Keyboard movement: one grid cell per arrow press, so the map is usable
    * without a pointer. Same persistence path as a drag, including the revert.
    */
-  function handleKeyDown(e: React.KeyboardEvent, token: PlayspaceToken) {
-    const step = map.grid_size
-    const delta =
-      e.key === 'ArrowLeft' ? { x: -step, y: 0 } :
-      e.key === 'ArrowRight' ? { x: step, y: 0 } :
-      e.key === 'ArrowUp' ? { x: 0, y: -step } :
-      e.key === 'ArrowDown' ? { x: 0, y: step } : null
-    if (!delta || !canDrag(token)) return
-    // Always, even when the step is skipped below, or the browser scrolls the
-    // map frame underneath the token you are trying to walk.
-    e.preventDefault()
+  /**
+   * Takes one step in the direction of everything currently held.
+   *
+   * Separated from the key handler so the FIRST step of a press can be delayed
+   * (see handleKeyDown) while later steps happen immediately.
+   *
+   * @param token - The token being walked. Its position is re-read live from
+   *        tokensRef, since a held key repeats faster than React re-renders.
+   */
+  function stepHeld(token: PlayspaceToken) {
+    const cells = combinedDelta([...heldKeysRef.current.values()])
+    if (!cells) return
+    // A zero step — numpad 5, or two opposite keys cancelling — moves nothing.
+    if (cells.dx === 0 && cells.dy === 0) return
+    const delta = { x: cells.dx * map.grid_size, y: cells.dy * map.grid_size }
 
     const state = keyMoveRef.current
     const now = performance.now()
     if (now - state.lastStepAt < KEY_STEP_MS) return
     state.lastStepAt = now
 
-    // The CURRENT position, not the one from the render this handler closed
-    // over. See the comment on tokensRef.
+    // The CURRENT position, not the one from the render this closed over.
     const live = tokensRef.current.find((t) => t.id === token.id) ?? token
     // Remember where this run of movement began, so a refused write puts the
     // token back where it started rather than one square short of it.
@@ -543,6 +685,9 @@ export function BattlemapCanvas({
     const bounded = snapToken({ x: live.x + delta.x, y: live.y + delta.y }, map, live.size_cells)
     const next = { x: Math.round(bounded.x), y: Math.round(bounded.y) }
     if (next.x === live.x && next.y === live.y) return
+    // Same rule as a drag: the key press simply does nothing against a wall,
+    // rather than moving and rebounding.
+    if (!isMoveAllowed(next)) return
     setTokens((prev) => prev.map((t) => (t.id === token.id ? { ...t, ...next } : t)))
 
     // One write when the movement settles. Writing per square would emit a
@@ -550,6 +695,61 @@ export function BattlemapCanvas({
     // the map instead of arriving where it stopped.
     if (state.timer) clearTimeout(state.timer)
     state.timer = setTimeout(() => void commitKeyMove(token.id), KEY_COMMIT_MS)
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent, token: PlayspaceToken) {
+    // Arrows, numpad (including the four diagonals) and Home/PageUp/End/PageDown
+    // for laptops without a numpad — see movementDelta. A battlemap has eight
+    // directions and a keyboard has four arrows, which is why this is a lookup
+    // rather than a chain of key comparisons.
+    if (!movementDelta(e.key, e.code) || !canDrag(token)) return
+    // Always, so the browser never scrolls the map frame out from under the
+    // token you are walking — even on a press that takes no step.
+    e.preventDefault()
+
+    const wasIdle = heldKeysRef.current.size === 0
+    heldKeysRef.current.set(e.code || e.key, { key: e.key, code: e.code })
+
+    // A first step is already pending: this key simply joins it, and the pending
+    // step will pick up both. This is what turns two presses into ONE diagonal.
+    if (graceRef.current !== null) return
+
+    // THE GRACE WINDOW. Nobody presses two arrows on the same millisecond, so
+    // acting on the first press instantly emitted a stray orthogonal step before
+    // the diagonal — you meant "up-left" and got "left, then up-left" (owner,
+    // 2026-09-02). Waiting a moment before the first step of a fresh press lets
+    // the second key arrive and be counted.
+    //
+    // Only the FIRST step waits. Repeats (`e.repeat`) and keys added to an
+    // already-moving token step immediately, so holding a direction still walks
+    // at full cadence — the delay is paid once per press, not per square.
+    if (wasIdle && !e.repeat) {
+      graceRef.current = setTimeout(() => {
+        graceRef.current = null
+        stepHeld(token)
+      }, DIAGONAL_GRACE_MS)
+      return
+    }
+
+    stepHeld(token)
+  }
+
+  /**
+   * Releases a key, and makes sure a quick tap still moves.
+   *
+   * If the grace timer is still pending when the key comes up — a tap shorter
+   * than the window — the step is taken NOW, while the key is still in the held
+   * map. Letting the timer fire afterwards instead would find the map empty and
+   * silently swallow the tap, which is a worse bug than the one the grace window
+   * fixed.
+   */
+  function handleKeyUp(e: React.KeyboardEvent, token: PlayspaceToken) {
+    if (graceRef.current !== null) {
+      clearTimeout(graceRef.current)
+      graceRef.current = null
+      stepHeld(token)
+    }
+    heldKeysRef.current.delete(e.code || e.key)
   }
 
   /**
@@ -567,6 +767,7 @@ export function BattlemapCanvas({
     if (moved.x === from.x && moved.y === from.y) return
     try {
       const row = await moveToken(id, moved.x, moved.y)
+      scheduleVision(true)
       if (!row) {
         revert(id, from)
         setError('That move was not saved — you may not move this token, or the campaign is read-only.')
@@ -597,7 +798,16 @@ export function BattlemapCanvas({
   useEffect(() => {
     const down = (e: KeyboardEvent) => { if (e.key === 'Alt') setFreePlace(true) }
     const up = (e: KeyboardEvent) => { if (e.key === 'Alt') setFreePlace(false) }
-    const blur = () => setFreePlace(false)
+    const blur = () => {
+      setFreePlace(false)
+      // Same reasoning as the token's own onBlur: a window that loses focus
+      // mid-press never delivers the keyup.
+      heldKeysRef.current.clear()
+      if (graceRef.current !== null) {
+        clearTimeout(graceRef.current)
+        graceRef.current = null
+      }
+    }
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
     window.addEventListener('blur', blur)
@@ -646,6 +856,64 @@ export function BattlemapCanvas({
 
   // Recomputed only when the geometry changes, not on every drag frame.
   const lines = useMemo(() => gridLines(map), [map])
+
+  /**
+   * The tokens this session may actually SEE.
+   *
+   * Opaque fog hides a token visually, but it is still in the DOM — findable by
+   * anyone who looks, and briefly visible during a re-render before the fog
+   * paints. So a token outside the visible area is not drawn at all.
+   *
+   * Your OWN tokens are always drawn, whatever the polygon says. A token with
+   * sight 0 has a degenerate polygon that does not contain its own centre, and
+   * losing sight of your own piece is disorienting in a way that is never what
+   * anyone wanted.
+   *
+   * HONEST LIMIT, recorded rather than implied: token ROWS remain
+   * member-readable, so a determined player can still read positions out of the
+   * data layer. Unlike walls (0061), tokens cannot simply be withheld — every
+   * client needs them to render anything. Closing that would mean filtering
+   * tokens per player server-side, which is a real piece of work and is not this
+   * one. What this does is make the FOG honest.
+   */
+  /** The visible areas as points, or null when there is no fog for this session. */
+  const visionPolys = useMemo(() => {
+    if (!vision?.visionEnabled) return null
+    if ('isDm' in vision && vision.isDm) return null
+    const polys = 'polygons' in vision ? vision.polygons : []
+    return polys.map((poly) => poly.map(([x, y]) => ({ x, y })))
+  }, [vision])
+
+  /**
+   * Where this session's own tokens may be dragged to: walls only, no sight
+   * limit. Null when there is no fog, i.e. no constraint.
+   *
+   * A straight line inside a visibility polygon provably crosses no wall — that
+   * is what a visibility polygon is — so this lets a drag STOP at a wall without
+   * the client ever being told where the wall is. The server still refuses the
+   * write (0063/0064); this just means it never has to.
+   */
+  const movePolys = useMemo(() => {
+    if (!vision?.visionEnabled) return null
+    if ('isDm' in vision && vision.isDm) return null
+    const polys = 'movePolygons' in vision ? vision.movePolygons : []
+    if (polys.length === 0) return null
+    return polys.map((poly) => poly.map(([x, y]) => ({ x, y })))
+  }, [vision])
+
+  const visibleTokens = useMemo(() => {
+    if (!visionPolys) return tokens
+    const radius = (map.grid_size * 1) / 2
+    return tokens.filter(
+      (t) =>
+        (currentUserId && t.owner_user_id === currentUserId) ||
+        // ANY part of the token being lit is enough to draw it — the clip path
+        // below then shows only the lit part. Testing the centre alone made a
+        // creature standing half-past a corner vanish completely, which both
+        // looks broken and hides someone the party can genuinely see.
+        tokenTouchesVision({ x: t.x, y: t.y }, (t.size_cells * map.grid_size) / 2 || radius, visionPolys),
+    )
+  }, [tokens, visionPolys, currentUserId, map.grid_size])
 
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -743,7 +1011,43 @@ export function BattlemapCanvas({
             </div>
           )}
 
-          {tokens.map((t) => {
+          {/* The clip path that shows only the LIT part of a token.
+              
+              objectBoundingBox units, so the coordinates are fractions of the
+              map (0..1) and survive zoom without recomputation — user-space
+              units would be CSS pixels, which change with every zoom step.
+              
+              An SVG clipPath UNIONS its children, which is how a player with
+              two tokens gets both lit areas for free. That is the second place
+              this project gets a union without writing polygon boolean maths;
+              the fog mask is the first. */}
+          {visionPolys && (
+            <svg width={0} height={0} style={{ position: 'absolute' }} aria-hidden>
+              <defs>
+                <clipPath id={tokenClipId} clipPathUnits="objectBoundingBox">
+                  {visionPolys.map((poly, i) => (
+                    <polygon
+                      key={i}
+                      points={poly
+                        .map((p) => `${p.x / map.width_px},${p.y / map.height_px}`)
+                        .join(' ')}
+                    />
+                  ))}
+                </clipPath>
+              </defs>
+            </svg>
+          )}
+
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              // Only clipped when there IS fog for this session — a DM, or a map
+              // with vision off, must never have their tokens trimmed.
+              clipPath: visionPolys ? `url(#${tokenClipId})` : undefined,
+            }}
+          >
+          {visibleTokens.map((t) => {
             const draggable = canDrag(t)
             // Resolved once per token per render: it decides the ring, the
             // background and whether the initials are drawn, and those three
@@ -759,6 +1063,12 @@ export function BattlemapCanvas({
                 type="button"
                 onPointerDown={(e) => handlePointerDown(e, t)}
                 onKeyDown={(e) => handleKeyDown(e, t)}
+                onKeyUp={(e) => handleKeyUp(e, t)}
+                // A token can lose focus mid-press (tabbing away, a click
+                // elsewhere), and its keyup then never arrives — leaving the key
+                // "held" forever and every later press diagonal. Clearing on
+                // blur is what stops that becoming a permanent, baffling state.
+                onBlur={() => heldKeysRef.current.clear()}
                 // Names the token AND says whether this session may move it, so
                 // the distinction is not carried by the cursor alone.
                 aria-label={`${t.label ?? 'Token'}${draggable ? '' : ' (not yours)'}`}
@@ -793,18 +1103,12 @@ export function BattlemapCanvas({
                   // only when there is art. A ringless plain marker on a busy
                   // battlemap needs it just as much.
                   ...(ring ? null : { boxShadow: '0 1px 4px rgba(0,0,0,0.55)' }),
-                  ...(art
-                    ? {
-                        // `cover` on a circular button crops a rectangular
-                        // portrait to the middle, which is where a face is;
-                        // `contain` would letterbox it.
-                        backgroundImage: `url(${art})`,
-                        backgroundSize: 'cover',
-                        backgroundPosition: 'center',
-                      }
-                    : null),
+                  // Background colour AND image together, from one helper that
+                  // never emits the `background` shorthand — setting that after
+                  // backgroundImage silently resets the image to none, which is
+                  // exactly the bug this replaced. See tokenStyle.ts.
+                  ...tokenBackground(art),
                   outline: selectedId === t.id ? '2px solid var(--color-accent)' : 'none',
-                  background: 'rgba(0,0,0,0.55)',
                   color: '#fff',
                   fontSize: '0.7rem',
                   overflow: 'hidden',
@@ -824,16 +1128,57 @@ export function BattlemapCanvas({
             )
           })}
 
-          {/* LAST in the DOM, deliberately: siblings paint in document order, so
-              rendering this before the tokens would put walls underneath them —
-              which is exactly the wrong way round on a crowded map, where the
-              wall you are checking is the one behind a monster. It is
-              click-through unless a tool is active, so sitting on top costs
-              nothing. */}
+          </div>
+
+          {/* THE STACKING ORDER of this whole area, since it has been got wrong
+              twice and each mistake looked like a different bug entirely:
+              
+                grid → tokens → FOG → walls
+              
+              Siblings paint in document order, so this list reads bottom-to-top.
+              Fog above the tokens, because a monster in the dark must be hidden
+              by the same sheet that hides the floor it stands on — under the
+              tokens it showed every enemy through the fog, which is worse than
+              no fog because it looks like it works. Walls above the fog, because
+              a wall a player can see is a landmark they already know about.
+              
+              Fog is absent entirely when vision is off or the viewer is the DM,
+              so for a DM this is just grid → tokens → walls. */}
+          {/* Fog, above the tokens, so it covers them too — a monster standing
+              in the dark must be hidden by the same sheet that hides the floor
+              it is on. Rendering it under the tokens would show every enemy
+              through the fog, which is worse than no fog at all because it looks
+              like it is working.
+
+              Absent entirely when vision is off or the viewer is the DM. */}
+          {vision?.visionEnabled && !('isDm' in vision && vision.isDm) && (
+            <FogLayer
+              map={map}
+              polygons={'polygons' in vision ? vision.polygons : []}
+              opacity={map.fog_opacity}
+            />
+          )}
+          {/* ABOVE the fog, deliberately (owner, 2026-09-02: "you can see walls
+              constantly").
+
+              A wall a player can see is scenery they KNOW about — the edge of a
+              chasm, the side of a building, a portcullis. You do not forget a
+              cliff is there because you walked away from it, so drawing these
+              under the fog and letting them disappear was the wrong model: it
+              made known terrain behave like a secret.
+
+              Nothing is revealed by this that RLS did not already send: a player
+              only ever receives walls the DM marked visible (0066), so a secret
+              wall cannot be drawn here whatever the layering. The fog still
+              covers the FLOOR and every token; it just no longer erases the
+              landmarks.
+
+              For a DM this changes nothing — they have no fog to be above. */}
           <WallLayer
             map={map}
             walls={walls}
-            tool={wallTool}
+            tool={isDm ? wallTool : 'none'}
+            snapToGrid={wallSnap}
             onCreate={(k, p, c) => void handleCreateWall(k, p, c)}
             onErase={(id) => void handleEraseWall(id)}
           />
@@ -902,8 +1247,9 @@ export function BattlemapCanvas({
 
         <span>
           Drag a token to move it{isDm ? '' : ' — you can move only your own'}. Arrow keys move one
-          square. Hold <kbd>Alt</kbd> to place off-grid. Pinch or <kbd>Ctrl</kbd>+scroll to zoom;{' '}
-          <kbd>Shift</kbd>+scroll to pan sideways.
+          square — hold two arrows together (or use the numpad) to move
+          diagonally. Hold <kbd>Alt</kbd> to place off-grid. Pinch or{' '}
+          <kbd>Ctrl</kbd>+scroll to zoom; <kbd>Shift</kbd>+scroll to pan sideways.
         </span>
       </div>
     </div>
@@ -944,6 +1290,45 @@ const FRAME_PADDING = 12
 const PAN_MARGIN = 160
 
 /**
+ * How long to wait after the last token change before recomputing vision.
+ *
+ * Every recompute is a network round trip, and token changes arrive in bursts —
+ * a held arrow key, or several people moving at once. Long enough to collapse a
+ * burst into one call; short enough that the fog opening still feels like part
+ * of the move rather than a separate event.
+ */
+const VISION_DEBOUNCE_MS = 250
+
+/**
+ * The same, for a move THIS session made.
+ *
+ * ZERO. A `setTimeout(0)` still defers to the next tick, so same-tick bursts
+ * collapse, but nothing is waited for.
+ *
+ * There was no debounce to earn here, which is why it went from 60 to 0: a drag
+ * or a held-key walk already produces exactly ONE write — the drag commits on
+ * release, keyboard movement is batched 300ms after the last step — and this
+ * runs after that write resolves. The delay was being added to a request that
+ * was already going to be made once.
+ *
+ * THE REMAINING FLOOR is two sequential round trips: the move must be WRITTEN
+ * before vision is recomputed, because the server computes from the stored
+ * position. Sending them in parallel would race, and trusting a client-supplied
+ * position would let anyone claim to be anywhere. So the way to make this fast
+ * is to make each trip cheap rather than to overlap them — which is what
+ * SUPABASE_INTERNAL_URL and the parallelised queries in the vision function do.
+ */
+const VISION_OWN_MOVE_MS = 0
+
+/**
+ * How often a player on a fogged map re-asks the server what they can see.
+ *
+ * Slow on purpose: this is a backstop and a keep-warm, not the mechanism. Token
+ * changes are what actually drive the fog.
+ */
+const VISION_HEARTBEAT_MS = 60_000
+
+/**
  * Minimum time between two steps of a HELD arrow key, in milliseconds.
  *
  * The operating system's own repeat rate is fast and accelerates, which made a
@@ -962,6 +1347,18 @@ const KEY_STEP_MS = 120
  * would stutter across the map rather than arriving where it stopped.
  */
 const KEY_COMMIT_MS = 300
+
+/**
+ * How long the first step of a key press waits for a second key, in
+ * milliseconds.
+ *
+ * Nobody presses two arrows on the same millisecond, so without this a diagonal
+ * came out as "left, then up-left" — the stray orthogonal step being the first
+ * press acted on alone. 70ms is long enough to catch a deliberate two-finger
+ * press and short enough that a single tap does not feel delayed; it is also
+ * comfortably under the 120ms step cadence, so it costs nothing while walking.
+ */
+const DIAGONAL_GRACE_MS = 70
 
 const zoomBtn: React.CSSProperties = {
   font: 'inherit',

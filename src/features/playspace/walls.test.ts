@@ -16,6 +16,7 @@ import {
   rectPoints,
   segmentsOf,
   simplifyStroke,
+  snapToGridCorner,
   toSvgPath,
 } from './walls'
 
@@ -129,8 +130,12 @@ describe('simplifyStroke', () => {
     const elapsed = performance.now() - started
     expect(out.length).toBeLessThanOrEqual(MAX_WALL_POINTS)
     expect(out.length).toBeGreaterThan(1)
-    // Generous, because CI machines vary — but 2.8s would fail it.
-    expect(elapsed).toBeLessThan(500)
+    // Deliberately loose. It flaked at 500ms when the full suite runs files in
+    // parallel — and a flaky test is worse than no test, because it trains you
+    // to re-run rather than to look. 1500 still fails on the 2.8s regression
+    // this exists to catch, which is the only thing it is for; it is not a
+    // benchmark.
+    expect(elapsed).toBeLessThan(1500)
   })
 
   it('leaves a two-point stroke alone', () => {
@@ -187,6 +192,40 @@ describe('pointsFromJson / pointsToJson', () => {
   it('returns empty for anything that is not an array', () => {
     for (const v of [null, undefined, {}, 'x', 42]) {
       expect(pointsFromJson(v)).toEqual([])
+    }
+  })
+})
+
+describe('snapToGridCorner', () => {
+  it('snaps to intersections, not cell centres', () => {
+    // A wall runs ALONG the edges of squares; a token stands IN one. Snapping
+    // wall endpoints to centres puts every wall half a square off the grid it
+    // is meant to follow.
+    expect(snapToGridCorner({ x: 66, y: 5 }, 70)).toEqual({ x: 70, y: 0 })
+    // 34 is nearer 0 than 70, so it snaps back to the origin — NOT to 70. The
+    // cell-centre function would send it to 35; this one must not.
+    expect(snapToGridCorner({ x: 34, y: 34 }, 70)).toEqual({ x: 0, y: 0 })
+    expect(snapToGridCorner({ x: 40, y: 40 }, 70)).toEqual({ x: 70, y: 70 })
+  })
+
+  it('rounds to the NEAREST line, not the one before', () => {
+    expect(snapToGridCorner({ x: 104, y: 0 }, 70).x).toBe(70)
+    expect(snapToGridCorner({ x: 106, y: 0 }, 70).x).toBe(140)
+  })
+
+  it('follows a shifted grid', () => {
+    // Otherwise a DM who aligned the overlay to the picture finds walls snapping
+    // to an imaginary unshifted grid instead.
+    expect(snapToGridCorner({ x: 66, y: 0 }, 70, { x: 20, y: 0 }).x).toBe(90)
+  })
+
+  it('handles negative coordinates symmetrically', () => {
+    expect(snapToGridCorner({ x: -66, y: 0 }, 70).x).toBe(-70)
+  })
+
+  it('leaves the point alone for a nonsense grid', () => {
+    for (const g of [0, -70, Number.NaN]) {
+      expect(snapToGridCorner({ x: 123, y: 456 }, g)).toEqual({ x: 123, y: 456 })
     }
   })
 })

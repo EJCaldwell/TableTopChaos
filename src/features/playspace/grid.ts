@@ -303,3 +303,98 @@ export function snapToken(p: Point, map: MapGeometry, sizeCells = 1): Point {
 
   return clampToMap({ x: axis(p.x, off.x), y: axis(p.y, off.y) }, map, (sizeCells * g) / 2)
 }
+
+/**
+ * The movement a key press means, in grid steps.
+ *
+ * Returns a {dx, dy} in CELLS (-1, 0 or 1 each), or null for a key that is not
+ * movement. The caller multiplies by the grid size.
+ *
+ * WHY THREE SETS OF KEYS. Arrows are what everyone tries first, but a keyboard
+ * has only four of them and a battlemap has eight directions — diagonal movement
+ * is normal at a table and was missing (owner, 2026-09-02).
+ *
+ *  - **Arrows** — the four orthogonals, unchanged.
+ *  - **Numpad 1–9** — the roguelike/VTT convention, and the only layout where
+ *    the keys are physically arranged like the directions they mean. 5 is a
+ *    deliberate no-op rather than an error: on a numpad it is the centre.
+ *  - **Home / PageUp / End / PageDown** — the four diagonals for the many
+ *    laptops with no numpad at all. Without these, diagonal movement would be
+ *    unavailable to most people using this app, which is not a feature.
+ *
+ * Numpad keys are read from `event.code` (`Numpad7`), not `event.key`, because
+ * `key` is '7' or 'Home' depending on NumLock — the same physical key meaning
+ * two different things is exactly what `code` exists to avoid.
+ *
+ * @param key - KeyboardEvent.key.
+ * @param code - KeyboardEvent.code.
+ * @returns Step in cells, or null if the key is not a movement key.
+ */
+export function movementDelta(key: string, code: string): { dx: number; dy: number } | null {
+  switch (code) {
+    case 'Numpad7': return { dx: -1, dy: -1 }
+    case 'Numpad8': return { dx: 0, dy: -1 }
+    case 'Numpad9': return { dx: 1, dy: -1 }
+    case 'Numpad4': return { dx: -1, dy: 0 }
+    // The centre of the numpad. Consumed as movement so it does not fall
+    // through to the browser, but moves nothing.
+    case 'Numpad5': return { dx: 0, dy: 0 }
+    case 'Numpad6': return { dx: 1, dy: 0 }
+    case 'Numpad1': return { dx: -1, dy: 1 }
+    case 'Numpad2': return { dx: 0, dy: 1 }
+    case 'Numpad3': return { dx: 1, dy: 1 }
+  }
+  switch (key) {
+    case 'ArrowLeft': return { dx: -1, dy: 0 }
+    case 'ArrowRight': return { dx: 1, dy: 0 }
+    case 'ArrowUp': return { dx: 0, dy: -1 }
+    case 'ArrowDown': return { dx: 0, dy: 1 }
+    // Laptop diagonals. Deliberately AFTER the numpad switch: with NumLock off,
+    // Numpad7 reports key 'Home', and the code branch above has already handled
+    // it with the same meaning, so the two can never disagree.
+    case 'Home': return { dx: -1, dy: -1 }
+    case 'PageUp': return { dx: 1, dy: -1 }
+    case 'End': return { dx: -1, dy: 1 }
+    case 'PageDown': return { dx: 1, dy: 1 }
+  }
+  return null
+}
+
+/**
+ * Combines the movement keys currently held into one step.
+ *
+ * WHY THIS EXISTS. Diagonal movement was first offered on the numpad and on
+ * Home/PgUp/End/PgDn — both of which a compact laptop keyboard may lack
+ * entirely (owner, 2026-09-02: "I am unable to test the ones that require a full
+ * size keyboard"). Holding Left and Up together is the input everyone already
+ * knows from games and needs no keys at all beyond the four arrows.
+ *
+ * Contributions are summed and then CLAMPED to one cell per axis. Summing alone
+ * would make Left+Left a two-square step if a key ever repeated into the set
+ * twice, and Up+PageDown would cancel to nothing on one axis while leaving the
+ * other — clamping keeps every result a legal single step in one of the eight
+ * directions, or no step at all.
+ *
+ * Opposite keys cancelling to zero is correct, not a bug: holding Left and Right
+ * together means no horizontal intent, exactly as it does in every game.
+ *
+ * @param held - The keys currently down, as {key, code} pairs.
+ * @returns A step of -1..1 on each axis, or null if nothing held is movement.
+ */
+export function combinedDelta(
+  held: { key: string; code: string }[],
+): { dx: number; dy: number } | null {
+  let dx = 0
+  let dy = 0
+  let any = false
+  for (const h of held) {
+    const d = movementDelta(h.key, h.code)
+    if (!d) continue
+    any = true
+    dx += d.dx
+    dy += d.dy
+  }
+  if (!any) return null
+  const clamp = (v: number) => Math.max(-1, Math.min(1, v))
+  return { dx: clamp(dx), dy: clamp(dy) }
+}

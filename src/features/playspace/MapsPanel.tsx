@@ -134,6 +134,16 @@ export function MapsPanel({ campaignId, isDm }: { campaignId: string; isDm: bool
   }
 
   /**
+   * Fog density (0065). Optimistic, like the grid controls, so the slider
+   * tracks the pointer.
+   */
+  async function handleFogOpacity(mapId: string, next: number) {
+    const clamped = Math.min(Math.max(next, 0.3), 1)
+    patch((prev) => prev.map((m) => (m.id === mapId ? { ...m, fog_opacity: clamped } : m)))
+    await run(() => updateMap(mapId, { fog_opacity: clamped }))
+  }
+
+  /**
    * The DM's switch for player-placed tokens (0055).
    *
    * Per map, not per campaign, so a DM can allow it on the town square and not
@@ -295,10 +305,25 @@ export function MapsPanel({ campaignId, isDm }: { campaignId: string; isDm: bool
                   Limit what players can see (fog &amp; walls)
                 </label>
                 {m.vision_enabled && (
-                  <p style={{ ...muted, margin: 0, fontSize: '0.75rem' }}>
-                    Draw walls on the map itself. Players never receive the wall
-                    geometry — only what their token can see.
-                  </p>
+                  <>
+                    {/* Fog density (0065). Safe to lower ONLY because tokens
+                        outside the lit area are not drawn at all — the label
+                        says what it does and does not reveal, because "how dark
+                        is the fog" sounds cosmetic and is not. */}
+                    <GridControl
+                      label="Fog"
+                      min={30}
+                      max={100}
+                      value={Math.round(m.fog_opacity * 100)}
+                      onChange={(v) => void handleFogOpacity(m.id, v / 100)}
+                    />
+                    <p style={{ ...muted, margin: 0, fontSize: '0.75rem' }}>
+                      Draw walls on the map itself. Players never receive the wall
+                      geometry — only what their token can see. Lowering the fog
+                      lets them make out the <em>terrain</em> they cannot see;
+                      tokens and walls stay hidden either way.
+                    </p>
+                  </>
                 )}
 
                 <p style={{ ...muted, margin: 0, fontSize: '0.75rem' }}>
