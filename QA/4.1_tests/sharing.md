@@ -8,23 +8,23 @@ them; un-sharing removes them; players can't read DM content that was never shar
 
 ## Steps — DM shares (Handouts tab)
 
-- [ ] Share a **note** (title + body with **bold**/*italic*/`code`) → appears in
+- [x] Share a **note** (title + body with **bold**/*italic*/`code`) → appears in
       Currently shared; indicator Saving→saved.
-- [ ] Share an **image** (upload) → appears with a thumbnail.
-- [ ] Edit a shared note's title/body and an image's caption → debounced save;
+- [x] Share an **image** (upload) → appears with a thumbnail.
+- [x] Edit a shared note's title/body and an image's caption → debounced save;
       reload → edits persist.
 
 ## Steps — player sees (Shared with us tab)
 
-- [ ] Player → **Shared with us** tab shows both items, newest first; the note
+- [x] Player → **Shared with us** tab shows both items, newest first; the note
       renders markdown; the image displays.
-- [ ] DM **Un-share** the note (confirm) → player refresh: the note is gone; the
+- [x] DM **Un-share** the note (confirm) → player refresh: the note is gone; the
       image remains.
 
 ## Steps — isolation
 
-- [ ] Player has **no Handouts tab**; only "Shared with us".
-- [ ] Data layer — as the **player**:
+- [x] Player has **no Handouts tab**; only "Shared with us".
+- [x] Data layer — as the **player**:
       ```js
       const cid='d0e1fc8f-29d6-4381-9cd7-04c9214a80fa'
       await supabase.from('shared_items').select('*').eq('campaign_id',cid)            // → shared rows only
@@ -32,7 +32,7 @@ them; un-sharing removes them; players can't read DM content that was never shar
       // never-shared DM content stays invisible:
       await supabase.from('dm_notes').select('*').eq('campaign_id',cid)                // → []
       ```
-- [ ] As **non-member / anon**: `shared_items` select → `[]`.
+- [x] As **non-member / anon**: `shared_items` select → `[]`.
 
 ## Pass criteria
 

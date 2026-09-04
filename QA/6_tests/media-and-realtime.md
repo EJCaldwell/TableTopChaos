@@ -1,5 +1,11 @@
 # QA — Media & realtime after the migration
 
+> **SUPERSEDED — do not run, and do not tick.** Both subsystems were verified in
+> [cutover.md](cutover.md) Area E on 2026-08-21: step 3 (upload), step 3b (stored
+> portraits render after reload — the storage-CORS fix) and step 6 (two-window
+> realtime HP change after the tenant fix). Those were the runs that mattered;
+> this file's steps were never executed.
+
 **Phase:** 6.3 / 6.5. **Browser — yours to run.** I cannot see or drive your
 browser, so nothing here gets marked PASS without your reported result.
 

@@ -18,46 +18,46 @@ moved features must behave exactly as they did before.
 
 ### Tab placement & gating
 
-- [ ] 1. As DM, the tab bar ends its DM group with **Settings** — after Secret
+- [x] 1. As DM, the tab bar ends its DM group with **Settings** — after Secret
       notes, before the shared/player tabs. Blurb-wise it is the last thing a DM
       reaches for, which is intended (it holds the danger zone).
-- [ ] 2. As the **player**, there is **no Settings tab** anywhere in the bar.
-- [ ] 3. Settings shows four blocks in order: **Campaign name**, **Game mode**,
+- [x] 2. As the **player**, there is **no Settings tab** anywhere in the bar.
+- [x] 3. Settings shows four blocks in order: **Campaign name**, **Game mode**,
       **Backup & data**, **Danger zone** (danger zone only for the owner).
 
 ### Overview is correctly reduced
 
-- [ ] 4. Overview now shows **only** the people side: the roster, DM invite codes,
+- [x] 4. Overview now shows **only** the people side: the roster, DM invite codes,
       and the one-line read-only mode text. No rename control, no export/import, no
       delete button anywhere on Overview.
-- [ ] 5. The roster still renders correctly for both roles and the DM still sees
+- [x] 5. The roster still renders correctly for both roles and the DM still sees
       exactly one DM (themselves) — 5.1.2c's invariant is one DM per campaign, its
       owner.
 
 ### Regression on the moved features
 
-- [ ] 6. **Rename** — Settings → Campaign name → Rename, change it, save. The
+- [x] 6. **Rename** — Settings → Campaign name → Rename, change it, save. The
       header/title updates **immediately without a refresh**, and the dashboard
       shows the new name. Refresh: it persisted.
-- [ ] 7. **Rename validation** — try saving a blank name → an inline error
+- [x] 7. **Rename validation** — try saving a blank name → an inline error
       ("Campaign name cannot be empty"), nothing saved. Try Rename → Cancel → the
       draft is discarded and the original name is intact.
-- [ ] 8. **Backup & data** — export the campaign; the ZIP downloads as before.
+- [x] 8. **Backup & data** — export the campaign; the ZIP downloads as before.
       The block is **export only**: there is no file picker and no "Import a
       campaign" heading here. Import still lives on the **dashboard**, and
       importing a ZIP there still creates a new campaign with its content.
       (Phase 4.2 behavior otherwise unchanged — you are confirming the move
       didn't break it.)
-- [ ] 9. **Journal export** still works from wherever it lives for the player —
+- [x] 9. **Journal export** still works from wherever it lives for the player —
       unaffected by this move, quick sanity check only.
-- [ ] 10. **Danger zone (owner only)** — on a **throwaway** campaign: "Delete
+- [x] 10. **Danger zone (owner only)** — on a **throwaway** campaign: "Delete
       campaign" shows a confirm reading *Yes, delete "<name>"*; Cancel backs out
       with nothing deleted; confirming deletes it and returns you to the dashboard,
       where it is gone. Refresh to confirm it stays gone.
 
 ### Invite codes (5.1.2c)
 
-- [ ] 11. Overview → create an invite code. It is created as a **player** code —
+- [x] 11. Overview → create an invite code. It is created as a **player** code —
       there is no role choice in the UI at all (the DM-code path was removed).
       Redeem it with a spare account and confirm the new member joins as a player.
 

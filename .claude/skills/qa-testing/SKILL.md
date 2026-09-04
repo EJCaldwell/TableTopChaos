@@ -1,17 +1,40 @@
 ---
 name: qa-testing
-description: How to QA and test changes in THIS project (TableTopChaos — React/TypeScript + Supabase). Apply it whenever you build, change, or verify a feature here — after finishing any subphase, migration, Edge Function, panel, or bug fix, and whenever the user says test / QA / verify / "does this work" / "is it done". Covers the Build→QA loop, the Supabase RLS access-control matrix (DM / player / non-member / signed-out) verified SERVER-SIDE via the Supabase MCP, the stale-session caveat, the per-phase QA/ folder + run-log convention, and what "automated coverage" means here (tsc + build; no test runner). This is the project-specific companion to the global phased-plan-and-qa skill — follow it even when not explicitly asked to test.
+description: How to QA and test changes in THIS project (TableTopChaos — React/TypeScript + Supabase). Apply it whenever you build, change, or verify a feature here — after finishing any subphase, migration, Edge Function, panel, or bug fix, and whenever the user says test / QA / verify / "does this work" / "is it done". Covers the Build→QA loop, the Supabase RLS access-control matrix (DM / player / non-member / signed-out) verified SERVER-SIDE via the Supabase MCP, the stale-session caveat, the per-phase QA/ folder + run-log convention, and what "automated coverage" means here (Vitest + tsc/build + the qa:checks harness). This is the project-specific companion to the global phased-plan-and-qa skill — follow it even when not explicitly asked to test.
 ---
 
 # QA & Testing — TableTopChaos
 
-This project has **no general test runner** (no Vitest/Jest yet — see PLANNING
-Phase 9). "Automated coverage" here means **`npm run build`** (`tsc -b` + `vite
-build`), `npm run typecheck`, and any purpose-built harness under `QA/tools/`
-(currently **`npm run qa:checks`** for the workspace-layout logic). Everything else is **manual QA against the live Supabase
-project**, backed by **server-side RLS verification**. Testing is not optional or
-deferred: after building any unit, QA it before calling it done — even if the user
-didn't ask.
+"Automated coverage" here is four things, and the first one is newer than most of
+the QA folder:
+
+1. **`npx vitest run` — the unit tests.** Vitest arrived in Phase 8.1 and **every
+   unit of work since 2026-09-01 adds tests for the pure logic it introduces**,
+   in the same change. Anything provable in Node must NOT appear on a manual
+   checklist. See CLAUDE.md for what does and does not deserve a test.
+2. **`npm run build`** (`tsc -b` + `vite build`), or `npm run typecheck`.
+   `noUnusedLocals`/`noUnusedParameters` are on, so dead code fails the build.
+3. **`npm run qa:checks`** — the bespoke Node harness under `QA/tools/` for the
+   workspace-layout logic, which predates Vitest.
+4. **The RLS matrix**, `railway/scripts/95_rls_matrix.sql`, run by the migrate
+   job — the real test of every access-control rule, and of the movement and
+   occupancy triggers.
+
+Everything else is **manual QA against the live stack**, backed by server-side
+verification. Testing is not optional or deferred: after building any unit, QA it
+before calling it done — even if the user didn't ask.
+
+> **Historical note, because the QA folder contradicts this.** Several
+> `automated-coverage.md` files say "this project has no test runner". That was
+> true when they were written (phases 1.4–7.x) and they are dated records, not
+> current descriptions. Do not take them as the present state, and do not rewrite
+> them either — see the banner each now carries.
+
+> **A unit test is how you AVOID a browser step.** The owner runs the manual
+> checklist; every case you can prove in Node is one they do not have to run, and
+> it re-runs forever. Two real defects in `walls.ts` — an infinite loop and a
+> 2.8s freeze — were caught by tests before any UI existed, and neither was
+> reachable from a checklist.
 
 This is the project-specific companion to the global **phased-plan-and-qa** skill
 (which owns the generic QA-folder format and testing habits). Load that too for the
@@ -79,7 +102,24 @@ routes 1–3.
    never assume/fabricate a browser outcome** — a passing server-side RLS check is
    evidence about the policy, not proof the UI behaves.
 6. **Record what they reported** into the run log (verbatim observations, dated),
-   log any bug + fix as a `> Follow-up`, then tick the PLANNING tracker box.
+   log any bug + fix as a `> Follow-up`, **tick the CHECKBOXES in the manual file
+   itself**, then tick the PLANNING tracker box.
+
+**Tick the checkboxes, not just the run log.** This drifted badly and silently:
+every phase from 3.5 onward had a dated PASS run log while every `- [ ]` in the
+same file stayed unchecked, so 123 steps the owner had personally run and passed
+read as never attempted. It was caught by the owner browsing old QA pages, not by
+me. The run log is the evidence; the checkbox is the summary — a reader scans the
+boxes first, and boxes that never move make a passing phase indistinguishable
+from an abandoned one.
+
+Three rules keep the two honest:
+
+- Tick **in the same edit** that writes the run-log entry, never "later".
+- Tick **only what the owner reported passing**. A file with a partial run keeps
+  its unrun steps unchecked; that is the file doing its job, not drift.
+- A deferred or withdrawn step stays unticked and says so in prose. Unticked must
+  mean "not passed", and it can only mean that if it always does.
 
 If some areas were already run (e.g. a server-side checklist marked PASS), say so
 and only hand over the ones still **open**.
@@ -194,7 +234,8 @@ gates realtime events too), and that channel teardown is clean on tab switch.
 
 One subdirectory per phase, `QA/<phase>_tests/`, mirroring PLANNING numbering. Per
 the global skill: a phase `README.md` (index + manual-area table), an
-`automated-coverage.md` (here: "tsc + build" + the source files), and one
+`automated-coverage.md` (here: the Vitest files, the build, `qa:checks` and the
+RLS matrix), and one
 manual-checklist file per area. Manual files: **Prerequisites → Steps (checkboxes +
 expected results) → Pass criteria → Run log**. Run log entries are dated and
 **preserved forever** — never rewrite past results:

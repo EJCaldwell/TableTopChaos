@@ -8,15 +8,48 @@ phase's checklist stays readable and reviewable.
 ## Scheme
 
 - `QA/<phase>_tests/README.md` — that phase's index + manual-area table.
-- `QA/<phase>_tests/automated-coverage.md` — what CI/tooling checks for the
-  phase (with source-file references). This project has **no general test
-  runner** (Phase 8); automated coverage is the TypeScript compiler + production
-  build, plus any purpose-built harness in `QA/tools/`.
+- `QA/<phase>_tests/automated-coverage.md` — what tooling checks for the phase
+  (with source-file references). **These are dated records**: several written
+  before Phase 8.1 say the project has no test runner, which was true then. They
+  carry a banner rather than being rewritten.
 - `QA/<phase>_tests/<area>.md` — one manual checklist per area that needs the
   running app or human judgement.
 - `QA/tools/` — small dependency-light scripts that assert *behavior* directly,
   for logic that would otherwise only be reachable by pasting snippets into a
-  browser console. Run them all with `npm run qa:checks`.
+  browser console. Run them all with `npm run qa:checks`. Predates Vitest; new
+  pure logic goes in a `.test.ts` beside the module instead.
+
+## What "automated coverage" means today
+
+Four things, and the first is newer than most of this folder:
+
+1. **`npx vitest run` — the unit tests.** Vitest arrived in **Phase 8.1**, and
+   since 2026-09-01 every unit of work adds tests for the pure logic it
+   introduces, in the same change. Tests live beside the module
+   (`src/**/x.test.ts`), not here.
+2. **`npm run build`** — `tsc -b` + `vite build`. `noUnusedLocals` is on, so dead
+   code fails the build.
+3. **`npm run qa:checks`** — the bespoke harness in `QA/tools/`.
+4. **`railway/scripts/95_rls_matrix.sql`** — the four-role access-control matrix,
+   run by the Railway migrate job on every schema change. **This is the real test
+   of every RLS policy and every trigger**, and the one thing that cannot be
+   replaced by a browser step.
+
+> **A unit test is how you avoid a browser step.** Anything provable in Node must
+> not appear on a manual checklist — the owner runs those by hand, and a test
+> re-runs forever. Two real defects in `walls.ts`, an infinite loop and a 2.8s
+> freeze, were caught before any UI existed and neither was reachable from a
+> checklist.
+
+## Checkboxes are ticked in the same edit as the run log
+
+This drifted for six phases: from 3.5 onward, files carried dated **PASS** run
+logs while every `- [ ]` stayed empty, so 123 steps the owner had personally run
+read as never attempted. Back-filled 2026-09-02.
+
+Tick only what the owner reported passing; a partial run leaves the rest empty;
+deferred and withdrawn steps stay unticked with prose saying why. **"Unticked"
+must always mean "not passed"**, and it only can if it always does.
 
 ## Manual checklists never contain console steps
 

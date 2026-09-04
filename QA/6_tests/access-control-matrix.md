@@ -1,5 +1,11 @@
 # QA — Access control after the backend migration
 
+> **SUPERSEDED — do not run, and do not tick.** The 6.5 access-control work was
+> run and recorded in [cutover.md](cutover.md): Area C server-side (**PASS**
+> 2026-08-21) and Area E step 5, the browser check that a player sees none of the
+> eight DM tabs. This file's own steps were never executed, so its boxes stay
+> unticked — the area passed, this checklist did not run.
+
 **Phase:** 6.5 (the headline area for this phase). Server-side halves are mine to
 run; the browser halves are yours.
 

@@ -9,30 +9,30 @@ conditions**.
 
 ## Steps — behavior
 
-- [ ] No character case: a fresh player with no character sees a "create your
+- [x] No character case: a fresh player with no character sees a "create your
       character first" message (not an error).
-- [ ] Set **Max HP** = 30, **Current HP** = 30, **Temp HP** = 5. Indicator shows
+- [x] Set **Max HP** = 30, **Current HP** = 30, **Temp HP** = 5. Indicator shows
       **Saving… → All changes saved**.
-- [ ] Enter **7** in the amount box → **− Damage** → temp HP drops to 0 first,
+- [x] Enter **7** in the amount box → **− Damage** → temp HP drops to 0 first,
       then current HP falls by the remainder (30 → 28; temp 5→0, then −2).
-- [ ] Enter **100** → **+ Heal** → current HP caps at Max (28 → 30), not above.
-- [ ] **Death saves:** click success pip 3 → all three fill (tally = 3); click
+- [x] Enter **100** → **+ Heal** → current HP caps at Max (28 → 30), not above.
+- [x] **Death saves:** click success pip 3 → all three fill (tally = 3); click
       the 3rd again → drops to 2. Same for failures.
-- [ ] **Conditions:** toggle **Poisoned** and **Prone** on (chips highlight),
+- [x] **Conditions:** toggle **Poisoned** and **Prone** on (chips highlight),
       toggle **Poisoned** off. Active set = {Prone}.
-- [ ] **Refresh** → current/max/temp HP, death-save tallies, and conditions all
+- [x] **Refresh** → current/max/temp HP, death-save tallies, and conditions all
       persist.
 
 ## Steps — access (RLS)
 
-- [ ] As the **DM** (`ejcaldwell06`), the player's HP is **readable** (data
+- [x] As the **DM** (`ejcaldwell06`), the player's HP is **readable** (data
       layer), but a DM write is refused:
       ```js
       // cid_char = the player's character id
       await supabase.from('character_status').select('*').eq('character_id', cid_char)          // → the row
       await supabase.from('character_status').update({ current_hp: 1 }).eq('character_id', cid_char).select()  // → [] / blocked
       ```
-- [ ] As a **different player / non-member**, `character_status` select for that
+- [x] As a **different player / non-member**, `character_status` select for that
       character → `[]`; any write → blocked.
 
 ## Pass criteria

@@ -426,18 +426,29 @@ export function tokenFootprint(
  * How much two footprints may overlap before they count as occupying the same
  * space, in map pixels.
  *
- * NOT zero, and this is the whole subtlety of the feature. Two tokens in
- * ADJACENT squares share an edge exactly, so their footprints touch at a single
- * coordinate — and floating-point snapping puts that coordinate a fraction of a
- * pixel either side of the boundary depending on which direction the token
- * arrived from. A strict `>` test therefore rejects perfectly legal
- * side-by-side placement, intermittently, which reads as "sometimes I can't
- * stand next to someone".
+ * NOT zero, and the size of it is the whole subtlety of the feature.
  *
- * A quarter of a pixel is far below anything a player can see or aim at, and far
- * above the snapping error.
+ * **Token coordinates are INTEGERS** (`x int` / `y int`, migration 0048), but a
+ * snapped position often is not. A cell centre is `offset + grid/2 + k*grid`, so
+ * an ODD grid size puts every 1x1 token on a half-pixel and it is stored rounded.
+ * With grid 85, a centre of 802.5 is stored as 803 — and that half pixel moves
+ * the token's edge half a pixel INTO its neighbour.
+ *
+ * Two tokens are each rounded, so the gap between them can be wrong by up to a
+ * full pixel. An epsilon of 0.25 could not absorb that, and the failure was
+ * beautifully asymmetric: on one side rounding pushes the neighbour AWAY and
+ * nothing happens, on the other it pushes TOWARD and the square is refused. That
+ * is exactly how it was reported — "the 2x2 is acting like a 3x3, the left and
+ * top have an extra row/column" (owner, 2026-09-02).
+ *
+ * **It only ever appeared on an odd grid.** Every test and every probe used 70,
+ * where grid/2 is exact and nothing rounds. The owner's map is 85.
+ *
+ * 1.5px leaves margin over the 1px worst case and is still far below anything
+ * real: the smallest legitimate overlap is a half-size token's half cell, which
+ * is 2.5px even at the schema's minimum grid of 10.
  */
-const OCCUPANCY_EPSILON = 0.25
+const OCCUPANCY_EPSILON = 1.5
 
 /**
  * Do two tokens occupy the same space?

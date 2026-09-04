@@ -11,27 +11,27 @@ browser — so there's nothing for a player to read.)
 
 ## Steps — UI gating (defense-in-depth)
 
-- [ ] As the **DM** (`ejcaldwell06`): badge "You are the DM"; the **Combat** tab
+- [x] As the **DM** (`ejcaldwell06`): badge "You are the DM"; the **Combat** tab
       is present.
-- [ ] As a **player** (`ejcaldwell.test`): badge "You are a player"; **no** Combat
+- [x] As a **player** (`ejcaldwell.test`): badge "You are a player"; **no** Combat
       tab appears.
 
 ## Steps — data layer (RLS is the real gate)
 
-- [ ] As the **DM**, read + write work:
+- [x] As the **DM**, read + write work:
       ```js
       const cid = 'd0e1fc8f-29d6-4381-9cd7-04c9214a80fa'
       const rows = (await supabase.from('initiative_entries').select('*').eq('campaign_id', cid)).data
       rows  // → rows
       await supabase.from('initiative_entries').update({ notes: 'edited' }).eq('id', rows[0].id).select()  // → row
       ```
-- [ ] As the **player** (member), read is empty and writes are blocked:
+- [x] As the **player** (member), read is empty and writes are blocked:
       ```js
       const cid = 'd0e1fc8f-29d6-4381-9cd7-04c9214a80fa'
       await supabase.from('initiative_entries').select('*').eq('campaign_id', cid)                 // → []
       await supabase.from('initiative_entries').insert({ campaign_id: cid, name: 'X' }).select()   // → 403
       ```
-- [ ] As a **non-member** (`ejcaldwell00`) and **signed out (anon)** —
+- [x] As a **non-member** (`ejcaldwell00`) and **signed out (anon)** —
       `initiative_entries` read returns **`[]`**.
 
 ## Pass criteria

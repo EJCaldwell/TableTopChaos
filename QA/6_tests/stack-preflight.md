@@ -1,5 +1,11 @@
 # QA — Local stack pre-flight
 
+> **SUPERSEDED — do not run, and do not tick.** This is 6.1, and 6.1 was run and
+> recorded in [local-preflight.md](local-preflight.md) (**PASS** 2026-08-18),
+> which is the file the phase README's area table points at. Two checklists were
+> written for the same area and only one was used; its boxes stay unticked
+> because nobody executed *these* steps, not because 6.1 is outstanding.
+
 **Phase:** 6.1. Run entirely **locally** before any Railway service exists — the two
 things most likely to be wrong (gateway prefix stripping and the `auth.uid()` claim
 wiring) fail identically here, where the loop is seconds instead of a deploy.

@@ -27,7 +27,8 @@ DM invite codes + owner delete). Acceptance criteria from
 ## Automated coverage
 
 See [automated-coverage.md](automated-coverage.md) — for this UI phase that is
-the type-checker and build only (no test runner in the project yet).
+the type-checker and build only (no test runner in the project yet — **Vitest
+arrived in Phase 8.1**; this sentence records what covered 1.4 at the time).
 
 ## Pass criteria for the phase
 

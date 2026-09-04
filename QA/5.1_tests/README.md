@@ -67,7 +67,8 @@ covered in [mode-access.md](mode-access.md).
 ## Automated coverage
 
 See [automated-coverage.md](automated-coverage.md) — `tsc -b` + `vite build` only;
-this project has no test runner (Phase 8).
+this project has no test runner (Phase 8). **Vitest arrived in 8.1**; this line
+records what covered 5.1 at the time.
 
 ## Phase pass criteria
 

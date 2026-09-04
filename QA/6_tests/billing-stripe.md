@@ -1,5 +1,9 @@
 # QA — Billing & Stripe after the migration
 
+> **SUPERSEDED — do not run, and do not tick.** 6.4 was run and recorded in
+> [stripe-rewiring.md](stripe-rewiring.md) (**PASS** 2026-08-19), which is the
+> file the phase README's area table points at. These steps were never executed.
+
 **Phase:** 6.4. **Browser + Stripe dashboard — yours to run**, with server-side row
 checks from me.
 

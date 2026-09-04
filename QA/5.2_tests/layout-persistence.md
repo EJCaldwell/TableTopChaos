@@ -54,7 +54,7 @@ what genuinely needs a human at the rendered UI.
       **expanded on the right** — rather than a half-restored arrangement or a
       console error. Your previous arrangement being gone is the *correct*
       outcome here, not a bug.
-- [ ] 2. **Off-screen windows are recovered.** ← *this is the regression test for
+- [x] 2. **Off-screen windows are recovered.** ← *this is the regression test for
       the bug above; please don't skip it*
       1. With the browser **maximized**, open a section and drag its window to
          the **far right** of the workspace area.
@@ -65,14 +65,14 @@ what genuinely needs a human at the rendered UI.
       4. **Reload** at the narrow size → it is still on screen and usable.
       5. Maximize again — it stays where it is. Clamping pulls windows *in*; it
          does not fling them back out.
-- [ ] 3. **Layouts survive normal use.** Open three windows, drag/resize them to
+- [x] 3. **Layouts survive normal use.** Open three windows, drag/resize them to
       distinctive spots, move the rail to the left and collapse it. Hard-refresh
       → all three return at the same positions, sizes and stacking order, rail
       still collapsed on the left.
-- [ ] 4. **Layouts are per campaign.** Open the second campaign → it has its own
+- [x] 4. **Layouts are per campaign.** Open the second campaign → it has its own
       independent, default layout (nothing open, rail right). Return to "Main
       Test" → your arrangement is intact.
-- [ ] 5. **A section never opens twice.** With a window already open, click its
+- [x] 5. **A section never opens twice.** With a window already open, click its
       rail entry repeatedly and confirm you only ever get **one** window for it —
       it raises and closes, never duplicates. (A duplicate would mount the panel
       twice and run two copies of its queries and realtime subscriptions.)

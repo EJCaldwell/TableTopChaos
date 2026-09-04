@@ -445,6 +445,17 @@ export type VisionResult =
       polygons: [number, number][][]
       /** Where a token may MOVE: walls only. Stops a drag at a wall. */
       movePolygons: [number, number][][]
+      /**
+       * The same, precomputed for the eight surrounding squares, so a single
+       * step needs no round trip at all. Empty when the server declined — more
+       * than one token on the map, or too many walls to sweep seventeen times —
+       * which degrades to one request per move, exactly as before.
+       */
+      neighbours: {
+        at: [number, number]
+        polygons: [number, number][][]
+        movePolygons: [number, number][][]
+      }[]
     }
 
 /**
@@ -482,7 +493,7 @@ export async function fetchVision(
   })
   if (error || !data) {
     console.error('vision: falling back to fully fogged', error)
-    return { visionEnabled: true, isDm: false, polygons: [], movePolygons: [] }
+    return { visionEnabled: true, isDm: false, polygons: [], movePolygons: [], neighbours: [] }
   }
   return data
 }

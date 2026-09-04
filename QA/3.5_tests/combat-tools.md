@@ -8,34 +8,34 @@ DM (`ejcaldwell06@gmail.com`), open **"Test 1"**, **Combat** tab.
 
 ## Steps — initiative: add & seed
 
-- [ ] **+ Add combatant** → a blank row (initiative `—`, name, notes) appears;
+- [x] **+ Add combatant** → a blank row (initiative `—`, name, notes) appears;
       indicator shows **Saving… → All changes saved**.
-- [ ] **+ Add party** → one row per player character, pre-named.
-- [ ] **+ Add NPC…** picker → choosing a roster NPC adds a row with its name.
+- [x] **+ Add party** → one row per player character, pre-named.
+- [x] **+ Add NPC…** picker → choosing a roster NPC adds a row with its name.
 
 ## Steps — initiative: edit, sort, step
 
-- [ ] Set **initiative values** on several rows → the list **re-sorts live**,
+- [x] Set **initiative values** on several rows → the list **re-sorts live**,
       highest first (blank/unset rows sink to the bottom).
-- [ ] Edit a **name** and **notes** → debounce to **All changes saved**.
-- [ ] **Sort by initiative** → positions bake in to the current order.
-- [ ] **Drag** a tied row by `⠿` to reorder → insertion bar; order holds.
-- [ ] **Next turn ›** advances the **▶** current-turn marker down the list;
+- [x] Edit a **name** and **notes** → debounce to **All changes saved**.
+- [x] **Sort by initiative** → positions bake in to the current order.
+- [x] **Drag** a tied row by `⠿` to reorder → insertion bar; order holds.
+- [x] **Next turn ›** advances the **▶** current-turn marker down the list;
       wrapping past the last combatant increments **Round**. **‹ Prev** goes back
       (and decrements the round at the top). **Reset** → Round 1, first combatant.
-- [ ] Remove a row with **✕**; **Clear** empties the list (with confirm).
-- [ ] **Refresh** → combatants, initiative values, names, notes, and order
+- [x] Remove a row with **✕**; **Clear** empties the list (with confirm).
+- [x] **Refresh** → combatants, initiative values, names, notes, and order
       persist. (The turn pointer/round reset — they're intentionally not saved.)
 
 ## Steps — dice roller
 
-- [ ] Type `2d6+3` → **Roll** → a big total appears with a breakdown like
+- [x] Type `2d6+3` → **Roll** → a big total appears with a breakdown like
       `2d6 [x, y] + 3 = n`; the total is within 5–15.
-- [ ] Quick buttons **d20 / d12 / d10 / d8 / d6 / d4 / d100** each roll that die;
+- [x] Quick buttons **d20 / d12 / d10 / d8 / d6 / d4 / d100** each roll that die;
       results are within range.
-- [ ] Try `1d8+1d4+2` → both dice groups appear in the breakdown and sum right.
-- [ ] Enter nonsense (e.g. `hello`, `2x6`) → a friendly **error**, no roll.
-- [ ] Enter something huge (e.g. `999d999`) → an out-of-range **error** (no hang).
+- [x] Try `1d8+1d4+2` → both dice groups appear in the breakdown and sum right.
+- [x] Enter nonsense (e.g. `hello`, `2x6`) → a friendly **error**, no roll.
+- [x] Enter something huge (e.g. `999d999`) → an out-of-range **error** (no hang).
 
 ## Pass criteria
 

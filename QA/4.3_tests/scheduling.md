@@ -9,25 +9,25 @@ enforced by RLS (`schedule_sessions` / `schedule_rsvps`, migration 0026).
 
 ## Steps — DM proposes & edits
 
-- [ ] As the **DM**: "Propose a session" form is visible. Add a title
+- [x] As the **DM**: "Propose a session" form is visible. Add a title
       (e.g. "Session 12"), pick a date/time, notes → **Propose session** →
       appears in the list with the formatted date; indicator saves.
-- [ ] Edit the session's title/date/notes inline → debounced save; refresh →
+- [x] Edit the session's title/date/notes inline → debounced save; refresh →
       edits persist.
-- [ ] **Delete** a session (confirm) → gone for everyone.
+- [x] **Delete** a session (confirm) → gone for everyone.
 
 ## Steps — member RSVP & tally
 
-- [ ] As the **player**: no "Propose a session" form (DM-only). The session shows
+- [x] As the **player**: no "Propose a session" form (DM-only). The session shows
       read-only title/date/notes.
-- [ ] Click **Yes** → your response highlights; the tally shows **Yes: 1 — <your
+- [x] Click **Yes** → your response highlights; the tally shows **Yes: 1 — <your
       name>**. Change to **Maybe** → tally moves.
-- [ ] As the **DM**, refresh → the tally reflects the player's response (name
+- [x] As the **DM**, refresh → the tally reflects the player's response (name
       shown), and the DM can also set their own response.
 
 ## Steps — access (RLS)
 
-- [ ] As the **player** (member), writing a session is refused; RSVP for self ok:
+- [x] As the **player** (member), writing a session is refused; RSVP for self ok:
       ```js
       const cid = 'd0e1fc8f-29d6-4381-9cd7-04c9214a80fa'
       await supabase.from('schedule_sessions').insert({ campaign_id: cid, title: 'x' }).select()  // → 403
@@ -35,7 +35,7 @@ enforced by RLS (`schedule_sessions` / `schedule_rsvps`, migration 0026).
       await supabase.from('schedule_rsvps').insert({ session_id: sid, user_id: '<me>', status: 'yes' }).select()  // → ok
       await supabase.from('schedule_rsvps').insert({ session_id: sid, user_id: '<other>', status: 'yes' }).select() // → 403 (not my row)
       ```
-- [ ] As a **non-member / anon**, `schedule_sessions` and `schedule_rsvps` select
+- [x] As a **non-member / anon**, `schedule_sessions` and `schedule_rsvps` select
       → `[]`.
 
 ## Pass criteria

@@ -11,31 +11,31 @@ NPCs, encounters w/ images, quests, sessions, shared items). Dev server :5173.
 
 ## Steps — export (DM)
 
-- [ ] DM → **Overview** → **Backup & data** → **Export campaign (.zip)** →
+- [x] DM → **Overview** → **Backup & data** → **Export campaign (.zip)** →
       a `.zip` downloads; "Export downloaded."
-- [ ] Open the zip: `manifest.json` (schemaVersion 1, counts, sha256),
+- [x] Open the zip: `manifest.json` (schemaVersion 1, counts, sha256),
       `campaign.json`, and `images/<…>` for every referenced asset.
-- [ ] `campaign.json` counts match the campaign; members listed as **display
+- [x] `campaign.json` counts match the campaign; members listed as **display
       names**, not auth ids.
 
 ## Steps — import (DM)
 
-- [ ] **Choose a .zip to import…** → pick the exported zip → **Import as new
+- [x] **Choose a .zip to import…** → pick the exported zip → **Import as new
       campaign** → summary of counts + **Open the new campaign**.
-- [ ] Open it: name is "… (imported)"; characters, journals, NPCs (+stat
+- [x] Open it: name is "… (imported)"; characters, journals, NPCs (+stat
       blocks), encounters (+images render), quests, sessions, shared items all
       present; portraits/images display.
-- [ ] The **original** campaign is unchanged (still there, untouched) — import
+- [x] The **original** campaign is unchanged (still there, untouched) — import
       created a separate new campaign.
-- [ ] Bad file: import a non-zip / truncated zip → clear error, no new campaign.
+- [x] Bad file: import a non-zip / truncated zip → clear error, no new campaign.
 
 ## Steps — export while read-only (if a read-only campaign is available)
 
-- [ ] Export still succeeds on a read-only / pending-deletion campaign.
+- [x] Export still succeeds on a read-only / pending-deletion campaign.
 
 ## Steps — player journal export
 
-- [ ] Player → **Journal** → **Download my journal** → a `.json` and a `.md`
+- [x] Player → **Journal** → **Download my journal** → a `.json` and a `.md`
       download; contents are only that player's own entries.
 
 ## Pass criteria

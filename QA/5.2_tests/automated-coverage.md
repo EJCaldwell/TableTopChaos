@@ -1,5 +1,11 @@
 # Automated coverage — Phase 5.2
 
+> **Dated record, not the current state.** This file says the project has no test
+> runner. That was true when it was written; **Vitest arrived in Phase 8.1**.
+> Left as written — a coverage note describes what covered a phase AT THE TIME,
+> and editing it to match today would erase the fact that this phase shipped
+> without one. The `qa:checks` harness it describes is still live and still run.
+
 No test runner in this project yet (Phase 8). "Automated" here means the
 TypeScript build. **No migration shipped in 5.2**, so there is no `get_advisors`
 run and no server-side access-control checklist — see the README for why.

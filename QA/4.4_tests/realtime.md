@@ -11,28 +11,28 @@ window so the sessions don't share auth. No page refreshes during these steps.
 
 ## Steps — live propagation (change on one screen appears on the other)
 
-- [ ] **HP → Party:** DM on the **Party** tab with the player's character open.
+- [x] **HP → Party:** DM on the **Party** tab with the player's character open.
       Player on **HP & conditions** toggles a condition / changes current HP →
       the DM's Party HP block updates within ~1–2s, no refresh.
-- [ ] **Handouts → Shared with us:** DM shares a note on **Handouts**; the
+- [x] **Handouts → Shared with us:** DM shares a note on **Handouts**; the
       player's **Shared with us** tab shows it live. DM un-shares → it disappears
       for the player live.
-- [ ] **Scheduling (both directions):** DM proposes a session → it appears on the
+- [x] **Scheduling (both directions):** DM proposes a session → it appears on the
       player's **Scheduling** live. Player RSVPs Yes → the DM sees the tally +
       name update live (and vice-versa).
-- [ ] **Initiative (two DM contexts):** open Combat in two DM tabs; add/edit a
+- [x] **Initiative (two DM contexts):** open Combat in two DM tabs; add/edit a
       combatant in one → the other reflects it live.
 
 ## Steps — isolation (RLS still applies to Realtime)
 
-- [ ] A **signed-out / non-member** tab open on the app receives **no** events
+- [x] A **signed-out / non-member** tab open on the app receives **no** events
       and shows nothing new when the DM changes shared items / schedule.
-- [ ] While the player is on a DM-only surface they can't read, no DM-only change
+- [x] While the player is on a DM-only surface they can't read, no DM-only change
       leaks (players have no Handouts/Combat tabs anyway).
 
 ## Steps — teardown (no leaks)
 
-- [ ] Switch away from a realtime tab (e.g. Scheduling → Overview) and back a few
+- [x] Switch away from a realtime tab (e.g. Scheduling → Overview) and back a few
       times; updates keep working and there's no duplicate/stacked refreshing
       (channels are torn down on unmount). Optional: DevTools → Network → WS
       shows channels closing when you leave a tab.

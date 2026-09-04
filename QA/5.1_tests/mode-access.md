@@ -18,31 +18,31 @@ is defense-in-depth, the data layer is the test.
 
 ### Schema
 
-- [ ] 1. The enum exists with exactly the three tiers in order.
+- [x] 1. The enum exists with exactly the three tiers in order.
       Expect `notetaker,playspace,rpg`.
-- [ ] 2. `campaigns.game_mode` is `not null default 'notetaker'`.
+- [x] 2. `campaigns.game_mode` is `not null default 'notetaker'`.
       Expect `'notetaker'::game_mode / NO`.
 
 ### Access-control matrix — `update campaigns set game_mode = …`
 
-- [ ] 3. **DM** update → **1 row affected**.
-- [ ] 4. **Player (member)** update → **0 rows affected** (silent no-op at the DB;
+- [x] 3. **DM** update → **1 row affected**.
+- [x] 4. **Player (member)** update → **0 rows affected** (silent no-op at the DB;
       `setGameMode`'s `.single()` turns that into a thrown error in the client).
-- [ ] 5. **Non-member** update → **0 rows affected**.
-- [ ] 6. **Anon** select of the campaign → **0 rows** (cannot even read the mode).
-- [ ] 7. **Player** select of the campaign → **1 row** — members must still *read*
+- [x] 5. **Non-member** update → **0 rows affected**.
+- [x] 6. **Anon** select of the campaign → **0 rows** (cannot even read the mode).
+- [x] 7. **Player** select of the campaign → **1 row** — members must still *read*
       the mode, since Overview shows a read-only "plays as X" line.
-- [ ] 8. Policy audit on `campaigns`: exactly four policies, all `{authenticated}`,
+- [x] 8. Policy audit on `campaigns`: exactly four policies, all `{authenticated}`,
       no `anon` policy; the only UPDATE policy is `campaigns_update_dm` gated on
       `private.is_campaign_dm(id)` in **both** `USING` and `WITH CHECK`.
 
 ### Invariants
 
-- [ ] 9. An invalid mode value is rejected by the enum, not silently coerced.
-- [ ] 10. No trigger fires on `game_mode`: the only triggers on `campaigns` are
+- [x] 9. An invalid mode value is rejected by the enum, not silently coerced.
+- [x] 10. No trigger fires on `game_mode`: the only triggers on `campaigns` are
       `campaigns_add_owner_as_dm` (AFTER INSERT) and `campaigns_set_updated_at`
       (BEFORE UPDATE — touches `updated_at` only). No cascade, no mode trigger.
-- [ ] 11. **Non-destructive switching:** as DM, run `notetaker → rpg → notetaker →
+- [x] 11. **Non-destructive switching:** as DM, run `notetaker → rpg → notetaker →
       playspace` in one transaction and re-count the campaign's child rows.
       Every count must be unchanged.
 

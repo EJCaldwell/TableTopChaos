@@ -72,7 +72,8 @@ are documented (with the reason) in
 ## Automated coverage
 
 See [automated-coverage.md](automated-coverage.md) — still the type-checker +
-build only (no test runner in the project yet), plus the notes on why the billing
+build only (no test runner in the project yet — **Vitest arrived in Phase 8.1**;
+this records what covered 1.5 at the time), plus the notes on why the billing
 logic is largely un-unit-testable without Stripe fixtures.
 
 ## Pass criteria for the phase

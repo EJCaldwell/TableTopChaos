@@ -54,6 +54,13 @@ import { jsonResponse } from '../_shared/cors.ts'
 import { serviceClient, userClient } from '../_shared/clients.ts'
 import { segmentsOf, pointsFromJson, visibilityPolygon, sightRadiusPx } from './_geometry.ts'
 
+/** One precomputed square in the ring around the caller's token. */
+type Neighbour = {
+  at: [number, number]
+  polygons: [number, number][][]
+  movePolygons: [number, number][][]
+}
+
 /** The only shapes this function may return. Deliberately explicit — see above. */
 type VisionResponse =
   | { visionEnabled: false }
@@ -84,6 +91,26 @@ type VisionResponse =
        * rather than glossed.
        */
       movePolygons: [number, number][][]
+      /**
+       * The same answer, precomputed for the eight surrounding squares.
+       *
+       * WHY: a player's client cannot compute sight at all — it has no walls —
+       * so every step used to cost a round trip, and that round trip IS the fog
+       * lag. This function already holds the walls and the sweep is the cheap
+       * part, so answering for the neighbours costs one request instead of nine.
+       *
+       * THE LEAK, STATED: a player's browser now knows what it would see one
+       * step away in any direction, slightly before it steps. That is learned by
+       * stepping regardless. It is a real cost and a bounded one, and it is a
+       * different order of thing from shipping the wall geometry — which is the
+       * option this exists to avoid.
+       *
+       * Empty when the caller has more than one token on the map (there is no
+       * single anchor to build a ring around) or when the map has too many wall
+       * segments to sweep seventeen times — see NEIGHBOUR_SEGMENT_CAP. Both are
+       * a silent degrade to the previous behaviour, never an error.
+       */
+      neighbours: Neighbour[]
     }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -172,7 +199,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // undo the feature.
     if (!tokens || tokens.length === 0) {
       return jsonResponse(
-        { visionEnabled: true, isDm: false, polygons: [], movePolygons: [] } satisfies VisionResponse,
+        {
+          visionEnabled: true,
+          isDm: false,
+          polygons: [],
+          movePolygons: [],
+          neighbours: [],
+        } satisfies VisionResponse,
         200,
       )
     }
@@ -224,8 +257,49 @@ Deno.serve(async (req: Request): Promise<Response> => {
       toWire(visibilityPolygon(viewpoint(t), moveSegments, Infinity, bounds)),
     )
 
+    // --- the neighbouring squares ------------------------------------------
+    //
+    // Only with a SINGLE token: with two, "the eight squares around you" has no
+    // meaning — the response describes all of the caller's tokens at once, and
+    // there is no one anchor to build a ring around. One token is the normal
+    // case at a table, and the alternative degrades to exactly what happened
+    // before rather than to anything worse.
+    //
+    // Skipped on a very complex map because this is seventeen sweeps rather than
+    // two, and a sweep is linear in wall segments. Better to be as fast as
+    // yesterday on a map with a thousand wall segments than to be slower on
+    // every single request.
+    const NEIGHBOUR_SEGMENT_CAP = 400
+    const RING: [number, number][] = [
+      [-1, -1], [0, -1], [1, -1],
+      [-1, 0], [1, 0],
+      [-1, 1], [0, 1], [1, 1],
+    ]
+    const neighbours: Neighbour[] = []
+    if (tokens.length === 1 && segments.length <= NEIGHBOUR_SEGMENT_CAP) {
+      const t = tokens[0]
+      const base = viewpoint(t)
+      const radius = sightRadiusPx(t.sight_squares, map.grid_size)
+      for (const [dx, dy] of RING) {
+        const x = Math.round(base.x + dx * map.grid_size)
+        const y = Math.round(base.y + dy * map.grid_size)
+        // Bounds-checked BEFORE sweeping, not after. A square off the edge of
+        // the map is not somewhere anyone can stand, and a sweep from outside
+        // the bounds produces a polygon that means nothing — so computing one
+        // and discarding it is pure cost on exactly the requests (a token
+        // against an edge) where up to five of the eight are wasted.
+        if (x < 0 || y < 0 || x > map.width_px || y > map.height_px) continue
+        const p = { x, y }
+        neighbours.push({
+          at: [x, y],
+          polygons: [toWire(visibilityPolygon(p, segments, radius, bounds))],
+          movePolygons: [toWire(visibilityPolygon(p, moveSegments, Infinity, bounds))],
+        })
+      }
+    }
+
     return jsonResponse(
-      { visionEnabled: true, isDm: false, polygons, movePolygons } satisfies VisionResponse,
+      { visionEnabled: true, isDm: false, polygons, movePolygons, neighbours } satisfies VisionResponse,
       200,
     )
   } catch (err) {

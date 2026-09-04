@@ -19,54 +19,59 @@ battlemap image to hand.
 
 ## A. DM — map setup (the new **Maps** tab)
 
-- [ ] **A1.** Enter the campaign workspace. The map area says *"No battlemap
+- [x] **A1.** Enter the campaign workspace. The map area says *"No battlemap
       yet. Open the Maps tab to upload a picture…"*, and a **Maps** entry is in
       the rail.
-- [ ] **A2.** Open **Maps** and upload a battlemap image. It appears in the map
+- [x] **A2.** Open **Maps** and upload a battlemap image. It appears in the map
       area **at its own aspect ratio** (not stretched) and goes live at once.
-- [ ] **A3.** In Maps, drag that map's **Grid** slider. The overlay spacing
+- [x] **A3.** In Maps, drag that map's **Grid** slider. The overlay spacing
       changes over the picture, live. Leave it aligned to the map's printed grid
       if it has one.
-- [ ] **A4.** Rename the map (click its name, type, click away). The name sticks.
-- [ ] **A5.** Reload. The map, its background, name and grid size all survive.
+- [x] **A4.** Rename the map (click its name, type, click away). The name sticks.
+- [x] **A5.** Reload. The map, its background, name and grid size all survive.
 
 ## B. DM — tokens
 
-- [ ] **B1.** Press **Add token**. A token appears at the map's centre.
-- [ ] **B2.** Drag it. It follows the pointer and **snaps to cell centres** on
+- [x] **B1.** Press **Add token**. A token appears at the map's centre.
+- [x] **B2.** Drag it. It follows the pointer and **snaps to cell centres** on
       release — sitting inside a square, not straddling four.
-- [ ] **B3.** Drag it again holding **Alt**. It lands exactly where dropped,
+      > **Only true for 1x1 now.** Token sizes arrived in 0056, and which lattice
+      > a centre belongs on depends on the size: odd and half sizes snap to cell
+      > CENTRES, even sizes (2x2, 4x4) to cell CORNERS, because a 2x2 centred in
+      > a cell straddles four half-cells and lines up with nothing. The step is
+      > still correct as written for a default token.
+- [x] **B3.** Drag it again holding **Alt**. It lands exactly where dropped,
       off-grid.
-- [ ] **B4.** Drag one hard off the edge of the map. It stops at the boundary
+- [x] **B4.** Drag one hard off the edge of the map. It stops at the boundary
       rather than disappearing.
-- [ ] **B5.** Reload. Every token is where you left it.
-- [ ] **B6.** Select a token, set **Controlled by** to the player, then back to
+- [x] **B5.** Reload. Every token is where you left it.
+- [x] **B6.** Select a token, set **Controlled by** to the player, then back to
       **the DM**. Both directions work.
 
 ## C. Two sessions — the live half (the point of the feature)
 
 Both windows on the same campaign, side by side if you can.
 
-- [ ] **C1.** DM drags a token. It moves in the **player's** window within a
+- [x] **C1.** DM drags a token. It moves in the **player's** window within a
       second or two, **without the player's view reloading** — nothing else
       flickers, and a panel they had open keeps its scroll position.
-- [ ] **C2.** The player drags **their own** token. The DM sees it move.
-- [ ] **C3.** The player tries to drag the **DM's** token. It does not move, and
+- [x] **C2.** The player drags **their own** token. The DM sees it move.
+- [x] **C3.** The player tries to drag the **DM's** token. It does not move, and
       they get *"you may not move this token"* — **not** silence, and **not** a
       token that moves and then snaps back with no explanation.
-- [ ] **C4.** DM uploads a second map (or switches with the **Map** dropdown).
+- [x] **C4.** DM uploads a second map (or switches with the **Map** dropdown).
       The player's view **follows to the new map** on its own.
-- [ ] **C4b.** Switching maps is done from the **Maps** tab (**Make live**), and
+- [x] **C4b.** Switching maps is done from the **Maps** tab (**Make live**), and
       the live one is the row with the accent border and the **LIVE** label.
-- [ ] **C5.** Upload until the Maps tab reads **5/5**. The upload section is
+- [x] **C5.** Upload until the Maps tab reads **5/5**. The upload section is
       replaced by *"You have the maximum of 5 maps. Delete one below…"*
 
 ## D. Player — the read-only view
 
-- [ ] **D1.** The player has **no Maps tab at all** in the rail, and no Add
+- [x] **D1.** The player has **no Maps tab at all** in the rail, and no Add
       token / Remove token controls.
-- [ ] **D2.** They can still **see** every token including the DM's monsters.
-- [ ] **D3.** Tab to a token and press an arrow key: their own token moves one
+- [x] **D2.** They can still **see** every token including the DM's monsters.
+- [x] **D3.** Tab to a token and press an arrow key: their own token moves one
       square; the DM's does not.
 
 ## E. Notetaker campaigns get a map too
@@ -74,9 +79,9 @@ Both windows on the same campaign, side by side if you can.
 Do this in a **notetaker** campaign (a different one, or switch mode in
 Settings).
 
-- [ ] **E1.** The rail has a **Battlemap** entry. Open it: the map opens in an
+- [x] **E1.** The rail has a **Battlemap** entry. Open it: the map opens in an
       ordinary window, and works the same way (drag, snap, live).
-- [ ] **E2.** Back in the **playspace** campaign, there is **no Battlemap tab** —
+- [x] **E2.** Back in the **playspace** campaign, there is **no Battlemap tab** —
       the map is already the whole area, and two copies would be two places to
       drag the same token.
 
@@ -155,3 +160,19 @@ notetaker campaigns too.
 > inserted as a plain unlinked marker — which the policy rightly allows — and
 > the assertion reported PASS. Any fixture lookup inside an assertion is subject
 > to the very RLS being tested. Fixed by writing the id out literally.
+
+**2026-09-02 — checkboxes back-filled from the run logs above.**
+
+Sections A–E are now ticked, on the strength of the 2026-08-28 user run
+("A, B, C, D (except D18), E — PASS"). They had been left unticked for four days
+while the run log recorded a pass — the drift described in the `qa-testing` skill.
+
+**One step needs its reasoning stated rather than assumed.** `D18` in that run log
+is this file's OLD numbering for what is now **D3**, the arrow-key step, and it
+was the one FAIL of that run. It is ticked here on the strength of a LATER run,
+not that one: the F1–F9 keyboard series (diagonal movement, 2026-09-02) was run
+and passed by the owner, and none of it is possible unless a clicked token takes
+arrow keys — which is exactly what the `focus()` fix restored.
+
+That is cross-file inference, so it is written down instead of left to look like
+a direct result. If it is ever doubted, D3 is ten seconds to re-run.

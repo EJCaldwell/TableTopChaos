@@ -29,6 +29,7 @@ import { useRealtimeSync, mergeById, type RealtimeEvent } from '../realtime/useR
 import { signedUrlFor } from '../media/api'
 import { supabase } from '../../lib/supabase'
 import { combinedDelta, dropPosition, gridLines, isSpaceFree, movementDelta, snapToken } from './grid'
+import { buildVisionCache, lookupVision, type CachedVision } from './visionCache'
 import { pointInPolygon, tokenTouchesVision } from './vision'
 import { tokenBackground } from './tokenStyle'
 import { WallLayer, type WallTool } from './WallLayer'
@@ -469,10 +470,95 @@ export function BattlemapCanvas({
    * moves. It is a network round trip per call, so it is deliberately NOT called
    * per drag frame; `commitVision` below is the debounce.
    */
+  /**
+   * Precomputed vision for the squares around the caller's token.
+   *
+   * REPLACED wholesale by every response, never merged — see visionCache.ts. A
+   * cache that grew would be faster and would eventually light a doorway the DM
+   * had already erased, with the failure appearing long after the change that
+   * caused it.
+   */
+  const visionCacheRef = useRef<Map<string, CachedVision> | null>(null)
+
+  /**
+   * Sequence number of the most recently ISSUED vision request.
+   *
+   * Requests overlap constantly — a re-centre every 300ms, a wall poll every
+   * 500ms, a heartbeat, and a commit refresh — and nothing guarantees they come
+   * back in the order they were sent. An older response landing last snaps the
+   * light to where the token used to be, and the next one snaps it forward
+   * again. That is the jumpiness, and no amount of tuning the intervals fixes
+   * it, because the bug is ordering rather than timing.
+   */
+  const visionSeq = useRef(0)
+
   const refreshVision = useCallback(async (at?: { x: number; y: number }) => {
-    const result = await fetchVision(map.id, at)
+    // ALWAYS anchor to the token's CURRENT on-screen position when we know it,
+    // even for a poll or a heartbeat that did not ask for one.
+    //
+    // The stored position lags the visible one: a keyboard walk paints each step
+    // immediately and writes 300ms after the last of them, so for that whole
+    // window the database still has the token where the walk STARTED. A refresh
+    // without `at` is computed from there, and the light jumps back to the start
+    // of the walk before jumping forward again on the next response.
+    //
+    // It also keeps the cache honest. The cache is keyed by position, and keying
+    // entries by the anchor while the server swept from the stored position
+    // would file the wrong light under the right square — a subtler version of
+    // the same fault, and one that would survive every fix to the ordering.
+    const anchor = at ?? visionAnchorRef.current ?? undefined
+    const seq = ++visionSeq.current
+    const result = await fetchVision(map.id, anchor)
+    // A newer request was issued while this one was in flight. Its answer is
+    // about a position this token has already left, so it is dropped rather
+    // than painted — see visionSeq.
+    if (seq !== visionSeq.current) return
     setVision(result)
+    // Only a player on a fogged map gets a cache; a DM's response carries no
+    // polygons at all.
+    if (result.visionEnabled && !result.isDm) {
+      visionCacheRef.current = anchor
+        ? buildVisionCache(
+            anchor,
+            { polygons: result.polygons, movePolygons: result.movePolygons },
+            result.neighbours,
+          )
+        : null
+    } else {
+      visionCacheRef.current = null
+    }
   }, [map.id])
+
+  /**
+   * Where the caller's own token is, as far as the cache is concerned.
+   *
+   * The anchor for a response with no explicit `at` — the initial load, the
+   * wall poll, the heartbeat — because the server built the ring around the
+   * token's STORED position and the cache has to be keyed the same way. Null
+   * when the caller has no token, or more than one: the server declines to
+   * precompute a ring in that case and there is nothing to anchor.
+   */
+  const visionAnchorRef = useRef<{ x: number; y: number } | null>(null)
+
+  /**
+   * Shows a position's vision immediately from the cache, if it is there.
+   *
+   * This is the whole point of the neighbourhood prefetch: a step to an adjacent
+   * square changes the light with no network involved at all — the fog stops
+   * being something that loads and becomes something that simply changes.
+   *
+   * @returns True on a hit, so the caller can skip the speculative request.
+   */
+  const applyCachedVision = useCallback((p: { x: number; y: number }): boolean => {
+    const hit = lookupVision(visionCacheRef.current, p)
+    if (!hit) return false
+    setVision((prev) =>
+      prev && prev.visionEnabled && !prev.isDm
+        ? { ...prev, polygons: hit.polygons, movePolygons: hit.movePolygons }
+        : prev,
+    )
+    return true
+  }, [])
 
   /**
    * Asks the server what the caller would see FROM a position, before the move
@@ -496,12 +582,19 @@ export function BattlemapCanvas({
   const previewTimer = useRef(0)
   const previewVision = useCallback(
     (at: { x: number; y: number }) => {
+      // A cache hit paints the new light THIS FRAME. The request that follows is
+      // no longer what the player is waiting for — it re-centres the ring on the
+      // new square so the NEXT step is also free.
+      const hit = applyCachedVision(at)
       const now = performance.now()
-      if (now - previewTimer.current < VISION_PREVIEW_MS) return
+      // A hit still throttles, and more loosely: nothing visible depends on it,
+      // and a held arrow key would otherwise re-centre the ring on every step.
+      const gap = hit ? VISION_RECENTRE_MS : VISION_PREVIEW_MS
+      if (now - previewTimer.current < gap) return
       previewTimer.current = now
       void refreshVision(at)
     },
-    [refreshVision],
+    [refreshVision, applyCachedVision],
   )
 
   useEffect(() => {
@@ -593,6 +686,23 @@ export function BattlemapCanvas({
     return () => clearInterval(id)
   }, [vision?.visionEnabled, vision && 'isDm' in vision && vision.isDm, refreshVision])
 
+  /**
+   * Keeps the cache anchor on the caller's own token.
+   *
+   * The server builds its ring around the token's STORED position whenever the
+   * request carries no explicit `at`, so the cache has to be keyed from the same
+   * place or every entry would miss — silently, and looking exactly like the
+   * prefetch not working.
+   *
+   * Null unless there is EXACTLY ONE own token, matching the server's own rule:
+   * with two, "the eight squares around you" names nothing, and the response
+   * carries no neighbours to key.
+   */
+  useEffect(() => {
+    const mine = tokens.filter((t) => t.owner_user_id === currentUserId)
+    visionAnchorRef.current = mine.length === 1 ? { x: mine[0].x, y: mine[0].y } : null
+  }, [tokens, currentUserId])
+
   // ------------------------------------------------------------- realtime
 
   // Per-ROW merge rather than a re-fetch: a token being dragged by someone else
@@ -632,11 +742,61 @@ export function BattlemapCanvas({
   )
 
   /**
+   * Pointer down on the map itself: clear the selection.
+   *
+   * There was NO way to deselect at all. `setSelectedId` was only ever called
+   * with a token id, never with null, so once anything was selected it stayed
+   * selected for the life of the panel — and selecting a different token meant
+   * hitting it exactly, with no way to let go of the current one first. That is
+   * what "unable to select things by clicking off of them" was describing.
+   *
+   * `e.target === e.currentTarget` is what makes this safe: the handler is on
+   * the map area and the tokens are its children, so a click that landed on a
+   * token has already been handled and bubbles up through here. Without the
+   * check, selecting a token would immediately deselect it.
+   *
+   * Not while a wall tool is armed — a pointer down is then the start of a
+   * stroke, and the selection is not what the DM is manipulating.
+   */
+  function handleBackgroundPointerDown(e: React.PointerEvent) {
+    if (e.target !== e.currentTarget) return
+    // `!== 'none'`, NOT a truthiness test. `wallTool` is a string sentinel and
+    // 'none' is truthy, so `if (wallTool)` bailed out of every click ever made —
+    // the deselect handler was correct and simply never ran. Every other use in
+    // this file compares against 'none' explicitly; this one line did not, and
+    // it type-checked perfectly because a string is a valid condition.
+    if (wallTool !== 'none') return
+    setSelectedId(null)
+    onSelectToken?.(null)
+  }
+
+  /**
    * Pointer down on a token: capture the pointer so the drag survives the
    * cursor leaving the token (which it always does — the token moves under it),
    * and remember where it started for a possible revert.
    */
   function handlePointerDown(e: React.PointerEvent<HTMLButtonElement>, token: PlayspaceToken) {
+    // THE HIT AREA MUST MATCH WHAT IS DRAWN. A token is a circle inside a square
+    // button, and the corners of that square are ~21% of it — empty map that
+    // nonetheless answered clicks, and on a 4x4 monster they reach well into the
+    // neighbouring squares.
+    //
+    // Done here rather than with `clip-path: circle(50%)` on the element, which
+    // was the first fix and looked elegant: clipping an element also clips
+    // everything drawn OUTSIDE its border box, which silently deleted the
+    // selection outline and the drop shadow. A hit test in the handler costs no
+    // visuals at all.
+    //
+    // A miss is treated as a click on the map underneath — it deselects — since
+    // that is what the pixel under the pointer actually is.
+    const box = e.currentTarget.getBoundingClientRect()
+    const dx = e.clientX - (box.left + box.width / 2)
+    const dy = e.clientY - (box.top + box.height / 2)
+    if (Math.hypot(dx, dy) > box.width / 2) {
+      setSelectedId(null)
+      onSelectToken?.(null)
+      return
+    }
     setSelectedId(token.id)
     onSelectToken?.(token)
     if (!canDrag(token)) return
@@ -1111,6 +1271,7 @@ export function BattlemapCanvas({
         >
         <div
           ref={areaRef}
+          onPointerDown={handleBackgroundPointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={() => void handlePointerUp()}
           onPointerCancel={() => void handlePointerUp()}
@@ -1188,6 +1349,17 @@ export function BattlemapCanvas({
               // Only clipped when there IS fog for this session — a DM, or a map
               // with vision off, must never have their tokens trimmed.
               clipPath: visionPolys ? `url(#${tokenClipId})` : undefined,
+              // THIS WRAPPER COVERS THE WHOLE MAP. Left hit-testable it swallows
+              // every click that was not on a token, so nothing beneath it — the
+              // map background — is ever the event target. That is what broke
+              // deselection, and the same wrapper's pointer-events broke token
+              // SELECTION a day earlier. Both times the symptom pointed at
+              // clicking, and the cause was a transparent layer nobody was
+              // thinking about.
+              //
+              // The tokens set `auto` back on themselves: a child may be
+              // hit-testable under a parent that is not.
+              pointerEvents: 'none',
             }}
           >
           {paintedTokens.map((t) => {
@@ -1233,13 +1405,21 @@ export function BattlemapCanvas({
                   // assumes when it snaps to cell centres.
                   transform: 'translate(-50%, -50%)',
                   borderRadius: '50%',
-                  // The hit area must match what is DRAWN. A token is a circle
-                  // inside a square button, and the corners of that square are
-                  // ~21% of it — empty map that nonetheless answered clicks, and
-                  // on a large token those corners reach well into neighbouring
-                  // squares. Clipping the element clips its hit-testing too, so
-                  // one line fixes both the stray selection and the stray drag.
-                  clipPath: 'circle(50%)',
+                  // Restores hit-testing that the clipping wrapper above turns
+                  // off for everything it covers.
+                  pointerEvents: 'auto',
+                  // SELECTION INDICATOR (owner request 2026-09-02). Selection
+                  // drove the sight preview and the size/ring controls while
+                  // being completely invisible on the map, so the only way to
+                  // know which token was selected was to look at the panel.
+                  //
+                  // An OUTLINE rather than a border or a bigger ring: outline is
+                  // drawn outside the box and takes no layout space, so it
+                  // cannot shift a token off its square or change what the
+                  // occupancy maths thinks the token covers. `outlineOffset`
+                  // lifts it clear of the colour ring so the two do not merge
+                  // into one thick band on a ringed token.
+
                   // The colour ring identifies a token that has no picture. Art
                   // identifies itself, so ringing it just puts a coloured band
                   // over the edges of the face.
@@ -1258,7 +1438,28 @@ export function BattlemapCanvas({
                   // backgroundImage silently resets the image to none, which is
                   // exactly the bug this replaced. See tokenStyle.ts.
                   ...tokenBackground(art),
-                  outline: selectedId === t.id ? '2px solid var(--color-accent)' : 'none',
+                  // SELECTION INDICATOR. It already existed at 2px and was
+                  // INVISIBLE — because the circular clip added an hour earlier
+                  // to fix hit areas clipped it away entirely. An outline is
+                  // drawn OUTSIDE the border box, so `clip-path: circle(50%)`
+                  // removed it, and took the drop shadow below with it. The
+                  // clip is gone — hit-testing is now done in the handler, where
+                  // it costs no visuals.
+                  //
+                  // NEGATIVE offset, so the ring sits ON the token's frame
+                  // rather than floating outside it (owner, 2026-09-02). Pulling
+                  // it inward by its own width puts its outer edge exactly on
+                  // the token's edge, so a selected token is the same size as an
+                  // unselected one — a ring drawn outside makes the token appear
+                  // to grow on selection, which on a battlemap reads as the
+                  // creature changing size rather than being picked.
+                  //
+                  // `outline` still follows `border-radius`, so it stays a
+                  // circle; and unlike a border it takes no layout space, so it
+                  // cannot shift the token off its square or disagree with what
+                  // the occupancy maths thinks the token covers.
+                  outline: selectedId === t.id ? '3px solid var(--color-accent, #4f8cff)' : 'none',
+                  outlineOffset: '-3px',
                   color: '#fff',
                   fontSize: '0.7rem',
                   overflow: 'hidden',
@@ -1532,6 +1733,28 @@ const VISION_HEARTBEAT_MS = 60_000
  * is fifty cheap requests rather than one per animation frame.
  */
 const VISION_PREVIEW_MS = 100
+
+/**
+ * Minimum gap between RE-CENTRING requests, in ms — the ones that follow a cache
+ * hit and move the precomputed ring onto the square just stepped to.
+ *
+ * Looser than VISION_PREVIEW_MS because nothing visible waits on it: the light
+ * already changed, from cache. Its only job is making the NEXT step free too.
+ *
+ * BUT ONLY JUST LOOSER, and the reason is the ring's radius. The precomputed
+ * ring is ONE square deep, so every square in it is also its edge — a second
+ * step in any direction lands outside and costs a round trip. At 300ms against a
+ * 120ms step cadence that produced alternating instant and delayed steps while
+ * walking, which is a less severe version of the jumpiness this was supposed to
+ * remove. 150ms keeps the ring roughly under the token.
+ *
+ * The honest trade: a held walk now re-centres close to once per step, so the
+ * prefetch buys an instant PAINT rather than fewer requests. That is the right
+ * way round — the player is waiting on the paint — but it is not the saving the
+ * shape of the feature suggests. A two-deep ring would buy both, at 48 sweeps a
+ * request instead of 16, and is the thing to try if this ever costs too much.
+ */
+const VISION_RECENTRE_MS = 150
 
 /**
  * How often a player re-asks the server for walls, in milliseconds.

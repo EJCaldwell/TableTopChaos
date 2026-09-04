@@ -485,3 +485,88 @@ describe('token occupancy (2026-09-02)', () => {
     })
   })
 })
+
+
+describe('resizing must re-snap (owner report 2026-09-02: "the 4x4 acts as a 5x5 hitbox")', () => {
+  const M = { width_px: 1400, height_px: 900, grid_size: 70 }
+
+  it('an even size promoted from a cell centre lands on a CORNER, covering exactly 4 columns', () => {
+    // THE BUG: the size control wrote size_cells alone, leaving the token on the
+    // lattice for its OLD size. A 1x1 sits on a cell CENTRE; promoted to 4x4 and
+    // left there, its 4-square body straddled half a cell at each end and so
+    // touched parts of FIVE columns and five rows. Occupancy was exact; the
+    // token was not where the grid says a 4x4 goes.
+    const wasOneByOne = { x: 315, y: 315 } // a cell centre
+    const snapped = snapToken(wasOneByOne, M, 4)
+    const f = tokenFootprint(snapped, 4, 70)
+    // Every edge on a grid line, so the body is four whole columns.
+    expect(f.left % 70).toBe(0)
+    expect(f.right % 70).toBe(0)
+    expect(f.right - f.left).toBe(280)
+  })
+
+  it('the un-snapped position is what blocked five columns — the regression itself', () => {
+    // Written as the FAILURE rather than the fix: this is the state the bug left
+    // behind, and it is why the report read as an occupancy defect.
+    //
+    // A 1x1 at the cell centre 245 promoted to 4x4 and left there spans
+    // 105..385 — half a cell into the column at each end, so it touches FIVE
+    // columns. Snapped, it spans 140..420: four columns exactly.
+    const unsnapped = { x: 245, y: 245 }
+    const snapped = snapToken(unsnapped, M, 4) // -> 280
+    // The spurious FIFTH column, on the near side: cell 70..140, centre 105.
+    // The snapped token reaches its far edge and stops; the un-snapped one
+    // reaches half way into it.
+    const neighbour = { x: 105, y: 245 }
+    expect(tokensOverlap(unsnapped, 4, neighbour, 1, 70)).toBe(true)
+    expect(tokensOverlap(snapped, 4, neighbour, 1, 70)).toBe(false)
+  })
+
+  it('a half-size token still centres in its cell when shrunk from 4x4', () => {
+    // The other direction: 4 -> 0.5 must move OFF the corner and back to a
+    // centre, or a small creature ends up straddling four squares.
+    const wasFour = { x: 280, y: 280 } // a corner
+    const snapped = snapToken(wasFour, M, 0.5)
+    expect((snapped.x - 35) % 70).toBe(0)
+  })
+})
+
+
+describe('occupancy on an ODD grid (owner report 2026-09-02: extra row/column on the left and top)', () => {
+  // 85, the owner's actual grid. Every other test here uses 70, where grid/2 is
+  // exact — which is precisely why nothing caught this.
+  const G = 85
+
+  it('a 1x1 may stand immediately LEFT of a 4x4', () => {
+    // THE BUG. Coordinates are integers (0048) but a cell centre on an odd grid
+    // is a half pixel, so it is stored rounded — and rounding 802.5 up to 803
+    // pushed the small token's right edge half a pixel INTO the big token. With
+    // a 0.25px tolerance that read as a collision, and the square was refused.
+    const big = { x: 1015, y: 850 }
+    const left = { x: Math.round(1015 - 2 * G - G / 2), y: 850 }
+    expect(tokensOverlap(big, 4, left, 1, G)).toBe(false)
+  })
+
+  it('a 1x1 may stand immediately RIGHT of the same 4x4', () => {
+    // The side that always worked. Rounding happens to push this neighbour AWAY,
+    // which is why the fault looked like an extra column on ONE side only and
+    // read as a sizing bug rather than a tolerance one.
+    const big = { x: 1015, y: 850 }
+    const right = { x: Math.round(1015 + 2 * G + G / 2), y: 850 }
+    expect(tokensOverlap(big, 4, right, 1, G)).toBe(false)
+  })
+
+  it('a 1x1 may stand immediately ABOVE a 2x2 on an odd grid', () => {
+    const big = { x: 425, y: 425 }
+    const above = { x: 425, y: Math.round(425 - G - G / 2) }
+    expect(tokensOverlap(big, 2, above, 1, G)).toBe(false)
+  })
+
+  it('still refuses a genuine overlap on an odd grid', () => {
+    // The tolerance must not have been loosened into uselessness: one square in
+    // from the legal position is a real, half-cell overlap and stays refused.
+    const big = { x: 1015, y: 850 }
+    const inside = { x: Math.round(1015 - G - G / 2), y: 850 }
+    expect(tokensOverlap(big, 4, inside, 1, G)).toBe(true)
+  })
+})

@@ -23,6 +23,7 @@ import { Button, FormError } from '../../components/ui'
 import { BattlemapCanvas } from './BattlemapCanvas'
 import type { WallTool } from './WallLayer'
 import { useCampaignMaps } from './useCampaignMaps'
+import { snapToken } from './grid'
 import {
   clearWalls,
   TOKEN_RINGS,
@@ -367,9 +368,31 @@ export function BattlemapView({
                 <select
                   value={String(selected.size_cells)}
                   onChange={(e) =>
-                    void run(async () =>
-                      setSelected(await updateToken(selected.id, { size_cells: Number(e.target.value) })),
-                    )
+                    void run(async () => {
+                      // RESIZE MOVES THE TOKEN, and it has to.
+                      //
+                      // Which lattice a token's centre belongs on depends on its
+                      // size (snapToken): odd and half sizes sit on cell
+                      // CENTRES, even sizes on cell CORNERS. Writing size_cells
+                      // alone left a token on the lattice for its OLD size, so a
+                      // 1x1 promoted to 4x4 stayed on a cell centre — half a
+                      // cell out — and its 4-square body then straddled parts of
+                      // FIVE columns and five rows.
+                      //
+                      // It presented as occupancy being wrong ("the 4x4 acts as
+                      // if it was a 5x5 hitbox", owner 2026-09-02). The
+                      // occupancy maths was exact; the token was simply not
+                      // where the grid says a 4x4 goes.
+                      const size = Number(e.target.value)
+                      const p = snapToken({ x: selected.x, y: selected.y }, active, size)
+                      setSelected(
+                        await updateToken(selected.id, {
+                          size_cells: size,
+                          x: Math.round(p.x),
+                          y: Math.round(p.y),
+                        }),
+                      )
+                    })
                   }
                   style={{ font: 'inherit', fontSize: '0.8rem' }}
                 >

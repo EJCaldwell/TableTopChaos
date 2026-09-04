@@ -22,55 +22,55 @@ player token owned by the player's account.
 Do this FIRST, with **vision off**, so a fog bug cannot be mistaken for an art
 bug.
 
-- [ ] **A1.** DM window: a token with a creature portrait shows **the picture**,
+- [x] **A1.** DM window: a token with a creature portrait shows **the picture**,
       not a coloured circle with initials.
-- [ ] **A2.** Player window: the **same** token shows the picture too.
-- [ ] **A3.** A token with no portrait still shows its ring and initials.
+- [x] **A2.** Player window: the **same** token shows the picture too.
+- [x] **A3.** A token with no portrait still shows its ring and initials.
 
 > If A1 fails, stop — the art fix did not work and nothing below is meaningful.
 
 ## B. Fog density (0065)
 
-- [ ] **B1.** DM ticks **"Limit what players can see"**. A **Fog** slider appears
+- [x] **B1.** DM ticks **"Limit what players can see"**. A **Fog** slider appears
       (30–100%), starting at 100.
-- [ ] **B2.** Player's unseen area is **solid** at 100%.
-- [ ] **B3.** DM drags Fog to ~50%. The player can now make out the **terrain**
+- [x] **B2.** Player's unseen area is **solid** at 100%.
+- [x] **B3.** DM drags Fog to ~50%. The player can now make out the **terrain**
       they cannot see — the map image and grid.
-- [ ] **B4.** **At 50%, a token behind a wall is still completely invisible.**
+- [x] **B4.** **At 50%, a token behind a wall is still completely invisible.**
       Not faint. Not a disc. Nothing.
-- [ ] **B5.** Reload: the fog setting survived.
+- [x] **B5.** Reload: the fog setting survived.
 
 ## C. Partial visibility
 
-- [ ] **C1.** Move a DM token so it is **half behind** a wall corner, with part
+- [x] **C1.** Move a DM token so it is **half behind** a wall corner, with part
       in the player's line of sight.
-- [ ] **C2.** The player sees **only the visible part** of it — a crescent, cut
+- [x] **C2.** The player sees **only the visible part** of it — a crescent, cut
       along the sight line, not the whole token and not nothing.
-- [ ] **C3.** Move it fully behind the wall: it disappears entirely.
-- [ ] **C4.** Move it fully into the open: the whole token is back.
+- [x] **C3.** Move it fully behind the wall: it disappears entirely.
+- [x] **C4.** Move it fully into the open: the whole token is back.
 
 ## D. Moving into walls
 
-- [ ] **D1.** Player drags their token towards a wall. It **stops against the
+- [x] **D1.** Player drags their token towards a wall. It **stops against the
       wall** — it does not pass through and spring back.
-- [ ] **D2.** The player can still move freely everywhere a wall is not in the
+- [x] **D2.** The player can still move freely everywhere a wall is not in the
       way.
-- [ ] **D3.** Arrow-key the token into a wall: it stops, no rebound.
-- [ ] **D4.** **DM** drags a token through the same wall: allowed (they stage
+- [x] **D3.** Arrow-key the token into a wall: it stops, no rebound.
+- [x] **D4.** **DM** drags a token through the same wall: allowed (they stage
       what is behind their own walls).
-- [ ] **D5.** DM unticks vision, player drags across the wall: **allowed** — a
+- [x] **D5.** DM unticks vision, player drags across the wall: **allowed** — a
       campaign using walls as scenery keeps the movement it always had.
 
 ## E. Grid-snapped walls
 
-- [ ] **E1.** Arm **Line**. A **"Snap to grid"** checkbox appears, ticked.
-- [ ] **E2.** Draw a line: both ends land on grid **intersections** (corners),
+- [x] **E1.** Arm **Line**. A **"Snap to grid"** checkbox appears, ticked.
+- [x] **E2.** Draw a line: both ends land on grid **intersections** (corners),
       not in the middle of squares.
-- [ ] **E3.** Draw a **Room**: its corners sit on intersections and its edges run
+- [x] **E3.** Draw a **Room**: its corners sit on intersections and its edges run
       along grid lines.
-- [ ] **E4.** Hold **Alt** while drawing: it lands exactly where you release.
-- [ ] **E5.** **Freehand** is unaffected — it follows the pointer, never snapped.
-- [ ] **E6.** Shift the grid (Maps tab → Shift →), then draw: walls snap to the
+- [x] **E4.** Hold **Alt** while drawing: it lands exactly where you release.
+- [x] **E5.** **Freehand** is unaffected — it follows the pointer, never snapped.
+- [x] **E6.** Shift the grid (Maps tab → Shift →), then draw: walls snap to the
       **shifted** lines, not the original ones.
 
 ## Pass criteria
@@ -174,23 +174,23 @@ nothing while walking.
 
 ## Follow-up checklist (2026-09-02) — NOT RUN
 
-- [ ] **F1.** Click a token you own. **Hold Left and Up together** — it moves
+- [x] **F1.** Click a token you own. **Hold Left and Up together** — it moves
       diagonally up-left, one square each way.
-- [ ] **F1b.** Press them a fraction apart, as you naturally would: **one
+- [x] **F1b.** Press them a fraction apart, as you naturally would: **one
       diagonal step**, not a sideways step followed by a diagonal one.
-- [ ] **F1c.** **Tap a single arrow as fast as you can.** It still moves one
+- [x] **F1c.** **Tap a single arrow as fast as you can.** It still moves one
       square — the press is not swallowed.
-- [ ] **F2.** All four diagonal pairs work.
-- [ ] **F3.** Arrows alone still move orthogonally.
-- [ ] **F4.** Holding **Left and Right together** moves nothing horizontally.
-- [ ] **F5.** A diagonal move into a wall **stops**, like an orthogonal one.
-- [ ] **F6.** Hold a diagonal pair: it walks smoothly, and the page does not
+- [x] **F2.** All four diagonal pairs work.
+- [x] **F3.** Arrows alone still move orthogonally.
+- [x] **F4.** Holding **Left and Right together** moves nothing horizontally.
+- [x] **F5.** A diagonal move into a wall **stops**, like an orthogonal one.
+- [x] **F6.** Hold a diagonal pair: it walks smoothly, and the page does not
       scroll underneath it.
-- [ ] **F7.** Press a diagonal pair, then **click away and back**, then press a
+- [x] **F7.** Press a diagonal pair, then **click away and back**, then press a
       single arrow — it moves **orthogonally**, not diagonally. *(The stuck-key
       case.)*
-- [ ] **F8.** The move persists after a reload.
-- [ ] **F9.** *(Only if you have a numpad.)* Numpad 7/9/1/3 still work.
+- [x] **F8.** The move persists after a reload.
+- [x] **F9.** *(Only if you have a numpad.)* Numpad 7/9/1/3 still work.
 
 **2026-09-02 — F1–F9 run by the owner. ALL PASS.**
 
@@ -247,21 +247,21 @@ Verified: matrix **141/141**, **297** tests, build clean.
 
 ## Follow-up checklist (2026-09-02c) — NOT RUN
 
-- [ ] **G1.** Player moves their token: the fog follows **immediately**, not
+- [x] **G1.** Player moves their token: the fog follows **immediately**, not
       after a visible pause.
-- [ ] **G2.** DM moves a monster: the player's fog still updates, slightly
+- [x] **G2.** DM moves a monster: the player's fog still updates, slightly
       later, without stutter.
-- [ ] **G3.** Hold an arrow to walk several squares: the fog updates once at the
+- [x] **G3.** Hold an arrow to walk several squares: the fog updates once at the
       end, not once per square.
-- [ ] **G4.** DM arms **Line** → a **"Players can see this wall"** checkbox
+- [x] **G4.** DM arms **Line** → a **"Players can see this wall"** checkbox
       appears, **ticked** (changed 2026-09-02 — see below).
-- [ ] **G5.** Draw a wall with it TICKED. On the DM's map it is muted/thicker;
+- [x] **G5.** Draw a wall with it TICKED. On the DM's map it is muted/thicker;
       on the **player's** map it is **visible**.
-- [ ] **G6.** Draw one with it UNTICKED. Red for the DM, **invisible** to the
+- [x] **G6.** Draw one with it UNTICKED. Red for the DM, **invisible** to the
       player.
-- [ ] **G7.** Both walls still block sight and movement for the player.
-- [ ] **G8.** The player cannot erase or move the visible wall.
-- [ ] **G9.** A visible wall inside a fogged area is **still drawn** — the fog
+- [x] **G7.** Both walls still block sight and movement for the player.
+- [x] **G8.** The player cannot erase or move the visible wall.
+- [x] **G9.** A visible wall inside a fogged area is **still drawn** — the fog
       covers the floor and the tokens, but not the wall.
 
       > **This step inverted on 2026-09-02**, at the owner's request ("you can
@@ -349,10 +349,10 @@ correctness backstop if a realtime event is ever missed.
 
 ## Follow-up checklist (2026-09-02d) — NOT RUN
 
-- [ ] **H1.** Player moves their token: the fog follows **immediately**.
-- [ ] **H2.** Leave the map idle a few minutes, then move: the first move is
+- [x] **H1.** Player moves their token: the fog follows **immediately**.
+- [x] **H2.** Leave the map idle a few minutes, then move: the first move is
       still quick (the heartbeat has kept the function warm).
-- [ ] **H3.** Everything else about fog, walls and movement is unchanged.
+- [x] **H3.** Everything else about fog, walls and movement is unchanged.
 
 **2026-09-02 — G/H steps run by the owner. ALL PASS.** Then two more requests.
 
@@ -781,3 +781,225 @@ initiative order stops making sense.
 - **0068 can freeze an already-overlapping token**: every future update re-runs
   the check and fails. The migration reports the count as a warning rather than
   silently shoving pieces apart. Zero on this database at apply time.
+
+## Neighbourhood prefetch (2026-09-02m) — NOT RUN
+
+> *"Would it be possible to have everything be loaded at once for every player…
+> so it would only be changing the light level?"*
+
+**Most of it already was.** A player's browser holds the map image, the grid and
+every token row — all of them, with positions. Fog is painted OVER them, and a
+token outside the lit area is dropped from the DOM. The only thing fetched per
+move was the visibility polygon.
+
+**The walls are the one thing that cannot be preloaded**, and that is not an
+oversight: computing sight in the browser means the browser HAS the wall
+geometry, and anything the client holds a player can read. That is migration
+0061 and the entire reason this Edge Function exists. Foundry ships walls and
+accepts it; Roll20 does not; the owner chose Roll20.
+
+**So the server precomputes the ring instead.** It already holds the walls, and
+a sweep is the cheap part of the request — answering for the eight surrounding
+squares costs one request instead of nine. A single step now paints from memory,
+in the same frame, with no network involved.
+
+**The leak, stated rather than glossed:** a player's browser knows what it would
+see one step away in any direction, slightly before stepping. They learn that by
+stepping. It is a real cost and a bounded one, and a different order of thing
+from handing over the map's wall layout.
+
+**The cache is REPLACED by every response, never merged.** A growing cache would
+be faster and would eventually light a doorway the DM had already erased — with
+the failure appearing long after the change that caused it. Nine entries, always.
+
+Degrades silently to the old behaviour in two cases, both deliberate: more than
+one own token on the map (no single square to build a ring around), and a map
+with more than 400 wall segments (seventeen sweeps rather than two — better to
+be as fast as yesterday on a huge map than slower on every request).
+
+### I. Prefetch
+
+- [ ] **I1.** As a player, take **one step** with an arrow key. The light changes
+      **with** the step. Compare directly against H11's feel.
+- [ ] **I2.** Step in each of the eight directions, including diagonals. All
+      feel the same — no direction is slower than the others.
+- [ ] **I3.** Walk **continuously** with a held key across the map. The fog keeps
+      up; it does not fall behind and catch up in jumps.
+- [ ] **I4.** Step around a corner into a room you could not see. The room
+      appears immediately and CORRECTLY — the right shape, not the previous
+      square's light.
+- [ ] **I5.** **Drag** a long way in one gesture. Still correct on release
+      (a long drag lands outside the ring, so this is the round-trip path — it
+      should look exactly as it did before, not broken).
+- [ ] **I6.** Stand still while the DM **erases a wall** the player can see
+      through. The light updates within about a second, and the OLD light does
+      not come back on the next step. *(This is the stale-cache test.)*
+- [ ] **I7.** Same with the DM **drawing** a new wall: the player's light
+      shrinks and stays shrunk as they move.
+- [ ] **I8.** Stand at the very **edge of the map** and step along it. No
+      glitching where part of the ring is off-map.
+- [ ] **I9.** A player with **two tokens** on the map still moves correctly —
+      just without the speedup.
+
+## Pass criteria
+
+**I4, I6 and I7.**
+
+- I1–I3 are the feature, and they are subjective; if they do not feel different
+  from H11, say so plainly rather than passing them.
+- **I4 is correctness under speed.** The cheapest way to look fast is to show
+  the previous square's light, and that would pass I1–I3 while being wrong.
+  Turning a corner is where the two are distinguishable.
+- **I6 and I7 are the stale-cache tests, and they are the ones I would expect to
+  break** if anything here is wrong. A cache that answers from a wall that no
+  longer exists is the failure this design is shaped to avoid, and its symptom
+  appears one step AFTER the DM's change — so watch the step, not the moment.
+
+## Deselection (2026-09-02n) — NOT RUN
+
+> *"I am still unable to select things by clicking off of them."*
+
+**Two causes, and the first one is that the feature did not exist.**
+
+`setSelectedId` was only ever called with a token id — never with null. There was
+no code path anywhere that cleared the selection. Once anything was selected it
+stayed selected for the life of the panel, so switching tokens meant hitting the
+new one exactly, with no way to let go of the current one first.
+
+**Step A6 of the 2026-09-02f checklist asserts exactly this behaviour**, and I
+wrote it assuming it worked because it was the obvious thing for a click on the
+background to do. It had never been built. A checklist step is only evidence if
+somebody runs it; an unrun step is a claim, and this one was wrong.
+
+**The second cause is the layer that made the fix invisible.** The handler tests
+`e.target === e.currentTarget` so a click that landed on a token — which bubbles
+up through the map area — does not immediately deselect it. But the token
+clipping wrapper is `position: absolute; inset: 0` with default hit-testing, so
+it covers the entire map and is the target of every click that is not on a
+token. The background was never the target, and the check could never pass.
+
+**That is the same wrapper that broke token SELECTION a day earlier**, when it
+was added with `pointer-events: auto`. Twice now the symptom has been about
+clicking and the cause has been a transparent layer nobody was thinking about.
+It is now `pointer-events: none`, with the tokens setting `auto` back on
+themselves — a child is hit-testable under a parent that is not.
+
+### J. Selection and deselection
+
+- [ ] **J1.** Click a token → selects. Click **empty map** → deselects, and the
+      sight preview disappears. *(This is A6, which was never actually true.)*
+- [ ] **J2.** With token A selected, click token B **directly** → B is selected,
+      A is not. No need to click away first.
+- [ ] **J3.** Clicking empty map does **not** move anything.
+- [ ] **J4.** Arm a wall tool → clicking the map draws, and does **not** clear
+      the selection out from under the DM mid-stroke.
+- [ ] **J5.** Disarm → deselection works again.
+- [ ] **J6.** Tokens are still selectable and draggable everywhere on the map,
+      including on top of fog and near walls. *(The regression guard: this is
+      what the wrapper broke last time.)*
+
+## Pass criteria
+
+**J1, J2 and J6.** J1 is the report. J2 is what the report was actually costing —
+switching tokens. **J6 is the one that catches an over-correction**: turning
+hit-testing off on a wrapper is exactly how token selection broke the first
+time, and the fix relies on the children turning it back on.
+
+**2026-09-02 — the deselect handler above never ran. My bug, one line.**
+
+> *"As a DM I am still unable to de-select anything."*
+
+The guard read `if (wallTool) return`. `wallTool` is a STRING SENTINEL whose
+idle value is `'none'` — which is truthy — so the handler bailed out of every
+click that has ever been made. The fix that shipped an hour earlier was correct
+and simply never executed.
+
+It type-checked perfectly, because a string is a valid condition. Every OTHER use
+of `wallTool` in the file compares against `'none'` explicitly; this one line did
+not, and nothing in the language or the build could tell them apart. The lesson
+is about the sentinel rather than about care: a value whose "off" state is truthy
+will eventually be tested for truthiness, and the only defence is not to have one
+— `wallTool: WallTool | null` would have made the mistake impossible to write.
+Recorded rather than refactored, because changing it now touches four call sites
+that are all currently correct.
+
+Now `wallTool !== 'none'`. J1–J6 stand unchanged and are still NOT RUN.
+
+## Jumpy light (2026-09-02o) — NOT RUN
+
+> *"The light is now a bit jumpy like the movement for players."*
+
+**Two causes. The first is ordering, not timing** — which is why no amount of
+adjusting the intervals would have helped.
+
+Vision requests overlap constantly: a re-centre, a wall poll every 500ms, a
+heartbeat, and the refresh after a move commits. Nothing made them come back in
+the order they were sent, and an older response landing last snapped the light to
+where the token used to be — then the next response snapped it forward again.
+Requests now carry a sequence number and a response is dropped if a newer one was
+issued while it was in flight.
+
+**The second is that the stored position lags the visible one.** A keyboard walk
+paints each step immediately and writes 300ms after the LAST step, so for that
+whole window the database still has the token where the walk began. Any refresh
+that did not carry an explicit `at` — the poll, the heartbeat — was computed from
+there, and yanked the light back to the start of the walk.
+
+Every refresh now anchors to the token's current on-screen position when the
+client knows it. That also closes a subtler fault I introduced with the prefetch:
+the cache was being KEYED by the anchor while the server had swept from the
+stored position, filing the wrong light under the right square — a bug that would
+have outlived any fix to the ordering.
+
+**And a third, smaller one, fixed by retuning.** The precomputed ring is one
+square deep, so every square in it is also its edge and a second step lands
+outside. Re-centring every 300ms against a 120ms step cadence gave alternating
+instant and delayed steps — a milder version of the same complaint. Now 150ms.
+
+> **Stated plainly, because the feature's name oversells it:** a held walk now
+> re-centres close to once per step, so the prefetch buys an instant PAINT rather
+> than fewer requests. That is the right way round — the player waits on the
+> paint, not on the request — but it is not the saving "prefetch" implies. A
+> two-deep ring would buy both, at 48 sweeps per request instead of 16.
+
+### K. Smoothness
+
+- [ ] **K1.** Take single steps, pausing between them. Each changes the light
+      once, cleanly — no flicker, no second correction a moment later.
+- [ ] **K2.** **Hold** a direction across several squares. The light keeps pace
+      and does not stutter or lag behind in bursts.
+- [ ] **K3.** Walk, then **stop and stand still for five seconds**. The light
+      does NOT jump back to where the walk started. *(This is the stored-position
+      lag; the wall poll used to trigger it about half a second after stopping.)*
+- [ ] **K4.** Walk back and forth quickly over the same squares. No flicker
+      between old and new light.
+- [ ] **K5.** Drag a long way, release, and wait. The light settles once and
+      stays settled.
+- [ ] **K6.** While the player stands still, the DM draws a wall. The light
+      updates once — it does not oscillate between the old and new answer.
+
+## Pass criteria
+
+**K3 and K4.** K1 and K2 are the complaint as reported and are subjective. **K3
+is the specific mechanism** — the poll firing against a stale stored position
+shortly after a walk stops, which is the one with a clear signature: a jump
+BACKWARDS to the start of the walk, about half a second after stopping. **K4 is
+the ordering test**: reversing direction quickly is what puts responses most out
+of order, and a flicker there means the sequence guard is not doing its job.
+
+## 2026-09-02 — superseded for RUNNING by consolidated-run.md
+
+The 82 unticked steps in this file are spread across nine dated checklists
+written over two days against a moving target, and they are no longer a runnable
+task. [consolidated-run.md](consolidated-run.md) collapses them to **39**:
+
+- **23 are WITHDRAWN** — B1–B4, E1–E8, F1–F5 and the older J1–J5 all test walls
+  clipped to line of sight, or remembered walls. Both features were built and
+  then deliberately removed; running these would produce failures that are the
+  correct result.
+- **~25 were duplicates.** "The player's fog follows their own move" is C1, H11
+  AND I1. "A hidden wall stays invisible" is C3 and G2.
+- The rest carry their origin labels, so a failure reads back to the change.
+
+**This file stays as the history** — every checklist, bug, reversal and reason,
+dated. Its boxes stay unticked, because unticked must keep meaning "not passed".

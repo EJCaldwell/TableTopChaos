@@ -10,7 +10,7 @@ character owner (`ejcaldwell000@gmail.com`), open campaign "Test 1", select the
 
 ## Steps — no-character guard
 
-- [ ] *(Optional)* Sign in as a player who has **not** created a character and open
+- [x] *(Optional)* Sign in as a player who has **not** created a character and open
       Inventory → the panel shows **"No character yet"** pointing to the "My
       character" tab (no inventory UI). Skip if your test player already has one.
 

@@ -16,29 +16,29 @@ rpg campaign with a map uploaded.
 
 ## A. Drawing (DM)
 
-- [ ] **A1.** A **Walls** strip appears above the token strip: Line, Room,
+- [x] **A1.** A **Walls** strip appears above the token strip: Line, Room,
       Freehand, Erase, Clear walls.
-- [ ] **A2.** Press **Line**. It looks pressed, and a warning says token dragging
+- [x] **A2.** Press **Line**. It looks pressed, and a warning says token dragging
       is off. Drag on the map: a dashed preview follows, and on release a solid
       red line stays.
-- [ ] **A3.** With a tool armed, try to **drag a token**. It does **not** move.
+- [x] **A3.** With a tool armed, try to **drag a token**. It does **not** move.
       *(This is the mode-collision check.)*
 - [ ] **A4.** Press the tool again to disarm. Tokens drag normally.
 - [ ] **A5.** **Room**: drag a rectangle. It closes into four walls.
 - [ ] **A6.** **Freehand**: draw a long wiggly wall. It saves, and follows the
       shape you drew.
-- [ ] **A7.** **Erase**: click a wall — it disappears. Clicking near it (not
+- [x] **A7.** **Erase**: click a wall — it disappears. Clicking near it (not
       exactly on the 3px line) still works.
-- [ ] **A8.** Reload. Every wall survives, in the right place.
+- [x] **A8.** Reload. Every wall survives, in the right place.
 - [ ] **A9.** Zoom in and out. Walls stay the same visual thickness and stay
       aligned to the picture.
 - [ ] **A10.** **Clear walls** asks first, then removes all of them.
 
 ## B. The player never sees them (the point of 0061)
 
-- [ ] **B1.** In the **player's** window, the map shows **no walls at all** and
+- [x] **B1.** In the **player's** window, the map shows **no walls at all** and
       no Walls strip.
-- [ ] **B2.** The player can still drag their own token normally — the wall layer
+- [x] **B2.** The player can still drag their own token normally — the wall layer
       is click-through for them.
 
 ## C. Vision toggle
@@ -52,9 +52,9 @@ rpg campaign with a map uploaded.
 
 ## D. Two windows
 
-- [ ] **D1.** Open the same campaign as DM in **two** windows. Draw a wall in
+- [x] **D1.** Open the same campaign as DM in **two** windows. Draw a wall in
       one — it appears in the other within a second or two.
-- [ ] **D2.** Erase it in one — it goes in the other.
+- [x] **D2.** Erase it in one — it goes in the other.
 
 ## Pass criteria
 
@@ -108,3 +108,22 @@ Run and passed:
   wasted effort.
 
 Recorded as deferred, NOT as passed.
+
+**2026-09-02 — checkboxes back-filled from the run logs above.**
+
+Ticked: **A1, A2, A3, A7, A8, B1, B2, D1, D2** — every step the 2026-09-01
+foundation run names explicitly.
+
+**Deliberately still unticked**, and the reason matters more than the count:
+
+- **A4, A5, A6, A9, A10 and all of section C.** The 2026-09-01 entry records
+  these as *deferred to 9.3, not passed*, and says so in those words.
+- PLANNING's 9.2.3 note claims they "were run and PASSED there on 2026-09-01/02".
+  **The 9.3 run logs do not support that at step level** — they record passes for
+  9.3's OWN sections, which cover fog and sight rather than rooms, freehand,
+  zoom, clear-walls and the vision checkbox's persistence. The claim is probably
+  true in substance (you cannot test fog without drawing rooms) but "probably
+  exercised along the way" is not a result, and back-filling a tick from it would
+  put a checkmark on a step nobody reported.
+
+Ten seconds each to run properly if they are wanted; left honest until then.

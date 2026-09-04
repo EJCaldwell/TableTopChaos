@@ -106,7 +106,7 @@ UI.
 - [x] **D5b.** Try an image **over 5 MB**. Expect a message naming the file's
       actual size and the 5 MB limit, shown immediately — not after a long
       pause, which would mean the check is happening too late.
-- [ ] **D6.** As the **player account in the other browser**, open a campaign you
+- [x] **D6.** As the **player account in the other browser**, open a campaign you
       both belong to. *(Nothing renders co-member avatars yet — see Known gaps.
       Skip unless that has since been built.)*
 

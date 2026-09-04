@@ -18,65 +18,65 @@ rpg campaign, and a notetaker campaign for section E.
 
 ## A. Movable grid
 
-- [ ] **A1.** Maps tab → a map now has **three** sliders: `Grid`, `Shift →`,
+- [x] **A1.** Maps tab → a map now has **three** sliders: `Grid`, `Shift →`,
       `Shift ↓`.
-- [ ] **A2.** Drag `Shift →`. The overlay slides sideways over the picture; the
+- [x] **A2.** Drag `Shift →`. The overlay slides sideways over the picture; the
       lines stay the same distance apart.
-- [ ] **A3.** With a token already placed, move both shift sliders. **The token
+- [x] **A3.** With a token already placed, move both shift sliders. **The token
       does not move** — deliberate (0048 decision 1).
-- [ ] **A4.** Reload. The offsets survive.
+- [x] **A4.** Reload. The offsets survive.
 
 ## B. Token placement
 
-- [ ] **B1.** Press **Add token** (now in the bar under the map) three times
+- [x] **B1.** Press **Add token** (now in the bar under the map) three times
       without moving anything. You get **three visible tokens in different
       squares**, not one stack.
-- [ ] **B2.** Drag a token onto the exact centre square, then Add another. It
+- [x] **B2.** Drag a token onto the exact centre square, then Add another. It
       lands in a free square beside it, not underneath.
 
 ## C. Zoom
 
-- [ ] **C1.** The bar under the map has **− / 100% / +**. Zoom in: the map grows
+- [x] **C1.** The bar under the map has **− / 100% / +**. Zoom in: the map grows
       and the frame scrolls.
-- [ ] **C2.** **Drag a token while zoomed in.** It lands where you drop it —
+- [x] **C2.** **Drag a token while zoomed in.** It lands where you drop it —
       this is the one that would break if zoom were handled wrongly.
-- [ ] **C3.** Click the percentage to reset to fit.
-- [ ] **C4.** **Pinch on the trackpad** (or **Ctrl/⌘ + scroll wheel**) over the
+- [x] **C3.** Click the percentage to reset to fit.
+- [x] **C4.** **Pinch on the trackpad** (or **Ctrl/⌘ + scroll wheel**) over the
       map. It zooms, and **the page itself does not zoom**.
-- [ ] **C5.** Point at a specific feature on the map and pinch in. **That feature
+- [x] **C5.** Point at a specific feature on the map and pinch in. **That feature
       stays under the cursor** rather than sliding away.
-- [ ] **C6.** Plain two-finger scroll (no Ctrl) still **scrolls** the map when it
+- [x] **C6.** Plain two-finger scroll (no Ctrl) still **scrolls** the map when it
       is bigger than the frame — it does not zoom.
-- [ ] **C7.** Zoom **out** below 100%. The map gets **smaller**, not bigger.
+- [x] **C7.** Zoom **out** below 100%. The map gets **smaller**, not bigger.
 
 ## D. Players placing their own character
 
-- [ ] **D1.** Player window, before the DM allows it: **no** "Put … on the map"
+- [x] **D1.** Player window, before the DM allows it: **no** "Put … on the map"
       button.
-- [ ] **D2.** DM ticks **"Let players put their own character on this map"** in
+- [x] **D2.** DM ticks **"Let players put their own character on this map"** in
       the Maps tab. The player's button appears (after their view updates).
-- [ ] **D3.** Player clicks it. Their character appears on the map, labelled
+- [x] **D3.** Player clicks it. Their character appears on the map, labelled
       with the character's name, and the **DM sees it arrive live**.
-- [ ] **D4.** The button is **gone** for that player now — one character, one
+- [x] **D4.** The button is **gone** for that player now — one character, one
       token.
-- [ ] **D5.** The player can drag their new token; the DM's tokens still refuse.
-- [ ] **D6.** DM unticks the box. The player cannot add another (the button is
+- [x] **D5.** The player can drag their new token; the DM's tokens still refuse.
+- [x] **D6.** DM unticks the box. The player cannot add another (the button is
       gone); the token already placed **stays**.
 
 ## E. Arrow keys (the D18 failure)
 
-- [ ] **E1.** **Click** a token you own, then press an arrow key. It moves one
+- [x] **E1.** **Click** a token you own, then press an arrow key. It moves one
       square. *(This is the exact case that failed: clicking never focused the
       token.)*
-- [ ] **E2.** The move persists — reload and it is still there.
-- [ ] **E3.** Click a token you do NOT own and press an arrow key: nothing moves.
+- [x] **E2.** The move persists — reload and it is still there.
+- [x] **E3.** Click a token you do NOT own and press an arrow key: nothing moves.
 
 ## F. Notetaker campaigns
 
-- [ ] **F1.** In a **notetaker** campaign, the live map now fills the workspace
+- [x] **F1.** In a **notetaker** campaign, the live map now fills the workspace
       area, the same as playspace — **no Battlemap tab anywhere.**
-- [ ] **F2.** There is **no Add token** button in that campaign, for anyone.
-- [ ] **F3.** The DM still has the **Maps** tab and can upload/switch maps.
+- [x] **F2.** There is **no Add token** button in that campaign, for anyone.
+- [x] **F3.** The DM still has the **Maps** tab and can upload/switch maps.
 
 ## Pass criteria
 
@@ -150,16 +150,16 @@ Two changes requested at the same time, both built:
 
 ## Follow-up checklist (2026-09-01) — NOT RUN
 
-- [ ] **G1.** Maps tab: each grid control has a **number box**. Type a value and
+- [x] **G1.** Maps tab: each grid control has a **number box**. Type a value and
       press Tab — the overlay moves to it.
-- [ ] **G2.** Type **9000** into a shift box. It **clamps to 500** rather than
+- [x] **G2.** Type **9000** into a shift box. It **clamps to 500** rather than
       doing nothing.
-- [ ] **G3.** Clear a box completely. The grid does **not** jump to 0 while the
+- [x] **G3.** Clear a box completely. The grid does **not** jump to 0 while the
       field is empty.
-- [ ] **G4.** Zoom in until the map is wider than the frame. **Scroll all the way
+- [x] **G4.** Zoom in until the map is wider than the frame. **Scroll all the way
       to the LEFT edge** — the far edge is reachable. *(This is the exact bug.)*
-- [ ] **G5.** **Shift + scroll wheel** pans sideways.
-- [ ] **G6.** Zoom back out. Nothing is clipped and the map re-centres.
+- [x] **G5.** **Shift + scroll wheel** pans sideways.
+- [x] **G6.** Zoom back out. Nothing is clipped and the map re-centres.
 
 **2026-09-01 — G3 and G4 reported FAILING; both fixed.**
 
@@ -190,17 +190,17 @@ Two changes requested at the same time, both built:
 
 ## Third checklist (2026-09-01b) — NOT RUN
 
-- [ ] **H1.** Clear a grid number box entirely — it **stays empty** while you
+- [x] **H1.** Clear a grid number box entirely — it **stays empty** while you
       type, and the map keeps its previous grid.
-- [ ] **H2.** Type a new number into the empty box: the overlay follows.
-- [ ] **H3.** Clear it and click away: the box **snaps back** to the value in use.
-- [ ] **H4.** Type `-` then `50` in a shift box: it accepts the negative.
-- [ ] **H5.** Zoom OUT until the whole map is comfortably smaller than the frame.
+- [x] **H2.** Type a new number into the empty box: the overlay follows.
+- [x] **H3.** Clear it and click away: the box **snaps back** to the value in use.
+- [x] **H4.** Type `-` then `50` in a shift box: it accepts the negative.
+- [x] **H5.** Zoom OUT until the whole map is comfortably smaller than the frame.
       **Scroll/pan in every direction** — it moves. *(The exact failure.)*
-- [ ] **H6.** Zoom IN past the frame. Scroll to all four edges — all reachable.
-- [ ] **H7.** Open the map fresh: it appears **centred**, not in a corner.
-- [ ] **H8.** Pinch-zoom on a feature: it still stays under the cursor.
-- [ ] **H9.** Drag a token while zoomed in and panned off-centre: it lands where
+- [x] **H6.** Zoom IN past the frame. Scroll to all four edges — all reachable.
+- [x] **H7.** Open the map fresh: it appears **centred**, not in a corner.
+- [x] **H8.** Pinch-zoom on a feature: it still stays under the cursor.
+- [x] **H9.** Drag a token while zoomed in and panned off-centre: it lands where
       you drop it.
 
 **2026-09-01c — H1–H9 reported PASS; one new defect found and fixed.**
@@ -275,20 +275,33 @@ something.
 
 Verified: build clean, **174** tests (41 in `grid.test.ts`), `qa:checks` 62/62.
 
-## Fifth checklist (2026-09-01d) — NOT RUN
+## Fifth checklist (2026-09-01d) — PASSED, then SUPERSEDED
 
-- [ ] **K1.** Set a grid size that does NOT divide the map evenly (try 64). Drag
+> **K1–K3 no longer describe the app, and their ticks are historical.** They
+> passed on 2026-09-01 against the build of that hour. **The owner reversed the
+> decision the same day** — *"can you actually add back the tokens being able to
+> go onto an edge tile"* — so `clampToFullCell` is gone and a token may now stand
+> in the partial square at the edge of a map. Re-running K1–K3 today would FAIL,
+> correctly.
+>
+> Left ticked rather than cleared: they record a real result against the code as
+> it stood. A run log that is edited whenever the product changes stops being
+> evidence of anything. What it needed was this note.
+>
+> **K4–K7 are unaffected** and still describe current behaviour.
+
+- [x] **K1.** Set a grid size that does NOT divide the map evenly (try 64). Drag
       a token hard into the right edge: it stops in the **last full square**, not
       in the sliver beyond it.
-- [ ] **K2.** Same into the bottom edge.
-- [ ] **K3.** Arrow-key a token into an edge: it stops in the **same square** a
+- [x] **K2.** Same into the bottom edge.
+- [x] **K3.** Arrow-key a token into an edge: it stops in the **same square** a
       drag stops in.
-- [ ] **K4.** Hold **Alt** and drop a token in the sliver at the edge. It is
+- [x] **K4.** Hold **Alt** and drop a token in the sliver at the edge. It is
       allowed — off-grid placement is deliberate.
-- [ ] **K5.** Every token is **exactly one square** — compare against the overlay.
-- [ ] **K6.** Change the grid size with tokens on the map. They **all resize with
+- [x] **K5.** Every token is **exactly one square** — compare against the overlay.
+- [x] **K6.** Change the grid size with tokens on the map. They **all resize with
       it**, immediately, and in the other window too.
-- [ ] **K7.** After K6, tokens are still where they were (0048 decision 1 — the
+- [x] **K7.** After K6, tokens are still where they were (0048 decision 1 — the
       grid moves, tokens do not).
 
 **2026-09-01e — K1–K7 PASS; three further changes (migration 0056).**
@@ -393,18 +406,18 @@ Verified: matrix **119/119**, build clean, **175** tests, `qa:checks` 62/62.
 
 ## Seventh checklist (2026-09-01f) — NOT RUN
 
-- [ ] **M1.** Player selects their own token: **no Size control** anywhere.
-- [ ] **M2.** Player can still **move** that token — the narrower rule did not
+- [x] **M1.** Player selects their own token: **no Size control** anywhere.
+- [x] **M2.** Player can still **move** that token — the narrower rule did not
       freeze movement.
-- [ ] **M3.** DM can resize a **player's** token.
-- [ ] **M4.** A **half-square** token sits centred in its square, not in a corner.
-- [ ] **M5.** **Hold** an arrow key. The token walks at a steady, even pace —
+- [x] **M3.** DM can resize a **player's** token.
+- [x] **M4.** A **half-square** token sits centred in its square, not in a corner.
+- [x] **M5.** **Hold** an arrow key. The token walks at a steady, even pace —
       it does not skip several squares at once.
-- [ ] **M6.** Release the key. The token is where it stopped, and stays there
+- [x] **M6.** Release the key. The token is where it stopped, and stays there
       after a reload.
-- [ ] **M7.** Watch M5 in the **other window**: the token arrives where it
+- [x] **M7.** Watch M5 in the **other window**: the token arrives where it
       stopped rather than stuttering across square by square.
-- [ ] **M8.** Hold a key into a map edge: it stops there cleanly, no overshoot.
+- [x] **M8.** Hold a key into a map edge: it stops there cleanly, no overshoot.
 
 **2026-09-01g — M1–M8 run by the owner. ALL PASS.**
 
@@ -455,21 +468,21 @@ it came from. Either alone would be a different and wrong feature. Build clean,
 
 ## Eighth checklist (2026-09-01h) — NOT RUN
 
-- [ ] **N1.** DM: select an unowned token → a **Creature** dropdown lists the
+- [x] **N1.** DM: select an unowned token → a **Creature** dropdown lists the
       campaign's NPCs, marking those with no portrait.
-- [ ] **N2.** Pick an NPC with a portrait. The token shows **its artwork**, and
+- [x] **N2.** Pick an NPC with a portrait. The token shows **its artwork**, and
       takes the NPC's name.
-- [ ] **N3.** The **player's window** shows that artwork too — the point of the
+- [x] **N3.** The **player's window** shows that artwork too — the point of the
       whole design.
-- [ ] **N4.** The player still has no NPCs tab and cannot see the DM's notes on
+- [x] **N4.** The player still has no NPCs tab and cannot see the DM's notes on
       that creature.
-- [ ] **N5.** Player places their own character (DM switch on): the token shows
+- [x] **N5.** Player places their own character (DM switch on): the token shows
       **their character's portrait**.
-- [ ] **N6.** The DM sees that portrait, and has **no Creature dropdown** for
+- [x] **N6.** The DM sees that portrait, and has **no Creature dropdown** for
       that token.
-- [ ] **N7.** A token with no image still shows its colour ring and initials.
-- [ ] **N8.** Set the creature back to **(plain marker)**: the artwork clears.
-- [ ] **N9.** Resize a token with art to 2 squares — the picture scales with it
+- [x] **N7.** A token with no image still shows its colour ring and initials.
+- [x] **N8.** Set the creature back to **(plain marker)**: the artwork clears.
+- [x] **N9.** Resize a token with art to 2 squares — the picture scales with it
       and stays circular.
 
 **2026-09-01i — N1–N9 run by the owner. ALL PASS.** Token artwork confirmed in a
@@ -524,13 +537,13 @@ Verified: matrix **123/123**, build clean, 175 tests.
 
 ## Tenth checklist (2026-09-01j) — NOT RUN
 
-- [ ] **Q1.** DM selects a token → a **Ring** dropdown: Auto / Always / Never.
-- [ ] **Q2.** An art token on **Always** gets its colour ring back.
-- [ ] **Q3.** A plain token on **Never** loses its ring and still reads against
+- [x] **Q1.** DM selects a token → a **Ring** dropdown: Auto / Always / Never.
+- [x] **Q2.** An art token on **Always** gets its colour ring back.
+- [x] **Q3.** A plain token on **Never** loses its ring and still reads against
       the map (the shadow).
-- [ ] **Q4.** **Auto** behaves as before: ring without art, none with art.
-- [ ] **Q5.** The setting is visible in the **player's** window too.
-- [ ] **Q6.** The player has no Ring control, and can still move the token.
+- [x] **Q4.** **Auto** behaves as before: ring without art, none with art.
+- [x] **Q5.** The setting is visible in the **player's** window too.
+- [x] **Q6.** The player has no Ring control, and can still move the token.
 
 **2026-09-01k — Q1–Q6 run by the owner. ALL PASS.**
 
@@ -546,3 +559,23 @@ by hand would add no evidence.
 
 Final state: migrations **0048–0059**, RLS matrix **123/123**, build clean,
 **175** tests (42 in `grid.test.ts`), `qa:checks` 62/62.
+
+**2026-09-02 — checkboxes back-filled from the run logs above.**
+
+Ticked, each against a run-log entry that names the steps: **A1–F3** (2026-09-01
+ALL PASS), **G1/G2/G5/G6**, **H1–H9** (09-01c), **K1–K7** (09-01e), **M1–M8**
+(09-01g), **N1–N9** (09-01i), **Q1–Q6** (09-01k).
+
+**G3 and G4 are ticked on later evidence, not their own run**, so the reasoning
+is written down rather than left to look direct. Both were reported FAILING on
+2026-09-01 — the number box could not be cleared, and the map could not be
+scrolled when zoomed out past its own size. Both were fixed, and both behaviours
+were then re-tested as **H1–H3** (clearing and retyping the box) and **H5**
+(panning while zoomed out), which passed. Different wording, same two defects.
+
+**Deliberately left unticked: J1–J5, L1–L9, P1–P3.** No run-log entry names them.
+Each was almost certainly exercised — the reply that followed each of those
+checklists asked for the NEXT change, which is not something you ask for while a
+checklist is failing — but "almost certainly exercised" is not a reported result.
+Ticking on that inference is precisely how a QA folder stops meaning anything,
+and it is a worse outcome than seventeen honest empty boxes.

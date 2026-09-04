@@ -1,5 +1,12 @@
 # Automated coverage — Phase 6
 
+> **Dated record, not the current state.** This file says the project has no test
+> runner. That was true when it was written; **Vitest arrived in Phase 8.1**, and
+> since 2026-09-01 every unit of work adds unit tests for its pure logic. Left
+> as written rather than rewritten — a coverage note describes what covered a
+> phase AT THE TIME, and editing it to match today would erase the fact that this
+> phase shipped without a runner.
+
 This project has **no test runner** (see [`../README.md`](../README.md)). "Automated"
 here means the TypeScript compiler, the production build, and the server-side SQL
 assertions I can run without a browser.
